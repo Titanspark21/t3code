@@ -2,7 +2,6 @@ import {
   type EnvironmentId,
   type EditorId,
   type ProjectScript,
-  type ProviderKind,
   type ResolvedKeybindingsConfig,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -36,8 +35,6 @@ interface ChatHeaderProps {
   terminalToggleShortcutLabel: string | null;
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
-  gitProvider?: ProviderKind;
-  gitModel?: string;
   diffOpen: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
@@ -64,8 +61,6 @@ export const ChatHeader = memo(function ChatHeader({
   terminalToggleShortcutLabel,
   diffToggleShortcutLabel,
   gitCwd,
-  gitProvider,
-  gitModel,
   diffOpen,
   onRunProjectScript,
   onAddProjectScript,
@@ -122,8 +117,6 @@ export const ChatHeader = memo(function ChatHeader({
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            {...(gitProvider ? { provider: gitProvider } : {})}
-            {...(gitModel ? { model: gitModel } : {})}
             {...(draftId ? { draftId } : {})}
           />
         )}

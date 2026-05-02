@@ -4,7 +4,6 @@ import type {
   GitRunStackedActionResult,
   GitStackedAction,
   GitStatusResult,
-  ProviderKind,
 } from "@t3tools/contracts";
 import { useIsMutating, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -23,7 +22,6 @@ import {
   resolveQuickAction,
   resolveThreadBranchUpdate,
 } from "./GitActionsControl.logic";
-import { resolveGitTextGenerationModelSelection, useAppSettings } from "~/appSettings";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -60,8 +58,6 @@ import { createThreadSelectorByRef } from "~/storeSelectors";
 interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
-  provider?: ProviderKind;
-  model?: string;
   draftId?: DraftId;
 }
 
@@ -217,11 +213,8 @@ function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
 export default function GitActionsControl({
   gitCwd,
   activeThreadRef,
-  provider,
-  model,
   draftId,
 }: GitActionsControlProps) {
-  const { settings } = useAppSettings();
   const activeEnvironmentId = activeThreadRef?.environmentId ?? null;
   const threadToastData = useMemo(
     () => (activeThreadRef ? { threadRef: activeThreadRef } : undefined),
@@ -248,13 +241,6 @@ export default function GitActionsControl({
   const [isEditingFiles, setIsEditingFiles] = useState(false);
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
-  const gitProvider = provider ?? activeServerThread?.modelSelection.provider ?? "codex";
-  const gitModel = model ?? activeServerThread?.modelSelection.model ?? "";
-  const gitTextGenerationModel = resolveGitTextGenerationModelSelection(
-    gitProvider,
-    settings,
-    gitModel,
-  );
   const activeGitActionProgressRef = useRef<ActiveGitActionProgress | null>(null);
   let runGitActionWithToast: (input: RunGitActionWithToastInput) => Promise<void>;
 
@@ -1039,7 +1025,6 @@ export default function GitActionsControl({
                   <div className="flex items-center gap-2">
                     {isEditingFiles && allFiles.length > 0 && (
                       <Checkbox
-                        aria-label="Toggle all files for commit"
                         checked={allSelected}
                         indeterminate={!allSelected && !noneSelected}
                         onCheckedChange={() => {
@@ -1081,7 +1066,6 @@ export default function GitActionsControl({
                             >
                               {isEditingFiles && (
                                 <Checkbox
-                                  aria-label={`Toggle ${file.path} for commit`}
                                   checked={!excludedFiles.has(file.path)}
                                   onCheckedChange={() => {
                                     setExcludedFiles((prev) => {
@@ -1139,7 +1123,6 @@ export default function GitActionsControl({
             <div className="space-y-1">
               <p className="text-xs font-medium">Commit message (optional)</p>
               <Textarea
-                className="font-mono"
                 value={dialogCommitMessage}
                 onChange={(event) => setDialogCommitMessage(event.target.value)}
                 placeholder="Leave empty to auto-generate"

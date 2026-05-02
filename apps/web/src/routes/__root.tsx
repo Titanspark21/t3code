@@ -48,7 +48,10 @@ import {
   getPrimaryEnvironmentConnection,
   startEnvironmentConnectionService,
 } from "../environments/runtime";
-import { migrateLocalSettingsToServer } from "../hooks/useSettings";
+// TODO(sync): re-add a `migrateLocalSettingsToServer` once the fork's
+// AppSettings shim grows back the local-only fields that need backfilling
+// onto upstream's new `providerInstances`-keyed ServerSettings.
+const migrateLocalSettingsToServer = (): void => {};
 import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,

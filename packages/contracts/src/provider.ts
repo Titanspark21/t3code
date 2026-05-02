@@ -112,7 +112,7 @@ export type ProviderRespondToUserInputInput = typeof ProviderRespondToUserInputI
 // ── Provider model discovery ────────────────────────────────────────
 
 export const ProviderListModelsInput = Schema.Struct({
-  provider: ProviderKind,
+  provider: ProviderDriverKind,
 });
 export type ProviderListModelsInput = typeof ProviderListModelsInput.Type;
 
@@ -130,7 +130,7 @@ export interface ProviderListModelsResult {
 // ── Provider usage / quota ──────────────────────────────────────────
 
 export const ProviderGetUsageInput = Schema.Struct({
-  provider: ProviderKind,
+  provider: ProviderDriverKind,
 });
 export type ProviderGetUsageInput = typeof ProviderGetUsageInput.Type;
 

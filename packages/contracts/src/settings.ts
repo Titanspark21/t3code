@@ -130,6 +130,18 @@ export const OpenCodeSettings = Schema.Struct({
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+// Fork-only generic provider settings (Amp/Copilot/GeminiCli/Kilo). Carry
+// the fields the fork's adapter implementations historically needed; once
+// each fork driver owns its config in its own driver module, these get
+// folded into the per-driver schemas like Codex/Claude/Cursor/OpenCode.
+export const GenericProviderSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  binaryPath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  configDir: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+export type GenericProviderSettings = typeof GenericProviderSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -162,6 +174,11 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    // Fork-only providers — see Drivers/{Amp,Copilot,GeminiCli,Kilo}Driver.
+    amp: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    copilot: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    geminiCli: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    kilo: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
@@ -237,6 +254,13 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const GenericProviderSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  configDir: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
@@ -255,6 +279,10 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
+      amp: Schema.optionalKey(GenericProviderSettingsPatch),
+      copilot: Schema.optionalKey(GenericProviderSettingsPatch),
+      geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
+      kilo: Schema.optionalKey(GenericProviderSettingsPatch),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual

@@ -40,12 +40,6 @@ function matchMedia() {
 }
 
 beforeAll(() => {
-  const localStorage = {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-    clear: () => {},
-  };
   const classList = {
     add: () => {},
     remove: () => {},
@@ -53,7 +47,12 @@ beforeAll(() => {
     contains: () => false,
   };
 
-  vi.stubGlobal("localStorage", localStorage);
+  vi.stubGlobal("localStorage", {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+    clear: () => {},
+  });
   vi.stubGlobal("window", {
     matchMedia,
     addEventListener: () => {},
@@ -64,7 +63,6 @@ beforeAll(() => {
     },
     cancelAnimationFrame: () => {},
     desktopBridge: undefined,
-    localStorage,
   });
   vi.stubGlobal("document", {
     documentElement: {
@@ -152,7 +150,6 @@ describe("MessagesTimeline", () => {
               createdAt: "2026-03-17T19:12:28.000Z",
               label: "Context compacted",
               tone: "info",
-              activityKind: "context.compacted",
             },
           },
         ]}
@@ -179,7 +176,6 @@ describe("MessagesTimeline", () => {
               label: "Updated files",
               tone: "tool",
               changedFiles: ["C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts"],
-              activityKind: "tool.completed",
             },
           },
         ]}

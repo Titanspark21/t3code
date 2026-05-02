@@ -275,7 +275,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
       const threadId = ThreadId.make("thread-cursor");
 
       yield* directory.upsert({
-        provider: "cursor",
+        provider: ProviderDriverKind.make("cursor"),
         threadId,
       });
 
@@ -284,7 +284,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
       const resolvedBinding = yield* directory.getBinding(threadId);
       assertSome(resolvedBinding, {
         threadId,
-        provider: "cursor",
+        provider: ProviderDriverKind.make("cursor"),
       });
       if (Option.isSome(resolvedBinding)) {
         assert.equal(resolvedBinding.value.threadId, threadId);
@@ -326,7 +326,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
       const binding = yield* directory.getBinding(threadId);
       assertSome(binding, {
         threadId,
-        provider: "geminiCli",
+        provider: ProviderDriverKind.make("geminiCli"),
       });
     }));
 });

@@ -125,6 +125,10 @@ function createBaseServerConfig(): ServerConfig {
           serverPassword: "",
           customModels: [],
         },
+        amp: { enabled: true, binaryPath: "", configDir: "", customModels: [] },
+        copilot: { enabled: true, binaryPath: "", configDir: "", customModels: [] },
+        geminiCli: { enabled: true, binaryPath: "", configDir: "", customModels: [] },
+        kilo: { enabled: true, binaryPath: "", configDir: "", customModels: [] },
       },
     },
   };
