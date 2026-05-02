@@ -12,7 +12,10 @@ layer("026_CanonicalizeModelSelectionOptions", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 25 });
+      // Note: After fork renumbering, CanonicalizeModelSelectionOptions runs as
+      // migration 28 (the file is still named 026_*). Set up everything up to 27
+      // so that the next runMigrations call only executes migration 28.
+      yield* runMigrations({ toMigrationInclusive: 27 });
 
       yield* sql`
           INSERT INTO projection_projects (
@@ -276,7 +279,7 @@ layer("026_CanonicalizeModelSelectionOptions", (it) => {
             )
         `;
 
-      yield* runMigrations({ toMigrationInclusive: 26 });
+      yield* runMigrations({ toMigrationInclusive: 28 });
 
       // Projection projects
       const projectRows = yield* sql<{

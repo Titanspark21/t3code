@@ -39,7 +39,11 @@ layer("021_RepairProjectionThreadProposedPlanImplementationColumns", (it) => {
           !columnsBeforeRepair.some((column) => column.name === "implementation_thread_id"),
         );
 
-        yield* runMigrations();
+        // Only run through migration 24 (the repair migration). Later
+        // migrations (e.g. 28_CanonicalizeModelSelectionOptions) depend on
+        // columns added by migrations 14-23 which were marked as completed
+        // above without actually being executed.
+        yield* runMigrations({ toMigrationInclusive: 24 });
 
         const columnsAfterRepair = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_thread_proposed_plans)
