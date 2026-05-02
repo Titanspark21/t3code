@@ -1,25 +1,31 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  defaultInstanceIdForDriver,
+  ProviderDriverKind,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { it, assert, vi } from "@effect/vitest";
-import { assertFailure } from "@effect/vitest/utils";
-import type { ProviderKind } from "@t3tools/contracts";
-import { Effect, Layer, Stream } from "effect";
 
-import { ProviderUnsupportedError } from "../Errors.ts";
-import { ClaudeAdapter, type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { CopilotAdapter, type CopilotAdapterShape } from "../Services/CopilotAdapter.ts";
-import { CodexAdapter, type CodexAdapterShape } from "../Services/CodexAdapter.ts";
-import { CursorAdapter, type CursorAdapterShape } from "../Services/CursorAdapter.ts";
-import { GeminiCliAdapter, type GeminiCliAdapterShape } from "../Services/GeminiCliAdapter.ts";
-import { OpenCodeAdapter, type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
-import { AmpAdapter, type AmpAdapterShape } from "../Services/AmpAdapter.ts";
-import { KiloAdapter, type KiloAdapterShape } from "../Services/KiloAdapter.ts";
-import { getProviderCapabilities } from "../Services/ProviderAdapter.ts";
+import { Effect, Layer, PubSub, Stream } from "effect";
+
+import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
+import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
+import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
+import type { ProviderInstance } from "../ProviderDriver.ts";
+import type { TextGenerationShape } from "../../git/Services/TextGeneration.ts";
 import { ProviderAdapterRegistryLive } from "./ProviderAdapterRegistry.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+
+const CODEX_DRIVER = ProviderDriverKind.make("codex");
+const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
+const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
+const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 
 const fakeCodexAdapter: CodexAdapterShape = {
-  provider: "codex",
-  capabilities: getProviderCapabilities("codex"),
+  provider: CODEX_DRIVER,
+  capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
   sendTurn: vi.fn(),
   interruptTurn: vi.fn(),
@@ -35,42 +41,8 @@ const fakeCodexAdapter: CodexAdapterShape = {
 };
 
 const fakeClaudeAdapter: ClaudeAdapterShape = {
-  provider: "claudeAgent",
-  capabilities: getProviderCapabilities("claudeAgent"),
-  startSession: vi.fn(),
-  sendTurn: vi.fn(),
-  interruptTurn: vi.fn(),
-  respondToRequest: vi.fn(),
-  respondToUserInput: vi.fn(),
-  stopSession: vi.fn(),
-  listSessions: vi.fn(),
-  hasSession: vi.fn(),
-  readThread: vi.fn(),
-  rollbackThread: vi.fn(),
-  stopAll: vi.fn(),
-  streamEvents: Stream.empty,
-};
-
-const fakeCopilotAdapter: CopilotAdapterShape = {
-  provider: "copilot",
-  capabilities: getProviderCapabilities("copilot"),
-  startSession: vi.fn(),
-  sendTurn: vi.fn(),
-  interruptTurn: vi.fn(),
-  respondToRequest: vi.fn(),
-  respondToUserInput: vi.fn(),
-  stopSession: vi.fn(),
-  listSessions: vi.fn(),
-  hasSession: vi.fn(),
-  readThread: vi.fn(),
-  rollbackThread: vi.fn(),
-  stopAll: vi.fn(),
-  streamEvents: Stream.empty,
-};
-
-const fakeCursorAdapter: CursorAdapterShape = {
-  provider: "cursor",
-  capabilities: getProviderCapabilities("cursor"),
+  provider: CLAUDE_AGENT_DRIVER,
+  capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
   sendTurn: vi.fn(),
   interruptTurn: vi.fn(),
@@ -86,8 +58,8 @@ const fakeCursorAdapter: CursorAdapterShape = {
 };
 
 const fakeOpenCodeAdapter: OpenCodeAdapterShape = {
-  provider: "opencode",
-  capabilities: getProviderCapabilities("opencode"),
+  provider: OPENCODE_DRIVER,
+  capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
   sendTurn: vi.fn(),
   interruptTurn: vi.fn(),
@@ -102,9 +74,9 @@ const fakeOpenCodeAdapter: OpenCodeAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-const fakeGeminiCliAdapter: GeminiCliAdapterShape = {
-  provider: "geminiCli",
-  capabilities: getProviderCapabilities("geminiCli"),
+const fakeCursorAdapter: CursorAdapterShape = {
+  provider: CURSOR_DRIVER,
+  capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
   sendTurn: vi.fn(),
   interruptTurn: vi.fn(),
@@ -119,99 +91,94 @@ const fakeGeminiCliAdapter: GeminiCliAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-const fakeAmpAdapter: AmpAdapterShape = {
-  provider: "amp",
-  capabilities: getProviderCapabilities("amp"),
-  startSession: vi.fn(),
-  sendTurn: vi.fn(),
-  interruptTurn: vi.fn(),
-  respondToRequest: vi.fn(),
-  respondToUserInput: vi.fn(),
-  stopSession: vi.fn(),
-  listSessions: vi.fn(),
-  hasSession: vi.fn(),
-  readThread: vi.fn(),
-  rollbackThread: vi.fn(),
-  stopAll: vi.fn(),
-  streamEvents: Stream.empty,
+// ProviderAdapterRegistryLive is now a facade over ProviderInstanceRegistry —
+// it walks `listInstances` once at boot and surfaces the default-instance
+// adapter keyed by its driver kind. To test the facade we supply four fake
+// instances whose `instanceId === defaultInstanceIdForDriver(driverKind)` so
+// they pass the default-instance filter.
+const makeFakeInstance = (
+  driverKindString: "codex" | "claudeAgent" | "cursor" | "opencode",
+  adapter: ProviderInstance["adapter"],
+): ProviderInstance => {
+  const driverKind = ProviderDriverKind.make(driverKindString);
+  return {
+    instanceId: defaultInstanceIdForDriver(driverKind),
+    driverKind,
+    continuationIdentity: {
+      driverKind,
+      continuationKey: `${driverKind}:instance:${defaultInstanceIdForDriver(driverKind)}`,
+    },
+    displayName: undefined,
+    enabled: true,
+    snapshot: {
+      getSnapshot: Effect.succeed({} as unknown as ServerProvider),
+      refresh: Effect.succeed({} as unknown as ServerProvider),
+      streamChanges: Stream.empty,
+    },
+    adapter,
+    textGeneration: {} as unknown as TextGenerationShape,
+  };
 };
 
-const fakeKiloAdapter: KiloAdapterShape = {
-  provider: "kilo",
-  capabilities: getProviderCapabilities("kilo"),
-  startSession: vi.fn(),
-  sendTurn: vi.fn(),
-  interruptTurn: vi.fn(),
-  respondToRequest: vi.fn(),
-  respondToUserInput: vi.fn(),
-  stopSession: vi.fn(),
-  listSessions: vi.fn(),
-  hasSession: vi.fn(),
-  readThread: vi.fn(),
-  rollbackThread: vi.fn(),
-  stopAll: vi.fn(),
-  streamEvents: Stream.empty,
-};
+const fakeInstances: ReadonlyArray<ProviderInstance> = [
+  makeFakeInstance("codex", fakeCodexAdapter),
+  makeFakeInstance("claudeAgent", fakeClaudeAdapter),
+  makeFakeInstance("opencode", fakeOpenCodeAdapter),
+  makeFakeInstance("cursor", fakeCursorAdapter),
+];
 
-const layer = it.layer(
-  ProviderAdapterRegistryLive.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.succeed(CodexAdapter, fakeCodexAdapter),
-        Layer.succeed(CopilotAdapter, fakeCopilotAdapter),
-        Layer.succeed(ClaudeAdapter, fakeClaudeAdapter),
-        Layer.succeed(CursorAdapter, fakeCursorAdapter),
-        Layer.succeed(OpenCodeAdapter, fakeOpenCodeAdapter),
-        Layer.succeed(GeminiCliAdapter, fakeGeminiCliAdapter),
-        Layer.succeed(AmpAdapter, fakeAmpAdapter),
-        Layer.succeed(KiloAdapter, fakeKiloAdapter),
-      ),
-    ),
-    Layer.provideMerge(NodeServices.layer),
-  ),
+const fakeInstanceRegistryLayer = Layer.succeed(ProviderInstanceRegistry, {
+  getInstance: (instanceId) =>
+    Effect.succeed(fakeInstances.find((instance) => instance.instanceId === instanceId)),
+  listInstances: Effect.succeed(fakeInstances),
+  listUnavailable: Effect.succeed([]),
+  streamChanges: Stream.empty,
+  // Tests never drive changes through this fake; acquire a throwaway
+  // subscription on an unused PubSub so the shape is satisfied.
+  subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) => PubSub.subscribe(pubsub)),
+});
+
+const layer = Layer.mergeAll(
+  Layer.provide(ProviderAdapterRegistryLive, fakeInstanceRegistryLayer),
+  NodeServices.layer,
 );
 
-layer("ProviderAdapterRegistryLive", (it) => {
-  it.effect("resolves registered provider adapters", () =>
+it.layer(layer)("ProviderAdapterRegistryLive", (it) => {
+  it("resolves adapters and routing metadata from provider instances", () =>
     Effect.gen(function* () {
       const registry = yield* ProviderAdapterRegistry;
-      const codex = yield* registry.getByProvider("codex");
-      const copilot = yield* registry.getByProvider("copilot");
-      const claude = yield* registry.getByProvider("claudeAgent");
-      const cursor = yield* registry.getByProvider("cursor");
-      const opencode = yield* registry.getByProvider("opencode");
-      const geminiCli = yield* registry.getByProvider("geminiCli");
-      const amp = yield* registry.getByProvider("amp");
-      const kilo = yield* registry.getByProvider("kilo");
+      const claudeInstanceId = defaultInstanceIdForDriver(CLAUDE_AGENT_DRIVER);
 
-      assert.equal(codex, fakeCodexAdapter);
-      assert.equal(copilot, fakeCopilotAdapter);
-      assert.equal(claude, fakeClaudeAdapter);
-      assert.equal(cursor, fakeCursorAdapter);
-      assert.equal(opencode, fakeOpenCodeAdapter);
-      assert.equal(geminiCli, fakeGeminiCliAdapter);
-      assert.equal(amp, fakeAmpAdapter);
-      assert.equal(kilo, fakeKiloAdapter);
+      const adapter = yield* registry.getByInstance(claudeInstanceId);
+      assert.strictEqual(adapter, fakeClaudeAdapter);
+
+      const info = yield* registry.getInstanceInfo(claudeInstanceId);
+      assert.deepStrictEqual(info, {
+        instanceId: claudeInstanceId,
+        driverKind: CLAUDE_AGENT_DRIVER,
+        displayName: undefined,
+        accentColor: undefined,
+        enabled: true,
+        continuationIdentity: {
+          driverKind: CLAUDE_AGENT_DRIVER,
+          continuationKey: "claudeAgent:instance:claudeAgent",
+        },
+      });
+
+      const instances = yield* registry.listInstances();
+      assert.deepStrictEqual(instances, [
+        defaultInstanceIdForDriver(CODEX_DRIVER),
+        claudeInstanceId,
+        defaultInstanceIdForDriver(OPENCODE_DRIVER),
+        defaultInstanceIdForDriver(CURSOR_DRIVER),
+      ]);
 
       const providers = yield* registry.listProviders();
-      assert.deepEqual(providers, [
-        "codex",
-        "claudeAgent",
-        "copilot",
-        "cursor",
-        "geminiCli",
-        "opencode",
-        "amp",
-        "kilo",
+      assert.deepStrictEqual(providers, [
+        CODEX_DRIVER,
+        CLAUDE_AGENT_DRIVER,
+        OPENCODE_DRIVER,
+        CURSOR_DRIVER,
       ]);
-    }),
-  );
-
-  it.effect("fails with ProviderUnsupportedError for unknown providers", () =>
-    Effect.gen(function* () {
-      const registry = yield* ProviderAdapterRegistry;
-      const adapter = yield* registry.getByProvider("unknown" as ProviderKind).pipe(Effect.result);
-      assertFailure(adapter, new ProviderUnsupportedError({ provider: "unknown" }));
-    }),
-  );
+    }));
 });

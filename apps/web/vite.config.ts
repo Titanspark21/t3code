@@ -61,6 +61,8 @@ export default defineConfig({
       "@pierre/diffs/react",
       "@pierre/diffs/worker/worker.js",
       "ghostty-web",
+      "effect/Array",
+      "effect/Order",
     ],
   },
   define: {

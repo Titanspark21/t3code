@@ -2,18 +2,9 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
-import {
-  AmpModelOptions,
-  ClaudeModelOptions,
-  CodexModelOptions,
-  CopilotModelOptions,
-  CursorModelOptions,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
-  GeminiCliModelOptions,
-  KiloModelOptions,
-  OpencodeModelOptions,
-} from "./model.ts";
-import { ModelSelection, ProviderKind } from "./orchestration.ts";
+import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
+import { ModelSelection } from "./orchestration.ts";
+import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -42,12 +33,31 @@ export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Model favorites. Historically keyed by provider kind, now
+  // widened to `ProviderInstanceId` so users can favorite a specific model
+  // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
+  // the UI collapsing it into the same bucket as the default Codex. The
+  // widening is backward-compatible by construction: prior provider-kind
+  // strings satisfy the `ProviderInstanceId` slug schema, so previously
+  // persisted favorites decode unchanged and continue to point at the
+  // default instance for their kind (because `defaultInstanceIdForDriver(kind)`
+  // uses the same slug). The field name is kept as `provider` for storage
+  // stability; new call sites should treat the value as an instance id.
   favorites: Schema.Array(
     Schema.Struct({
-      provider: ProviderKind,
+      provider: ProviderInstanceId,
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  providerModelPreferences: Schema.Record(
+    ProviderInstanceId,
+    Schema.Struct({
+      hiddenModels: Schema.Array(Schema.String).pipe(
+        Schema.withDecodingDefault(Effect.succeed([])),
+      ),
+      modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+    }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -90,6 +100,7 @@ export const CodexSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("codex"),
   homePath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  shadowHomePath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type CodexSettings = typeof CodexSettings.Type;
@@ -97,6 +108,7 @@ export type CodexSettings = typeof CodexSettings.Type;
 export const ClaudeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("claude"),
+  homePath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   launchArgs: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
@@ -109,7 +121,6 @@ export const CursorSettings = Schema.Struct({
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type CursorSettings = typeof CursorSettings.Type;
-
 export const OpenCodeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("opencode"),
@@ -118,14 +129,6 @@ export const OpenCodeSettings = Schema.Struct({
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
-
-export const GenericProviderSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  binaryPath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  configDir: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-});
-export type GenericProviderSettings = typeof GenericProviderSettings.Type;
 
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -142,23 +145,32 @@ export const ServerSettings = Schema.Struct({
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
-        provider: "codex" as const,
-        model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
+        instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_GIT_TEXT_GENERATION_MODEL,
       }),
     ),
   ),
 
-  // Provider specific settings
+  // Legacy single-instance-per-driver settings. Continues to be the source
+  // of truth until `providerInstances` (below) lands per-driver migration
+  // shims and the server starts hydrating instances from it. Driver-specific
+  // schemas live here for the duration of the migration; once each driver
+  // owns its config in its own package, this struct shrinks to nothing and
+  // is removed entirely.
   providers: Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    copilot: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    geminiCli: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    amp: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-    kilo: GenericProviderSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
+  // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
+  // is `Schema.Unknown` at this layer so envelopes with unknown drivers
+  // (forks, downgrades, in-flight PR branches) round-trip without loss.
+  // See providerInstance.ts for the forward/backward compatibility invariant.
+  providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -188,108 +200,26 @@ export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
 
 // ── Server Settings Patch (replace with a Schema.deepPartial if available) ──────────────────────────────────────────
 
-const CodexModelOptionsPatch = Schema.Struct({
-  reasoningEffort: Schema.optionalKey(CodexModelOptions.fields.reasoningEffort),
-  fastMode: Schema.optionalKey(CodexModelOptions.fields.fastMode),
+const ModelSelectionPatch = Schema.Struct({
+  instanceId: Schema.optionalKey(ProviderInstanceId),
+  model: Schema.optionalKey(TrimmedNonEmptyString),
+  options: Schema.optionalKey(ProviderOptionSelections),
 });
-
-const ClaudeModelOptionsPatch = Schema.Struct({
-  thinking: Schema.optionalKey(ClaudeModelOptions.fields.thinking),
-  effort: Schema.optionalKey(ClaudeModelOptions.fields.effort),
-  fastMode: Schema.optionalKey(ClaudeModelOptions.fields.fastMode),
-  contextWindow: Schema.optionalKey(ClaudeModelOptions.fields.contextWindow),
-});
-
-const CopilotModelOptionsPatch = Schema.Struct({
-  reasoningEffort: Schema.optionalKey(CopilotModelOptions.fields.reasoningEffort),
-});
-
-const CursorModelOptionsPatch = Schema.Struct({
-  reasoning: Schema.optionalKey(CursorModelOptions.fields.reasoning),
-  fastMode: Schema.optionalKey(CursorModelOptions.fields.fastMode),
-  thinking: Schema.optionalKey(CursorModelOptions.fields.thinking),
-});
-
-const OpencodeModelOptionsPatch = Schema.Struct({
-  providerId: Schema.optionalKey(OpencodeModelOptions.fields.providerId),
-  reasoningEffort: Schema.optionalKey(OpencodeModelOptions.fields.reasoningEffort),
-});
-
-const GeminiCliModelOptionsPatch = Schema.Struct({
-  thinkingBudget: Schema.optionalKey(GeminiCliModelOptions.fields.thinkingBudget),
-});
-
-const AmpModelOptionsPatch = Schema.Struct({
-  mode: Schema.optionalKey(AmpModelOptions.fields.mode),
-});
-
-const KiloModelOptionsPatch = Schema.Struct({
-  providerId: Schema.optionalKey(KiloModelOptions.fields.providerId),
-  reasoningEffort: Schema.optionalKey(KiloModelOptions.fields.reasoningEffort),
-});
-
-const ModelSelectionPatch = Schema.Union([
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("codex")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(CodexModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("claudeAgent")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(ClaudeModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("copilot")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(CopilotModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("cursor")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(CursorModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("opencode")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(OpencodeModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("geminiCli")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(GeminiCliModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("amp")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(AmpModelOptionsPatch),
-  }),
-  Schema.Struct({
-    provider: Schema.optionalKey(Schema.Literal("kilo")),
-    model: Schema.optionalKey(TrimmedNonEmptyString),
-    options: Schema.optionalKey(KiloModelOptionsPatch),
-  }),
-]);
 
 const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   homePath: Schema.optionalKey(Schema.String),
+  shadowHomePath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
+  homePath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
   launchArgs: Schema.optionalKey(Schema.String),
-});
-
-const GenericProviderSettingsPatch = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(Schema.String),
-  configDir: Schema.optionalKey(Schema.String),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const CursorSettingsPatch = Schema.Struct({
@@ -323,14 +253,15 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
-      copilot: Schema.optionalKey(GenericProviderSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
-      geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
-      amp: Schema.optionalKey(GenericProviderSettingsPatch),
-      kilo: Schema.optionalKey(GenericProviderSettingsPatch),
     }),
   ),
+  // Whole-map replacement for the new instance config. Patching individual
+  // entries is intentionally out of scope: the map is small, and partial
+  // patches risk leaving driver-specific config in a half-merged state.
+  // The web UI sends a fully-formed map every time it edits this field.
+  providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
@@ -342,8 +273,21 @@ export const ClientSettingsPatch = Schema.Struct({
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
-        provider: ProviderKind,
+        provider: ProviderInstanceId,
         model: TrimmedNonEmptyString,
+      }),
+    ),
+  ),
+  providerModelPreferences: Schema.optionalKey(
+    Schema.Record(
+      ProviderInstanceId,
+      Schema.Struct({
+        hiddenModels: Schema.Array(Schema.String).pipe(
+          Schema.withDecodingDefault(Effect.succeed([])),
+        ),
+        modelOrder: Schema.Array(Schema.String).pipe(
+          Schema.withDecodingDefault(Effect.succeed([])),
+        ),
       }),
     ),
   ),
