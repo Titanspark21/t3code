@@ -21,11 +21,16 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Effect from "effect/Effect";
 
+// Default instance ids for the fork drivers. These match
+// `defaultInstanceIdForDriver(driverKind)` from
+// packages/contracts/src/providerInstance.ts which uses the bare driver
+// kind slug as the back-compat default instance id (so existing threads,
+// bindings, and cache files stay routable across the migration).
 const FORK_DRIVERS_AND_DEFAULT_INSTANCE_IDS = [
-  ["amp", "amp_default"],
-  ["copilot", "copilot_default"],
-  ["geminiCli", "geminiCli_default"],
-  ["kilo", "kilo_default"],
+  ["amp", "amp"],
+  ["copilot", "copilot"],
+  ["geminiCli", "geminiCli"],
+  ["kilo", "kilo"],
 ] as const;
 
 export default Effect.gen(function* () {

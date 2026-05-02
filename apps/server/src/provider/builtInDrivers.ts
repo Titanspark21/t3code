@@ -18,11 +18,21 @@
  * layer (ChildProcessSpawner, FileSystem, Path, ServerConfig,
  * OpenCodeRuntime, …) must satisfy it.
  *
+ * Fork additions (Amp/Copilot/GeminiCli/Kilo) are currently registered as
+ * stubs that fail their `create()` with a clear message. This keeps
+ * configured instances of those drivers visible in the UI as "unavailable"
+ * shadows rather than disappearing on upgrade. See the TODO(sync) markers
+ * in each driver file for the re-port plan.
+ *
  * @module provider/builtInDrivers
  */
+import { AmpDriver, type AmpDriverEnv } from "./Drivers/AmpDriver.ts";
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
+import { CopilotDriver, type CopilotDriverEnv } from "./Drivers/CopilotDriver.ts";
 import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
+import { GeminiCliDriver, type GeminiCliDriverEnv } from "./Drivers/GeminiCliDriver.ts";
+import { KiloDriver, type KiloDriverEnv } from "./Drivers/KiloDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 
@@ -32,9 +42,13 @@ import type { AnyProviderDriver } from "./ProviderDriver.ts";
  * layer must provide every service in this union.
  */
 export type BuiltInDriversEnv =
+  | AmpDriverEnv
   | ClaudeDriverEnv
   | CodexDriverEnv
+  | CopilotDriverEnv
   | CursorDriverEnv
+  | GeminiCliDriverEnv
+  | KiloDriverEnv
   | OpenCodeDriverEnv;
 
 /**
@@ -47,4 +61,10 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   ClaudeDriver,
   CursorDriver,
   OpenCodeDriver,
+  // Fork-only drivers — currently stubs returning ProviderDriverError. See
+  // the TODO(sync) markers in each driver for the re-port plan.
+  AmpDriver,
+  CopilotDriver,
+  GeminiCliDriver,
+  KiloDriver,
 ];
