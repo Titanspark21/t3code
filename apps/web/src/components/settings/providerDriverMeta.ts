@@ -1,5 +1,15 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { ClaudeAI, CursorIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import {
+  AmpIcon,
+  ClaudeAI,
+  CursorIcon,
+  Gemini,
+  GithubCopilotIcon,
+  type Icon,
+  KiloIcon,
+  OpenAI,
+  OpenCodeIcon,
+} from "../Icons";
 
 /**
  * A single editable field exposed on a provider instance. `key` must match
@@ -132,6 +142,89 @@ export const DRIVER_OPTIONS: readonly DriverOption[] = [
         placeholder: "Optional",
         type: "password",
         description: "Stored in plain text on disk.",
+      },
+    ],
+  },
+  // Fork-only drivers — currently surface as "unavailable" shadow snapshots
+  // because their drivers are stubs. Keeping the UI metadata so the fork's
+  // existing settings keep rendering once the drivers are reimplemented.
+  {
+    value: ProviderDriverKind.make("amp"),
+    label: "Amp",
+    icon: AmpIcon,
+    badgeLabel: "Pending sync",
+    fields: [
+      {
+        key: "binaryPath",
+        label: "Binary path",
+        placeholder: "amp",
+        description: "Path to the Amp Code binary used by this instance.",
+      },
+      {
+        key: "configDir",
+        label: "Config directory",
+        placeholder: "~/.config/amp",
+        description: "Override the config directory the Amp binary reads.",
+      },
+    ],
+  },
+  {
+    value: ProviderDriverKind.make("copilot"),
+    label: "Copilot",
+    icon: GithubCopilotIcon,
+    badgeLabel: "Pending sync",
+    fields: [
+      {
+        key: "binaryPath",
+        label: "Binary path",
+        placeholder: "copilot",
+        description: "Path to the GitHub Copilot CLI binary used by this instance.",
+      },
+      {
+        key: "configDir",
+        label: "Config directory",
+        placeholder: "~/.config/github-copilot",
+        description: "Override the Copilot config directory.",
+      },
+    ],
+  },
+  {
+    value: ProviderDriverKind.make("geminiCli"),
+    label: "Gemini CLI",
+    icon: Gemini,
+    badgeLabel: "Pending sync",
+    fields: [
+      {
+        key: "binaryPath",
+        label: "Binary path",
+        placeholder: "gemini",
+        description: "Path to the Gemini CLI binary used by this instance.",
+      },
+      {
+        key: "configDir",
+        label: "Config directory",
+        placeholder: "~/.gemini",
+        description: "Override the Gemini CLI config directory.",
+      },
+    ],
+  },
+  {
+    value: ProviderDriverKind.make("kilo"),
+    label: "Kilo",
+    icon: KiloIcon,
+    badgeLabel: "Pending sync",
+    fields: [
+      {
+        key: "binaryPath",
+        label: "Binary path",
+        placeholder: "kilo",
+        description: "Path to the Kilo binary used by this instance.",
+      },
+      {
+        key: "configDir",
+        label: "Config directory",
+        placeholder: "~/.config/kilo",
+        description: "Override the Kilo config directory.",
       },
     ],
   },
