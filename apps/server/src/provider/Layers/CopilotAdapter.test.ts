@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { ThreadId } from "@t3tools/contracts";
+import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import { type SessionEvent } from "@github/copilot-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterAll, it, vi } from "@effect/vitest";
@@ -142,7 +142,7 @@ modeLayer("CopilotAdapterLive interaction mode", (it) => {
 
       const adapter = yield* CopilotAdapter;
       const session = yield* adapter.startSession({
-        provider: "copilot",
+        provider: ProviderDriverKind.make("copilot"),
         threadId: asThreadId("thread-mode"),
         runtimeMode: "full-access",
       });
@@ -196,7 +196,7 @@ planLayer("CopilotAdapterLive proposed plan events", (it) => {
 
       const adapter = yield* CopilotAdapter;
       const session = yield* adapter.startSession({
-        provider: "copilot",
+        provider: ProviderDriverKind.make("copilot"),
         threadId: asThreadId("thread-plan"),
         runtimeMode: "full-access",
       });

@@ -1,8 +1,8 @@
 import { type ComponentProps } from "react";
-import { type ProviderKind } from "@t3tools/contracts";
 
 import { useAppSettings } from "../appSettings";
 import { cn } from "../lib/utils";
+import type { ProviderKind } from "../providerKind";
 import {
   type Icon,
   AmpIcon,
@@ -26,7 +26,7 @@ const PROVIDER_ICON_BY_PROVIDER: Record<ProviderKind, Icon> = {
   kilo: KiloIcon,
 };
 
-export type ProviderLogoProps = Omit<ComponentProps<Icon>, "monochrome"> & {
+export type ProviderLogoProps = ComponentProps<Icon> & {
   provider: ProviderKind;
 };
 
@@ -39,8 +39,11 @@ export function ProviderLogo({ provider, className, style, ...props }: ProviderL
   return (
     <ProviderIcon
       {...props}
-      monochrome={isAccentAppearance}
-      className={cn(className, settings.providerLogoAppearance === "grayscale" && "grayscale")}
+      className={cn(
+        className,
+        settings.providerLogoAppearance === "grayscale" && "grayscale",
+        isAccentAppearance && "[&_path]:fill-[currentColor]",
+      )}
       style={isAccentAppearance ? { ...style, color: accentColor } : style}
     />
   );

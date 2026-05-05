@@ -6,6 +6,7 @@ import readline from "node:readline";
 import {
   ApprovalRequestId,
   EventId,
+  ProviderDriverKind,
   RuntimeItemId,
   RuntimeTaskId,
   ThreadId,
@@ -24,40 +25,15 @@ import { createLogger } from "./logger.ts";
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const PROVIDER = "amp" as const;
+const PROVIDER = ProviderDriverKind.make("amp");
 
-// ── Module-level usage tracking ──────────────────────────────────────
+// ── Per-instance usage tracking ──────────────────────────────────────
 
 interface AmpUsageAccumulator {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
   turnCount: number;
-}
-
-let _ampUsageAccumulator: AmpUsageAccumulator = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cachedTokens: 0,
-  turnCount: 0,
-};
-
-export function fetchAmpUsage(): ProviderUsageResult {
-  const acc = _ampUsageAccumulator;
-  let sessionUsage: ProviderSessionUsage | undefined;
-  if (acc.turnCount > 0) {
-    sessionUsage = {
-      inputTokens: acc.inputTokens,
-      outputTokens: acc.outputTokens,
-      ...(acc.cachedTokens > 0 ? { cachedTokens: acc.cachedTokens } : {}),
-      totalTokens: acc.inputTokens + acc.outputTokens,
-      turnCount: acc.turnCount,
-    };
-  }
-  return {
-    provider: PROVIDER,
-    ...(sessionUsage ? { sessionUsage } : {}),
-  };
 }
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -173,7 +149,37 @@ export class AmpServerManager extends EventEmitter<{
 }> {
   private readonly sessions = new Map<ThreadId, AmpSession>();
   private readonly logger = createLogger("amp");
+  private readonly usageAccumulator: AmpUsageAccumulator = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    turnCount: 0,
+  };
   binaryPath: string | undefined;
+
+  /**
+   * Snapshot the per-instance usage counters in the canonical
+   * `ProviderUsageResult` shape. Returns the manager-local accumulator —
+   * each `AmpServerManager` instance keeps its own counters so two
+   * concurrent Amp providers do not cross-contaminate usage stats.
+   */
+  fetchUsage(): ProviderUsageResult {
+    const acc = this.usageAccumulator;
+    let sessionUsage: ProviderSessionUsage | undefined;
+    if (acc.turnCount > 0) {
+      sessionUsage = {
+        inputTokens: acc.inputTokens,
+        outputTokens: acc.outputTokens,
+        ...(acc.cachedTokens > 0 ? { cachedTokens: acc.cachedTokens } : {}),
+        totalTokens: acc.inputTokens + acc.outputTokens,
+        turnCount: acc.turnCount,
+      };
+    }
+    return {
+      provider: PROVIDER,
+      ...(sessionUsage ? { sessionUsage } : {}),
+    };
+  }
 
   // ── Session lifecycle ───────────────────────────────────────────
 
@@ -563,9 +569,9 @@ export class AmpServerManager extends EventEmitter<{
     if (inner?.usage) {
       // Accumulate session-level usage
       if (typeof inner.usage.input_tokens === "number")
-        _ampUsageAccumulator.inputTokens += inner.usage.input_tokens;
+        this.usageAccumulator.inputTokens += inner.usage.input_tokens;
       if (typeof inner.usage.output_tokens === "number")
-        _ampUsageAccumulator.outputTokens += inner.usage.output_tokens;
+        this.usageAccumulator.outputTokens += inner.usage.output_tokens;
       const cached =
         (typeof inner.usage.cache_read_input_tokens === "number"
           ? inner.usage.cache_read_input_tokens
@@ -573,7 +579,7 @@ export class AmpServerManager extends EventEmitter<{
         (typeof inner.usage.cache_creation_input_tokens === "number"
           ? inner.usage.cache_creation_input_tokens
           : 0);
-      if (cached > 0) _ampUsageAccumulator.cachedTokens += cached;
+      if (cached > 0) this.usageAccumulator.cachedTokens += cached;
 
       this.emitEvent(threadId, session.activeTurnId, {
         type: "thread.token-usage.updated",
@@ -584,7 +590,7 @@ export class AmpServerManager extends EventEmitter<{
     // For persistent sessions, a turn completes when stop_reason is "end_turn".
     // Guard against duplicate turn.completed (handleResultMessage may also emit one).
     if (inner?.stop_reason === "end_turn" && session.activeTurnId && session.status !== "ready") {
-      _ampUsageAccumulator.turnCount++;
+      this.usageAccumulator.turnCount++;
       this.closeAllSubagentTasks(threadId, session);
       this.emitEvent(threadId, session.activeTurnId, {
         type: "turn.completed",

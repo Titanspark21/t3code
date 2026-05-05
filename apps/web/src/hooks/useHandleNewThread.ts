@@ -1,10 +1,5 @@
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
-import {
-  DEFAULT_RUNTIME_MODE,
-  type ModelSlug,
-  type ProviderKind,
-  type ScopedProjectRef,
-} from "@t3tools/contracts";
+import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef } from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -41,8 +36,6 @@ function useNewThreadState() {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
-        provider?: ProviderKind | null;
-        model?: ModelSlug | null;
       },
     ): Promise<void> => {
       const {
@@ -51,7 +44,6 @@ function useNewThreadState() {
         getDraftThread,
         applyStickyState,
         setDraftThreadContext,
-        setModelSelection,
         setLogicalProjectDraftThreadId,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
@@ -79,12 +71,6 @@ function useNewThreadState() {
               ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
               ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
               ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-            });
-          }
-          if (options?.provider != null && options?.model != null) {
-            setModelSelection(storedDraftThread.draftId, {
-              provider: options.provider,
-              model: options.model,
             });
           }
           setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, storedDraftThread.draftId, {
@@ -116,12 +102,6 @@ function useNewThreadState() {
             ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
           });
         }
-        if (options?.provider != null && options?.model != null) {
-          setModelSelection(currentRouteTarget.draftId, {
-            provider: options.provider,
-            model: options.model,
-          });
-        }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
@@ -148,12 +128,6 @@ function useNewThreadState() {
         });
         applyStickyState(draftId);
 
-        if (options?.provider != null && options?.model != null) {
-          setModelSelection(draftId, {
-            provider: options.provider,
-            model: options.model,
-          });
-        }
         await router.navigate({
           to: "/draft/$draftId",
           params: { draftId },

@@ -6,7 +6,7 @@ import {
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
-  type ProviderKind,
+  ProviderDriverKind,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -22,7 +22,7 @@ import type {
   TurnDiffSummary,
 } from "./types";
 
-export type ProviderPickerKind = ProviderKind;
+export type ProviderPickerKind = ProviderDriverKind;
 
 export const PROVIDER_OPTIONS: Array<{
   value: ProviderPickerKind;
@@ -31,14 +31,24 @@ export const PROVIDER_OPTIONS: Array<{
   /** Shown on the model picker sidebar when relevant */
   pickerSidebarBadge?: "new" | "soon";
 }> = [
-  { value: "codex", label: "Codex", available: true },
-  { value: "copilot", label: "GitHub Copilot", available: true },
-  { value: "claudeAgent", label: "Claude Code", available: true },
-  { value: "cursor", label: "Cursor Agent", available: true, pickerSidebarBadge: "new" },
-  { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
-  { value: "geminiCli", label: "Gemini CLI", available: true },
-  { value: "amp", label: "AMPcode", available: true },
-  { value: "kilo", label: "Kilo", available: true },
+  { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
+  { value: ProviderDriverKind.make("copilot"), label: "GitHub Copilot", available: true },
+  { value: ProviderDriverKind.make("claudeAgent"), label: "Claude Code", available: true },
+  {
+    value: ProviderDriverKind.make("cursor"),
+    label: "Cursor Agent",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+  {
+    value: ProviderDriverKind.make("opencode"),
+    label: "OpenCode",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+  { value: ProviderDriverKind.make("geminiCli"), label: "Gemini CLI", available: true },
+  { value: ProviderDriverKind.make("amp"), label: "AMPcode", available: true },
+  { value: ProviderDriverKind.make("kilo"), label: "Kilo", available: true },
 ];
 
 export interface WorkLogEntry {
@@ -50,7 +60,6 @@ export interface WorkLogEntry {
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
-  activityKind: OrchestrationThreadActivity["kind"];
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
@@ -478,14 +487,10 @@ export function hasActionableProposedPlan(
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
-  sinceCreatedAt?: string,
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries = ordered
-    .filter((activity) =>
-      latestTurnId ? activity.turnId === latestTurnId || activity.turnId === null : true,
-    )
-    .filter((activity) => (sinceCreatedAt ? activity.createdAt >= sinceCreatedAt : true))
+    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
     .filter((activity) => activity.kind !== "task.started")
     .filter((activity) => activity.kind !== "context-window.updated")
@@ -493,7 +498,7 @@ export function deriveWorkLogEntries(
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .map(toDerivedWorkLogEntry);
   return collapseDerivedWorkLogEntries(entries).map(
-    ({ collapseKey: _collapseKey, ...entry }) => entry,
+    ({ activityKind: _activityKind, collapseKey: _collapseKey, ...entry }) => entry,
   );
 }
 
@@ -1155,16 +1160,6 @@ export function hasToolActivityForTurn(
   return activities.some((activity) => activity.turnId === turnId && activity.tone === "tool");
 }
 
-export function hasToolActivitySince(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-  sinceCreatedAt: string | undefined,
-): boolean {
-  return activities.some(
-    (activity) =>
-      activity.tone === "tool" && (sinceCreatedAt ? activity.createdAt >= sinceCreatedAt : true),
-  );
-}
-
 export function deriveTimelineEntries(
   messages: ChatMessage[],
   proposedPlans: ProposedPlan[],
@@ -1218,11 +1213,7 @@ export function deriveCompletionDividerBeforeEntryId(
 
   const turnStartedAt = Date.parse(latestTurn.startedAt);
   const turnCompletedAt = Date.parse(latestTurn.completedAt);
-  if (
-    Number.isNaN(turnStartedAt) ||
-    Number.isNaN(turnCompletedAt) ||
-    turnCompletedAt < turnStartedAt
-  ) {
+  if (Number.isNaN(turnStartedAt) || Number.isNaN(turnCompletedAt)) {
     return null;
   }
 

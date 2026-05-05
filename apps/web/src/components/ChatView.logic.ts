@@ -1,16 +1,15 @@
 import {
   type EnvironmentId,
+  isProviderDriverKind,
   ProjectId,
   type ModelSelection,
-  type OrchestrationThreadActivity,
-  type ProviderKind,
+  type ProviderDriverKind,
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
-import { deriveWorkLogEntries, type WorkLogEntry } from "../session-logic";
 import { Schema } from "effect";
 import { selectThreadByRef, useStore } from "../store";
 import {
@@ -181,30 +180,6 @@ export function cloneComposerImageForRetry(
   }
 }
 
-/**
- * Resolve which provider the health banner should reflect before a session
- * starts. Once a session is active its provider takes precedence; otherwise
- * fall back to the user's currently selected draft provider.
- */
-export function resolveProviderHealthBannerProvider(opts: {
-  sessionProvider: ProviderKind | null;
-  selectedProvider: ProviderKind;
-}): ProviderKind {
-  return opts.sessionProvider ?? opts.selectedProvider;
-}
-
-/**
- * Derive work-log entries that keep completed tool calls from previous turns
- * visible while the user is composing a new message. Passing `undefined` for
- * the turn-id filter causes `deriveWorkLogEntries` to include all activities
- * rather than scoping to only the latest turn.
- */
-export function deriveVisibleThreadWorkLogEntries(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-): WorkLogEntry[] {
-  return deriveWorkLogEntries(activities, undefined);
-}
-
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
@@ -252,15 +227,39 @@ export function threadHasStarted(thread: Thread | null | undefined): boolean {
   );
 }
 
+// `threadProvider` is the open branded driver kind carried by the session.
+// Unknown driver kinds degrade to `null` (i.e. "unlocked"), which is the safe
+// rollback / fork behavior — the routing layer is the right place to surface
+// "driver not installed" errors, not the lock state.
+//
+// `selectedProvider` takes the same open-string shape because the composer
+// now tracks the picker selection as a `ProviderInstanceId` (e.g.
+// `codex_personal`). Custom instance ids that don't directly match a
+// registered driver resolve to `null` here, which matches the existing
+// "unknown driver -> unlocked" semantics. Callers that want the lock to track
+// a custom instance's underlying driver kind should resolve the instance id
+// upstream and pass the correlated kind.
 export function deriveLockedProvider(input: {
   thread: Thread | null | undefined;
-  selectedProvider: ProviderKind | null;
-  threadProvider: ProviderKind | null;
-}): ProviderKind | null {
+  selectedProvider: string | null;
+  threadProvider: string | null;
+}): ProviderDriverKind | null {
   if (!threadHasStarted(input.thread)) {
     return null;
   }
-  return input.thread?.session?.provider ?? input.threadProvider ?? input.selectedProvider ?? null;
+  const sessionProvider = input.thread?.session?.provider ?? null;
+  if (sessionProvider) {
+    return sessionProvider;
+  }
+  const narrowedThreadProvider =
+    input.threadProvider && isProviderDriverKind(input.threadProvider)
+      ? input.threadProvider
+      : null;
+  const narrowedSelectedProvider =
+    input.selectedProvider && isProviderDriverKind(input.selectedProvider)
+      ? input.selectedProvider
+      : null;
+  return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
 }
 
 export async function waitForStartedServerThread(

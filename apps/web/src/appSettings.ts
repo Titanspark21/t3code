@@ -1,11 +1,8 @@
 import { useCallback, useMemo } from "react";
 import { Effect, Schema } from "effect";
-import {
-  DEFAULT_SERVER_SETTINGS,
-  type ProviderStartOptions,
-  type ProviderKind,
-} from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS, type UnifiedSettings } from "@t3tools/contracts/settings";
+import type { ProviderKind } from "./providerKind";
 import { DEFAULT_ACCENT_COLOR, isValidAccentColor, normalizeAccentColor } from "./accentColor";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useSettings, useUpdateSettings } from "./hooks/useSettings";
@@ -19,8 +16,6 @@ import {
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
 } from "./appearance";
-import { normalizeCustomModelSlugs } from "./customModels";
-import { normalizeGitTextGenerationModelByProvider } from "./gitTextGeneration";
 
 // Re-export everything from domain modules for backwards compatibility
 export {
@@ -36,29 +31,47 @@ export {
   DEFAULT_SIDEBAR_THREAD_SORT_ORDER,
 } from "./appearance";
 
-export {
-  MAX_CUSTOM_MODEL_LENGTH,
-  type CustomModelSettingsKey,
-  type ProviderCustomModelConfig,
-  type ProviderCustomModelSettings,
-  MODEL_PROVIDER_SETTINGS,
-  type AppModelOption,
-  normalizeCustomModelSlugs,
-  getCustomModelsForProvider,
-  patchCustomModels,
-  getDefaultCustomModelsForProvider,
-  getCustomModelsByProvider,
-  getAppModelOptions,
-  resolveAppModelSelection,
-  getCustomModelOptionsByProvider,
-  getSlashModelOptions,
-} from "./customModels";
+const MAX_CUSTOM_MODEL_COUNT = 32;
+const MAX_CUSTOM_MODEL_LENGTH_VALUE = 256;
+export const MAX_CUSTOM_MODEL_LENGTH = MAX_CUSTOM_MODEL_LENGTH_VALUE;
 
-export {
-  getGitTextGenerationModelOverride,
-  patchGitTextGenerationModelOverrides,
-  resolveGitTextGenerationModelSelection,
-} from "./gitTextGeneration";
+/**
+ * Lightweight, fork-local custom-model normalizer used while the legacy
+ * AppSettings shape is still alive in the web client. The new instance-keyed
+ * pipeline lives in `modelSelection.ts`; this helper just trims, dedupes and
+ * caps the legacy per-driver string arrays so we can keep round-tripping them
+ * through `withUnifiedCompatSettings` / `toUnifiedPatch` without touching the
+ * removed contracts surface.
+ */
+function normalizeCustomModelSlugsLocal(
+  models: Iterable<string | null | undefined>,
+): ReadonlyArray<string> {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of models) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || trimmed.length > MAX_CUSTOM_MODEL_LENGTH_VALUE) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+    if (out.length >= MAX_CUSTOM_MODEL_COUNT) break;
+  }
+  return out;
+}
+
+function normalizeGitTextGenerationModelByProviderLocal(
+  overrides: Record<string, string>,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [k, v] of Object.entries(overrides)) {
+    if (typeof v !== "string") continue;
+    const trimmed = v.trim();
+    if (!trimmed) continue;
+    next[k === "claudeCode" ? "claudeAgent" : k] = trimmed;
+  }
+  return next;
+}
 
 const APP_SETTINGS_STORAGE_KEY = "t3code:app-settings:v1";
 const APP_SETTINGS_PROVIDER_CUSTOM_MODEL_KEYS = {
@@ -74,6 +87,7 @@ const APP_SETTINGS_PROVIDER_CUSTOM_MODEL_KEYS = {
 const MIRRORED_CLIENT_KEYS = new Set<keyof AppSettings>([
   "confirmThreadDelete",
   "diffWordWrap",
+  "diffIgnoreWhitespace",
   "sidebarProjectSortOrder",
   "sidebarThreadSortOrder",
   "timestampFormat",
@@ -120,6 +134,7 @@ export const AppSettingsSchema = Schema.Struct({
   ),
   confirmThreadDelete: Schema.Boolean.pipe(withDefaults(() => true)),
   diffWordWrap: Schema.Boolean.pipe(withDefaults(() => false)),
+  diffIgnoreWhitespace: Schema.Boolean.pipe(withDefaults(() => true)),
   enableAssistantStreaming: Schema.Boolean.pipe(withDefaults(() => false)),
   showCommandOutput: Schema.Boolean.pipe(withDefaults(() => true)),
   showFileChangeDiffs: Schema.Boolean.pipe(withDefaults(() => true)),
@@ -175,15 +190,15 @@ const DEFAULT_APP_SETTINGS = AppSettingsSchema.make({});
 function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
-    customCodexModels: normalizeCustomModelSlugs(settings.customCodexModels, "codex"),
-    customCopilotModels: normalizeCustomModelSlugs(settings.customCopilotModels, "copilot"),
-    customClaudeModels: normalizeCustomModelSlugs(settings.customClaudeModels, "claudeAgent"),
-    customCursorModels: normalizeCustomModelSlugs(settings.customCursorModels, "cursor"),
-    customOpencodeModels: normalizeCustomModelSlugs(settings.customOpencodeModels, "opencode"),
-    customGeminiCliModels: normalizeCustomModelSlugs(settings.customGeminiCliModels, "geminiCli"),
-    customAmpModels: normalizeCustomModelSlugs(settings.customAmpModels, "amp"),
-    customKiloModels: normalizeCustomModelSlugs(settings.customKiloModels, "kilo"),
-    gitTextGenerationModelByProvider: normalizeGitTextGenerationModelByProvider(
+    customCodexModels: normalizeCustomModelSlugsLocal(settings.customCodexModels),
+    customCopilotModels: normalizeCustomModelSlugsLocal(settings.customCopilotModels),
+    customClaudeModels: normalizeCustomModelSlugsLocal(settings.customClaudeModels),
+    customCursorModels: normalizeCustomModelSlugsLocal(settings.customCursorModels),
+    customOpencodeModels: normalizeCustomModelSlugsLocal(settings.customOpencodeModels),
+    customGeminiCliModels: normalizeCustomModelSlugsLocal(settings.customGeminiCliModels),
+    customAmpModels: normalizeCustomModelSlugsLocal(settings.customAmpModels),
+    customKiloModels: normalizeCustomModelSlugsLocal(settings.customKiloModels),
+    gitTextGenerationModelByProvider: normalizeGitTextGenerationModelByProviderLocal(
       settings.gitTextGenerationModelByProvider,
     ),
     accentColor: normalizeAccentColor(settings.accentColor),
@@ -193,30 +208,6 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
         .map(([k, v]) => [k, normalizeAccentColor(v)]),
     ),
   };
-}
-
-export function getProviderStartOptions(
-  settings: Pick<AppSettings, "claudeBinaryPath" | "codexBinaryPath" | "codexHomePath">,
-): ProviderStartOptions | undefined {
-  const providerOptions: ProviderStartOptions = {
-    ...(settings.codexBinaryPath || settings.codexHomePath
-      ? {
-          codex: {
-            ...(settings.codexBinaryPath ? { binaryPath: settings.codexBinaryPath } : {}),
-            ...(settings.codexHomePath ? { homePath: settings.codexHomePath } : {}),
-          },
-        }
-      : {}),
-    ...(settings.claudeBinaryPath
-      ? {
-          claudeAgent: {
-            binaryPath: settings.claudeBinaryPath,
-          },
-        }
-      : {}),
-  };
-
-  return Object.keys(providerOptions).length > 0 ? providerOptions : undefined;
 }
 
 let cachedRawSettings: string | null = null;
@@ -269,6 +260,7 @@ function withUnifiedCompatSettings(
     | "confirmThreadDelete"
     | "defaultThreadEnvMode"
     | "diffWordWrap"
+    | "diffIgnoreWhitespace"
     | "enableAssistantStreaming"
     | "providers"
     | "sidebarProjectSortOrder"
@@ -286,6 +278,7 @@ function withUnifiedCompatSettings(
     defaultThreadEnvMode: unifiedSettings.defaultThreadEnvMode,
     confirmThreadDelete: unifiedSettings.confirmThreadDelete,
     diffWordWrap: unifiedSettings.diffWordWrap,
+    diffIgnoreWhitespace: unifiedSettings.diffIgnoreWhitespace,
     enableAssistantStreaming: unifiedSettings.enableAssistantStreaming,
     sidebarProjectSortOrder: unifiedSettings.sidebarProjectSortOrder,
     sidebarThreadSortOrder: unifiedSettings.sidebarThreadSortOrder,
@@ -340,7 +333,7 @@ function toUnifiedPatch(patch: Partial<AppSettings>): Partial<UnifiedSettings> {
     }
     providersPatch[provider] = {
       ...(providersPatch[provider] ?? {}),
-      customModels: normalizeCustomModelSlugs(models, provider),
+      customModels: normalizeCustomModelSlugsLocal(models),
     };
   }
   return {
@@ -348,6 +341,9 @@ function toUnifiedPatch(patch: Partial<AppSettings>): Partial<UnifiedSettings> {
       ? { confirmThreadDelete: patch.confirmThreadDelete }
       : {}),
     ...(patch.diffWordWrap !== undefined ? { diffWordWrap: patch.diffWordWrap } : {}),
+    ...(patch.diffIgnoreWhitespace !== undefined
+      ? { diffIgnoreWhitespace: patch.diffIgnoreWhitespace }
+      : {}),
     ...(patch.sidebarProjectSortOrder !== undefined
       ? { sidebarProjectSortOrder: patch.sidebarProjectSortOrder }
       : {}),
@@ -402,6 +398,7 @@ export function useAppSettings() {
       confirmThreadDelete: unifiedSettings.confirmThreadDelete,
       defaultThreadEnvMode: unifiedSettings.defaultThreadEnvMode,
       diffWordWrap: unifiedSettings.diffWordWrap,
+      diffIgnoreWhitespace: unifiedSettings.diffIgnoreWhitespace,
       enableAssistantStreaming: unifiedSettings.enableAssistantStreaming,
       providers: unifiedSettings.providers,
       sidebarProjectSortOrder: unifiedSettings.sidebarProjectSortOrder,

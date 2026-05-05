@@ -26,7 +26,8 @@ import { ModelSelection } from "@t3tools/contracts";
 import { ensureLocalApi } from "~/localApi";
 import { Predicate, Schema, Struct } from "effect";
 import type { DeepMutable } from "effect/Types";
-import { normalizeCustomModelSlugs } from "~/customModels";
+import { normalizeCustomModelSlugs } from "~/modelSelection";
+import { ProviderDriverKind } from "@t3tools/contracts";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { applySettingsUpdated, getServerConfig, useServerSettings } from "~/rpc/serverState";
 
@@ -239,10 +240,10 @@ export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<s
     const sel = legacySettings.textGenerationModelSelection;
     const selPatch: NonNullable<DeepMutable<ServerSettingsPatch>["textGenerationModelSelection"]> =
       {
-        provider: sel.provider,
+        instanceId: sel.instanceId,
         model: sel.model,
-        ...("options" in sel && sel.options != null ? { options: sel.options } : {}),
-      } as NonNullable<DeepMutable<ServerSettingsPatch>["textGenerationModelSelection"]>;
+        ...(sel.options != null ? { options: [...sel.options] } : {}),
+      };
     patch.textGenerationModelSelection = selPatch;
   }
 
@@ -263,7 +264,8 @@ export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<s
     patch.providers.codex ??= {};
     patch.providers.codex.customModels = normalizeCustomModelSlugs(
       legacySettings.customCodexModels,
-      "codex",
+      new Set(),
+      ProviderDriverKind.make("codex"),
     );
   }
 
@@ -278,7 +280,8 @@ export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<s
     patch.providers.claudeAgent ??= {};
     patch.providers.claudeAgent.customModels = normalizeCustomModelSlugs(
       legacySettings.customClaudeModels,
-      "claudeAgent",
+      new Set(),
+      ProviderDriverKind.make("claudeAgent"),
     );
   }
 
@@ -299,7 +302,8 @@ export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<s
     patch.providers.copilot ??= {};
     patch.providers.copilot.customModels = normalizeCustomModelSlugs(
       legacySettings.customCopilotModels,
-      "copilot",
+      new Set(),
+      ProviderDriverKind.make("copilot"),
     );
   }
 

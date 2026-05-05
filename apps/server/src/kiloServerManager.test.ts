@@ -7,7 +7,21 @@ import {
   type KiloClient,
   type KiloProviderSession,
   type KiloSessionContext,
+  type SharedServerState,
 } from "./kilo/types.ts";
+
+vi.mock("./kilo/serverLifecycle.ts", async () => {
+  const actual =
+    await vi.importActual<typeof import("./kilo/serverLifecycle.ts")>(
+      "./kilo/serverLifecycle.ts",
+    );
+  return {
+    ...actual,
+    ensureServer: vi.fn(),
+  };
+});
+
+import * as ServerLifecycle from "./kilo/serverLifecycle.ts";
 
 class TestKiloServerManager extends KiloServerManager {
   seedSession(context: KiloSessionContext) {
@@ -137,5 +151,60 @@ describe("KiloServerManager.respondToRequest", () => {
     });
     expect(client.session.abort).not.toHaveBeenCalled();
     expect(context.activeTurnId).toBe(TurnId.make("turn-kilo"));
+  });
+});
+
+describe("KiloServerManager.getOrStartServer", () => {
+  it("kills the spawned server child on stopAll (manager-owned lifecycle)", async () => {
+    // Regression: KiloTextGeneration previously called the standalone
+    // `ensureServer` helper directly and stored the returned server in a
+    // local closure variable, so the manager's `stopAll()` finalizer never
+    // killed the spawned child. Routing through `getOrStartServer` keeps the
+    // child owned by the manager.
+    const childKill = vi.fn();
+    const fakeServer = {
+      baseUrl: "http://127.0.0.1:1",
+      child: { kill: childKill, killed: false } as unknown,
+      authHeader: undefined,
+    } as unknown as SharedServerState;
+
+    const ensureServerMock = vi.mocked(ServerLifecycle.ensureServer);
+    ensureServerMock.mockReset();
+    ensureServerMock.mockResolvedValue({ state: fakeServer, serverPromise: undefined });
+
+    const manager = new KiloServerManager();
+    const server = await manager.getOrStartServer({ binaryPath: "kilo" });
+    expect(server).toBe(fakeServer);
+
+    manager.stopAll();
+    expect(childKill).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes concurrent starts so callers share one server", async () => {
+    let started = 0;
+    const ensureServerMock = vi.mocked(ServerLifecycle.ensureServer);
+    ensureServerMock.mockReset();
+    ensureServerMock.mockImplementation(async () => {
+      started += 1;
+      // Simulate an async start — both callers should see the same pending
+      // promise and end up with the same SharedServerState.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const fakeServer = {
+        baseUrl: `http://127.0.0.1:${started}`,
+        child: { kill: vi.fn(), killed: false } as unknown,
+        authHeader: undefined,
+      } as unknown as SharedServerState;
+      return { state: fakeServer, serverPromise: undefined };
+    });
+
+    const manager = new KiloServerManager();
+    const [a, b] = await Promise.all([
+      manager.getOrStartServer({ binaryPath: "kilo" }),
+      manager.getOrStartServer({ binaryPath: "kilo" }),
+    ]);
+    expect(started).toBe(1);
+    expect(a).toBe(b);
+
+    manager.stopAll();
   });
 });

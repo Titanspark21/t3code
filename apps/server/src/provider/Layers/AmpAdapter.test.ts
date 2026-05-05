@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   ApprovalRequestId,
   EventId,
+  GenericProviderSettings,
   RuntimeItemId,
   ThreadId,
   TurnId,
@@ -13,12 +14,10 @@ import {
   type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
 import { it, vi } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 
 import { AmpServerManager } from "../../ampServerManager.ts";
-import { AmpAdapter } from "../Services/AmpAdapter.ts";
-import { makeAmpAdapterLive } from "./AmpAdapter.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import { makeAmpAdapter } from "./AmpAdapter.ts";
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
@@ -105,81 +104,139 @@ class FakeAmpManager extends AmpServerManager {
   }
 }
 
-const manager = new FakeAmpManager();
-const layer = it.layer(
-  makeAmpAdapterLive({ manager }).pipe(Layer.provideMerge(ServerSettingsService.layerTest())),
+const enabledAmpSettings = Schema.decodeSync(GenericProviderSettings)({
+  enabled: true,
+  binaryPath: "",
+  configDir: "",
+  customModels: [],
+});
+
+const disabledAmpSettings = Schema.decodeSync(GenericProviderSettings)({
+  enabled: false,
+  binaryPath: "",
+  configDir: "",
+  customModels: [],
+});
+
+it.effect("AmpAdapter delegates session startup to the manager", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(enabledAmpSettings, { manager });
+
+    const session = yield* adapter.startSession({
+      threadId: asThreadId("thread-1"),
+      runtimeMode: "full-access",
+    });
+
+    assert.equal(session.provider, "amp");
+    assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
+  }).pipe(Effect.scoped),
 );
 
-layer("AmpAdapterLive", (it) => {
-  it.effect("delegates session startup to the manager", () =>
-    Effect.gen(function* () {
-      manager.startSessionImpl.mockClear();
-      const adapter = yield* AmpAdapter;
+it.effect("AmpAdapter rejects startSession when provider is disabled", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(disabledAmpSettings, { manager });
 
-      const session = yield* adapter.startSession({
-        threadId: asThreadId("thread-1"),
+    const result = yield* adapter
+      .startSession({
+        threadId: asThreadId("thread-disabled"),
         runtimeMode: "full-access",
-      });
+      })
+      .pipe(Effect.result);
 
-      assert.equal(session.provider, "amp");
-      assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
-    }),
-  );
+    assert.equal(result._tag, "Failure");
+    if (result._tag !== "Failure") {
+      return;
+    }
+    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+  }).pipe(Effect.scoped),
+);
 
-  it.effect("rejects attachments until AMP attachment wiring exists", () =>
-    Effect.gen(function* () {
-      const adapter = yield* AmpAdapter;
-      const result = yield* adapter
-        .sendTurn({
-          threadId: asThreadId("thread-attachments"),
-          input: "hello",
-          attachments: [{ id: "attachment-1" }] as never,
-        })
-        .pipe(Effect.result);
+it.effect("AmpAdapter rejects attachments until AMP attachment wiring exists", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(enabledAmpSettings, { manager });
 
-      assert.equal(result._tag, "Failure");
-      if (result._tag !== "Failure") {
-        return;
-      }
-      assert.equal(result.failure._tag, "ProviderAdapterValidationError");
-    }),
-  );
+    const result = yield* adapter
+      .sendTurn({
+        threadId: asThreadId("thread-attachments"),
+        input: "hello",
+        attachments: [{ id: "attachment-1" }] as never,
+      })
+      .pipe(Effect.result);
 
-  it.effect("forwards manager runtime events through the adapter stream", () =>
-    Effect.gen(function* () {
-      const adapter = yield* AmpAdapter;
+    assert.equal(result._tag, "Failure");
+    if (result._tag !== "Failure") {
+      return;
+    }
+    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+  }).pipe(Effect.scoped),
+);
 
-      const event = {
-        type: "content.delta",
-        eventId: asEventId("evt-amp-delta"),
-        provider: "amp",
-        createdAt: new Date().toISOString(),
-        threadId: asThreadId("thread-1"),
-        turnId: asTurnId("turn-1"),
-        itemId: asItemId("item-1"),
-        payload: {
-          streamKind: "assistant_text",
-          delta: "hello",
-        },
-      } as unknown as ProviderRuntimeEvent;
+it.effect("AmpAdapter rejects rollbackThread with non-positive numTurns", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(enabledAmpSettings, { manager });
 
-      // Emit first — the event is buffered in the unbounded queue via the
-      // listener that was registered during layer construction.
-      manager.emit("event", event);
+    const result = yield* adapter
+      .rollbackThread(asThreadId("thread-rollback"), 0)
+      .pipe(Effect.result);
 
-      // Now consume the head. Since the queue already has an item, this
-      // resolves immediately without a race condition.
-      const received = yield* Stream.runHead(adapter.streamEvents);
+    assert.equal(result._tag, "Failure");
+    if (result._tag !== "Failure") {
+      return;
+    }
+    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+  }).pipe(Effect.scoped),
+);
 
-      assert.equal(received._tag, "Some");
-      if (received._tag !== "Some") {
-        return;
-      }
-      assert.equal(received.value.type, "content.delta");
-      if (received.value.type !== "content.delta") {
-        return;
-      }
-      assert.equal(received.value.payload.delta, "hello");
-    }),
-  );
-});
+it.effect("AmpAdapter forwards interruptTurn calls to the manager", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(enabledAmpSettings, { manager });
+
+    yield* adapter.interruptTurn(asThreadId("thread-interrupt"));
+
+    assert.equal(manager.interruptTurnImpl.mock.calls.length, 1);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("AmpAdapter forwards manager runtime events through the adapter stream", () =>
+  Effect.gen(function* () {
+    const manager = new FakeAmpManager();
+    const adapter = yield* makeAmpAdapter(enabledAmpSettings, { manager });
+
+    const event = {
+      type: "content.delta",
+      eventId: asEventId("evt-amp-delta"),
+      provider: "amp",
+      createdAt: new Date().toISOString(),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      itemId: asItemId("item-1"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "hello",
+      },
+    } as unknown as ProviderRuntimeEvent;
+
+    // Emit first — the event is buffered in the unbounded queue via the
+    // listener that was registered during adapter construction.
+    manager.emit("event", event);
+
+    // Now consume the head. Since the queue already has an item, this
+    // resolves immediately without a race condition.
+    const received = yield* Stream.runHead(adapter.streamEvents);
+
+    assert.equal(received._tag, "Some");
+    if (received._tag !== "Some") {
+      return;
+    }
+    assert.equal(received.value.type, "content.delta");
+    if (received.value.type !== "content.delta") {
+      return;
+    }
+    assert.equal(received.value.payload.delta, "hello");
+  }).pipe(Effect.scoped),
+);

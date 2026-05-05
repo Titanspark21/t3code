@@ -1,24 +1,20 @@
 import assert from "node:assert/strict";
 
 import {
-  ApprovalRequestId,
   EventId,
   RuntimeItemId,
   ThreadId,
   TurnId,
-  type ProviderApprovalDecision,
   type ProviderRuntimeEvent,
   type ProviderSession,
   type ProviderTurnStartResult,
-  type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
 import { it, vi } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
+import { GenericProviderSettings } from "@t3tools/contracts";
 
 import { KiloServerManager } from "../../kiloServerManager.ts";
-import { KiloAdapter } from "../Services/KiloAdapter.ts";
-import { makeKiloAdapterLive } from "./KiloAdapter.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import { makeKiloAdapter } from "./KiloAdapter.ts";
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
@@ -47,13 +43,6 @@ class FakeKiloManager extends KiloServerManager {
     }),
   );
 
-  public interruptTurnImpl = vi.fn(async (): Promise<void> => undefined);
-  public respondToRequestImpl = vi.fn(async (): Promise<void> => undefined);
-  public respondToUserInputImpl = vi.fn(async (): Promise<void> => undefined);
-  public readThreadImpl = vi.fn(async (threadId: ThreadId) => ({ threadId, turns: [] }));
-  public rollbackThreadImpl = vi.fn(async (threadId: ThreadId) => ({ threadId, turns: [] }));
-  public stopAllImpl = vi.fn(() => undefined);
-
   override startSession(input: { threadId: ThreadId }): Promise<ProviderSession> {
     return this.startSessionImpl(input.threadId);
   }
@@ -63,31 +52,15 @@ class FakeKiloManager extends KiloServerManager {
   }
 
   override interruptTurn(_threadId: ThreadId): Promise<void> {
-    return this.interruptTurnImpl();
-  }
-
-  override respondToRequest(
-    _threadId: ThreadId,
-    _requestId: ApprovalRequestId,
-    _decision: ProviderApprovalDecision,
-  ): Promise<void> {
-    return this.respondToRequestImpl();
-  }
-
-  override respondToUserInput(
-    _threadId: ThreadId,
-    _requestId: ApprovalRequestId,
-    _answers: ProviderUserInputAnswers,
-  ): Promise<void> {
-    return this.respondToUserInputImpl();
+    return Promise.resolve();
   }
 
   override readThread(threadId: ThreadId) {
-    return this.readThreadImpl(threadId);
+    return Promise.resolve({ threadId, turns: [] });
   }
 
   override rollbackThread(threadId: ThreadId) {
-    return this.rollbackThreadImpl(threadId);
+    return Promise.resolve({ threadId, turns: [] });
   }
 
   override stopSession(_threadId: ThreadId): void {}
@@ -100,21 +73,16 @@ class FakeKiloManager extends KiloServerManager {
     return false;
   }
 
-  override stopAll(): void {
-    this.stopAllImpl();
-  }
+  override stopAll(): void {}
 }
 
-const manager = new FakeKiloManager();
-const layer = it.layer(
-  makeKiloAdapterLive({ manager }).pipe(Layer.provideMerge(ServerSettingsService.layerTest())),
-);
+const enabledSettings = Schema.decodeSync(GenericProviderSettings)({ enabled: true });
 
-layer("KiloAdapterLive", (it) => {
-  it.effect("delegates session startup to the manager", () =>
+it.effect("makeKiloAdapter delegates session startup to the manager", () =>
+  Effect.scoped(
     Effect.gen(function* () {
-      manager.startSessionImpl.mockClear();
-      const adapter = yield* KiloAdapter;
+      const manager = new FakeKiloManager();
+      const adapter = yield* makeKiloAdapter(enabledSettings, { manager });
 
       const session = yield* adapter.startSession({
         threadId: asThreadId("thread-1"),
@@ -124,11 +92,14 @@ layer("KiloAdapterLive", (it) => {
       assert.equal(session.provider, "kilo");
       assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
     }),
-  );
+  ),
+);
 
-  it.effect("rejects attachments until Kilo attachment wiring exists", () =>
+it.effect("makeKiloAdapter rejects attachments until Kilo wiring exists", () =>
+  Effect.scoped(
     Effect.gen(function* () {
-      const adapter = yield* KiloAdapter;
+      const adapter = yield* makeKiloAdapter(enabledSettings, { manager: new FakeKiloManager() });
+
       const result = yield* adapter
         .sendTurn({
           threadId: asThreadId("thread-attachments"),
@@ -143,11 +114,14 @@ layer("KiloAdapterLive", (it) => {
       }
       assert.equal(result.failure._tag, "ProviderAdapterValidationError");
     }),
-  );
+  ),
+);
 
-  it.effect("forwards manager runtime events through the adapter stream", () =>
+it.effect("makeKiloAdapter forwards manager runtime events through the stream", () =>
+  Effect.scoped(
     Effect.gen(function* () {
-      const adapter = yield* KiloAdapter;
+      const manager = new FakeKiloManager();
+      const adapter = yield* makeKiloAdapter(enabledSettings, { manager });
 
       const event = {
         type: "content.delta",
@@ -163,12 +137,8 @@ layer("KiloAdapterLive", (it) => {
         },
       } as unknown as ProviderRuntimeEvent;
 
-      // Emit first — the event is buffered in the unbounded queue via the
-      // listener that was registered during layer construction.
       manager.emit("event", event);
 
-      // Now consume the head. Since the queue already has an item, this
-      // resolves immediately without a race condition.
       const received = yield* Stream.runHead(adapter.streamEvents);
 
       assert.equal(received._tag, "Some");
@@ -181,5 +151,24 @@ layer("KiloAdapterLive", (it) => {
       }
       assert.equal(received.value.payload.delta, "hello");
     }),
-  );
-});
+  ),
+);
+
+it.effect("makeKiloAdapter rejects startSession when disabled", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const disabled = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
+      const adapter = yield* makeKiloAdapter(disabled, { manager: new FakeKiloManager() });
+
+      const result = yield* adapter
+        .startSession({ threadId: asThreadId("thread-disabled"), runtimeMode: "full-access" })
+        .pipe(Effect.result);
+
+      assert.equal(result._tag, "Failure");
+      if (result._tag !== "Failure") {
+        return;
+      }
+      assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    }),
+  ),
+);
