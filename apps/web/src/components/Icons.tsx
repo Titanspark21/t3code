@@ -910,10 +910,7 @@ export const KiloIcon: Icon = ({ className, ...props }) => (
     className={cn(className)}
   >
     <rect width="24" height="24" rx="5" fill="#FF6B35" />
-    <path
-      d="M8 6.5h2.2v4.4l3.6-4.4h2.7l-3.9 4.6 4.1 6.4h-2.7l-3.1-5-.7.8v4.2H8V6.5Z"
-      fill="#fff"
-    />
+    <path d="M8 6.5h2.2v4.4l3.6-4.4h2.7l-3.9 4.6 4.1 6.4h-2.7l-3.1-5-.7.8v4.2H8V6.5Z" fill="#fff" />
   </svg>
 );
 

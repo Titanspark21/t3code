@@ -78,10 +78,7 @@ import {
   recordTurnUsage,
   type CopilotTurnTrackingState,
 } from "./copilotTurnTracking.ts";
-import {
-  resolveBundledCopilotCliPath,
-  withSanitizedCopilotDesktopEnv,
-} from "./copilotCliPath.ts";
+import { resolveBundledCopilotCliPath, withSanitizedCopilotDesktopEnv } from "./copilotCliPath.ts";
 import { CopilotAdapter, type CopilotAdapterShape } from "../Services/CopilotAdapter.ts";
 import { toMessage } from "../toMessage.ts";
 import type {
@@ -259,9 +256,7 @@ function getCopilotReasoningEffort(
     const copilot = asRecord(record?.copilot);
     raw = normalizeString(copilot?.reasoningEffort);
   }
-  return raw === "low" || raw === "medium" || raw === "high" || raw === "xhigh"
-    ? raw
-    : undefined;
+  return raw === "low" || raw === "medium" || raw === "high" || raw === "xhigh" ? raw : undefined;
 }
 
 function extractResumeSessionId(resumeCursor: unknown): string | undefined {
@@ -590,9 +585,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
   ): ReadonlyArray<ProviderRuntimeEvent> => {
     const currentTurnId = record.currentTurnId;
     const currentProviderTurnId = record.currentProviderTurnId;
-    const resolveOrchestrationTurnId = (
-      providerTurnId: TurnId | undefined,
-    ): TurnId | undefined => {
+    const resolveOrchestrationTurnId = (providerTurnId: TurnId | undefined): TurnId | undefined => {
       if (providerTurnId && currentProviderTurnId && providerTurnId === currentProviderTurnId) {
         return currentTurnId ?? providerTurnId;
       }
@@ -881,7 +874,9 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
         const outputTokens = event.data.outputTokens;
         const cachedInputTokens = event.data.cacheReadTokens;
         const durationMs =
-          event.data.duration !== undefined ? Math.max(0, Math.floor(event.data.duration)) : undefined;
+          event.data.duration !== undefined
+            ? Math.max(0, Math.floor(event.data.duration))
+            : undefined;
         const usedTokens = Math.max(0, (inputTokens ?? 0) + (outputTokens ?? 0));
         return [
           {
@@ -908,9 +903,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
       case "abort": {
         const abortedTurnRefs = completionTurnRefs(record);
         const abortedBase =
-          abortedTurnRefs.turnId || abortedTurnRefs.providerTurnId
-            ? base(abortedTurnRefs)
-            : base();
+          abortedTurnRefs.turnId || abortedTurnRefs.providerTurnId ? base(abortedTurnRefs) : base();
         return [
           {
             ...abortedBase,
@@ -1009,8 +1002,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
             type: "task.started",
             payload: {
               taskId:
-                toRuntimeTaskId(event.data.toolCallId) ??
-                RuntimeTaskId.make(event.data.toolCallId),
+                toRuntimeTaskId(event.data.toolCallId) ?? RuntimeTaskId.make(event.data.toolCallId),
               description: trimToUndefined(event.data.agentDescription),
               taskType: "subagent",
             },
@@ -1023,8 +1015,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
             type: "task.completed",
             payload: {
               taskId:
-                toRuntimeTaskId(event.data.toolCallId) ??
-                RuntimeTaskId.make(event.data.toolCallId),
+                toRuntimeTaskId(event.data.toolCallId) ?? RuntimeTaskId.make(event.data.toolCallId),
               status: "completed",
               ...(trimToUndefined(event.data.agentDisplayName)
                 ? { summary: event.data.agentDisplayName }
@@ -1039,8 +1030,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
             type: "task.completed",
             payload: {
               taskId:
-                toRuntimeTaskId(event.data.toolCallId) ??
-                RuntimeTaskId.make(event.data.toolCallId),
+                toRuntimeTaskId(event.data.toolCallId) ?? RuntimeTaskId.make(event.data.toolCallId),
               status: "failed",
               ...(trimToUndefined(event.data.error) ? { summary: event.data.error } : {}),
             },
@@ -1174,8 +1164,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "session.reasoningEffort",
-          issue:
-            "GitHub Copilot reasoning effort requires an explicit supported model selection.",
+          issue: "GitHub Copilot reasoning effort requires an explicit supported model selection.",
         });
       }
 
@@ -1308,9 +1297,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
   const getSessionRecord = (threadId: ThreadId) => {
     const record = sessions.get(threadId);
     if (!record) {
-      return Effect.fail(
-        new ProviderAdapterSessionNotFoundError({ provider: PROVIDER, threadId }),
-      );
+      return Effect.fail(new ProviderAdapterSessionNotFoundError({ provider: PROVIDER, threadId }));
     }
     return Effect.succeed(record);
   };

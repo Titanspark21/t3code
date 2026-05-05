@@ -21,10 +21,7 @@ import {
 import { Effect, Queue, Stream } from "effect";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
-import {
-  ProviderAdapterValidationError,
-  type ProviderAdapterError,
-} from "../Errors.ts";
+import { ProviderAdapterValidationError, type ProviderAdapterError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { makeErrorHelpers } from "./ProviderAdapterUtils.ts";

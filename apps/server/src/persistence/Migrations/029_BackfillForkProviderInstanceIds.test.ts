@@ -8,22 +8,20 @@ import * as NodeSqliteClient from "../NodeSqliteClient.ts";
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
 layer("029_BackfillForkProviderInstanceIds", (it) => {
-  it.effect(
-    "backfills provider_instance_id for fork drivers across both routing tables",
-    () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
+  it.effect("backfills provider_instance_id for fork drivers across both routing tables", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
 
-        // Run all migrations up to (and including) 028 so the
-        // `provider_instance_id` column exists but is left NULL for
-        // historical rows.
-        yield* runMigrations({ toMigrationInclusive: 28 });
+      // Run all migrations up to (and including) 028 so the
+      // `provider_instance_id` column exists but is left NULL for
+      // historical rows.
+      yield* runMigrations({ toMigrationInclusive: 28 });
 
-        // Seed a project + thread for each fork driver to satisfy the
-        // foreign-key relationships used by the projection tables.
-        const forkKinds = ["amp", "copilot", "geminiCli", "kilo"] as const;
-        for (const kind of forkKinds) {
-          yield* sql`
+      // Seed a project + thread for each fork driver to satisfy the
+      // foreign-key relationships used by the projection tables.
+      const forkKinds = ["amp", "copilot", "geminiCli", "kilo"] as const;
+      for (const kind of forkKinds) {
+        yield* sql`
             INSERT INTO projection_projects (
               project_id,
               title,
@@ -46,7 +44,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             )
           `;
 
-          yield* sql`
+        yield* sql`
             INSERT INTO projection_threads (
               thread_id,
               project_id,
@@ -79,7 +77,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             )
           `;
 
-          yield* sql`
+        yield* sql`
             INSERT INTO projection_thread_sessions (
               thread_id,
               status,
@@ -106,7 +104,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             )
           `;
 
-          yield* sql`
+        yield* sql`
             INSERT INTO provider_session_runtime (
               thread_id,
               provider_name,
@@ -130,11 +128,11 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
               NULL
             )
           `;
-        }
+      }
 
-        // Also seed a non-fork (upstream) driver row to verify the
-        // backfill leaves it untouched.
-        yield* sql`
+      // Also seed a non-fork (upstream) driver row to verify the
+      // backfill leaves it untouched.
+      yield* sql`
           INSERT INTO projection_projects (
             project_id,
             title,
@@ -156,7 +154,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             NULL
           )
         `;
-        yield* sql`
+      yield* sql`
           INSERT INTO projection_threads (
             thread_id,
             project_id,
@@ -188,7 +186,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             NULL
           )
         `;
-        yield* sql`
+      yield* sql`
           INSERT INTO projection_thread_sessions (
             thread_id,
             status,
@@ -214,7 +212,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
             NULL
           )
         `;
-        yield* sql`
+      yield* sql`
           INSERT INTO provider_session_runtime (
             thread_id,
             provider_name,
@@ -239,46 +237,46 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
           )
         `;
 
-        // Run migration 029.
-        yield* runMigrations({ toMigrationInclusive: 31 });
+      // Run migration 029.
+      yield* runMigrations({ toMigrationInclusive: 31 });
 
-        // Each fork row should now have its `provider_instance_id` set
-        // to the matching driver kind (the default instance id).
-        for (const kind of forkKinds) {
-          const sessionRows = yield* sql<{ readonly providerInstanceId: string }>`
+      // Each fork row should now have its `provider_instance_id` set
+      // to the matching driver kind (the default instance id).
+      for (const kind of forkKinds) {
+        const sessionRows = yield* sql<{ readonly providerInstanceId: string }>`
             SELECT provider_instance_id AS "providerInstanceId"
             FROM projection_thread_sessions
             WHERE thread_id = ${`thread-${kind}`}
           `;
-          assert.deepStrictEqual(sessionRows, [{ providerInstanceId: kind }]);
+        assert.deepStrictEqual(sessionRows, [{ providerInstanceId: kind }]);
 
-          const runtimeRows = yield* sql<{ readonly providerInstanceId: string }>`
+        const runtimeRows = yield* sql<{ readonly providerInstanceId: string }>`
             SELECT provider_instance_id AS "providerInstanceId"
             FROM provider_session_runtime
             WHERE thread_id = ${`thread-${kind}`}
           `;
-          assert.deepStrictEqual(runtimeRows, [{ providerInstanceId: kind }]);
-        }
+        assert.deepStrictEqual(runtimeRows, [{ providerInstanceId: kind }]);
+      }
 
-        // The upstream-driver row must be untouched (still NULL).
-        const claudeSession = yield* sql<{
-          readonly providerInstanceId: string | null;
-        }>`
+      // The upstream-driver row must be untouched (still NULL).
+      const claudeSession = yield* sql<{
+        readonly providerInstanceId: string | null;
+      }>`
           SELECT provider_instance_id AS "providerInstanceId"
           FROM projection_thread_sessions
           WHERE thread_id = 'thread-claude'
         `;
-        assert.deepStrictEqual(claudeSession, [{ providerInstanceId: null }]);
+      assert.deepStrictEqual(claudeSession, [{ providerInstanceId: null }]);
 
-        const claudeRuntime = yield* sql<{
-          readonly providerInstanceId: string | null;
-        }>`
+      const claudeRuntime = yield* sql<{
+        readonly providerInstanceId: string | null;
+      }>`
           SELECT provider_instance_id AS "providerInstanceId"
           FROM provider_session_runtime
           WHERE thread_id = 'thread-claude'
         `;
-        assert.deepStrictEqual(claudeRuntime, [{ providerInstanceId: null }]);
-      }),
+      assert.deepStrictEqual(claudeRuntime, [{ providerInstanceId: null }]);
+    }),
   );
 
   it.effect("is idempotent — re-running does not overwrite already-set ids", () =>

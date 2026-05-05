@@ -18,10 +18,7 @@ import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { vi } from "vitest";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
-import {
-  makeGeminiCliAdapter,
-  type GeminiCliAdapterShape,
-} from "./GeminiCliAdapter.ts";
+import { makeGeminiCliAdapter, type GeminiCliAdapterShape } from "./GeminiCliAdapter.ts";
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
