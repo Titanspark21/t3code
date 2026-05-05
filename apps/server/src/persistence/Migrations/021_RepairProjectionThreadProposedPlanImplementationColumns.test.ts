@@ -39,7 +39,13 @@ layer("021_RepairProjectionThreadProposedPlanImplementationColumns", (it) => {
           !columnsBeforeRepair.some((column) => column.name === "implementation_thread_id"),
         );
 
-        yield* runMigrations();
+        // Only run through the repair migration itself (registered id 24).
+        // Running the rest of the chain (e.g. migration #28 touches
+        // `model_selection_json`) would fail because the faked-as-ran
+        // migration 16 never actually executed in this scenario, so the
+        // column doesn't exist. The test only asserts the repair migration's
+        // own behavior, so stopping after it is safe and accurate.
+        yield* runMigrations({ toMigrationInclusive: 24 });
 
         const columnsAfterRepair = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_thread_proposed_plans)
