@@ -15,7 +15,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
       // Run all migrations up to (and including) 028 so the
       // `provider_instance_id` column exists but is left NULL for
       // historical rows.
-      yield* runMigrations({ toMigrationInclusive: 28 });
+      yield* runMigrations({ toMigrationInclusive: 30 });
 
       // Seed a project + thread for each fork driver to satisfy the
       // foreign-key relationships used by the projection tables.
@@ -283,7 +283,7 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 28 });
+      yield* runMigrations({ toMigrationInclusive: 30 });
 
       yield* sql`
         INSERT INTO projection_projects (
