@@ -1,4 +1,11 @@
-import type { ProviderKind } from "@t3tools/contracts";
+/**
+ * Fork-local `ProviderKind` closed string union.
+ *
+ * Upstream's #2277 refactor removed `ProviderKind` from `@t3tools/contracts`
+ * in favor of the open branded `ProviderDriverKind`. The fork still ships
+ * eight built-in driver names and needs a closed union for legacy-name
+ * normalization in `OrchestrationEventStore`'s read path.
+ */
 
 const PROVIDER_KINDS = [
   "codex",
@@ -9,7 +16,9 @@ const PROVIDER_KINDS = [
   "geminiCli",
   "amp",
   "kilo",
-] as const satisfies ReadonlyArray<ProviderKind>;
+] as const;
+
+export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 const LEGACY_PROVIDER_KIND_ALIASES = {
   claudeCode: "claudeAgent",

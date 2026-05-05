@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { PathLike } from "node:fs";
-import { ThreadId, TurnId, type ProviderRuntimeEvent } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  TurnId,
+  type ProviderRuntimeEvent,
+} from "@t3tools/contracts";
 
 import {
   buildGeminiSpawnOptions,
@@ -95,10 +101,10 @@ describe("GeminiCliServerManager", () => {
       try {
         const session = await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
           cwd: "/tmp",
-          modelSelection: { provider: "geminiCli", model: "gemini-2.5-pro" },
+          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-pro" },
         });
 
         expect(session.provider).toBe("geminiCli");
@@ -116,7 +122,7 @@ describe("GeminiCliServerManager", () => {
       try {
         const session = await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
           resumeCursor: {
             sessionId: "gemini-session-123",
@@ -137,14 +143,14 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
         });
 
         expect(() =>
           manager.startSession({
             threadId: asThreadId("thread-1"),
-            provider: "geminiCli",
+            provider: ProviderDriverKind.make("geminiCli"),
             runtimeMode: "full-access",
           }),
         ).toThrow("already exists");
@@ -161,7 +167,7 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
         });
 
@@ -189,7 +195,7 @@ describe("GeminiCliServerManager", () => {
       const manager = new GeminiCliServerManager();
       await manager.startSession({
         threadId: asThreadId("thread-1"),
-        provider: "geminiCli",
+        provider: ProviderDriverKind.make("geminiCli"),
         runtimeMode: "full-access",
       });
 
@@ -213,7 +219,7 @@ describe("GeminiCliServerManager", () => {
       const manager = new GeminiCliServerManager();
       await manager.startSession({
         threadId: asThreadId("thread-1"),
-        provider: "geminiCli",
+        provider: ProviderDriverKind.make("geminiCli"),
         runtimeMode: "full-access",
       });
 
@@ -237,7 +243,7 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
         });
 
@@ -259,7 +265,7 @@ describe("GeminiCliServerManager", () => {
       const manager = new GeminiCliServerManager();
       await manager.startSession({
         threadId: asThreadId("thread-1"),
-        provider: "geminiCli",
+        provider: ProviderDriverKind.make("geminiCli"),
         runtimeMode: "full-access",
       });
 
@@ -280,15 +286,15 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { provider: "geminiCli", model: "gemini-3-flash" },
+          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-3-flash" },
         });
         await manager.startSession({
           threadId: asThreadId("thread-2"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { provider: "geminiCli", model: "gemini-2.5-pro" },
+          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-pro" },
         });
 
         const sessions = manager.listSessions();
@@ -309,7 +315,7 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
         });
 
@@ -333,7 +339,7 @@ describe("GeminiCliServerManager", () => {
       try {
         await manager.startSession({
           threadId: asThreadId("thread-1"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
         });
 
@@ -371,9 +377,9 @@ describe("GeminiCliServerManager JSON event mapping", () => {
 
     await manager.startSession({
       threadId: asThreadId("thread-json"),
-      provider: "geminiCli",
+      provider: ProviderDriverKind.make("geminiCli"),
       runtimeMode: "full-access",
-      modelSelection: { provider: "geminiCli", model: "gemini-2.5-pro" },
+      modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-pro" },
       cwd: "/tmp",
     });
 
@@ -709,9 +715,9 @@ describe.skipIf(!hasGemini || process.env.RUN_GEMINI_LIVE_TESTS !== "1")(
       try {
         await manager.startSession({
           threadId: asThreadId("live-thread"),
-          provider: "geminiCli",
+          provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { provider: "geminiCli", model: "gemini-2.5-flash" },
+          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-flash" },
         });
 
         const result = await manager.sendTurn({

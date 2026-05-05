@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   ApprovalRequestId,
   EventId,
+  GenericProviderSettings,
   RuntimeItemId,
   ThreadId,
   TurnId,
@@ -12,18 +13,27 @@ import {
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
-import { it, vi } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { it } from "@effect/vitest";
+import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { vi } from "vitest";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
-import { GeminiCliAdapter } from "../Services/GeminiCliAdapter.ts";
-import { makeGeminiCliAdapterLive } from "./GeminiCliAdapter.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import {
+  makeGeminiCliAdapter,
+  type GeminiCliAdapterShape,
+} from "./GeminiCliAdapter.ts";
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): RuntimeItemId => RuntimeItemId.make(value);
+
+// Test-local service tag mirroring the OpenCode/Claude adapter test pattern:
+// the new factory returns a shape directly, so tests inject it through a
+// throwaway Context.Service tag.
+class GeminiCliAdapter extends Context.Service<GeminiCliAdapter, GeminiCliAdapterShape>()(
+  "test/GeminiCliAdapter",
+) {}
 
 class FakeGeminiCliManager extends GeminiCliServerManager {
   public startSessionImpl = vi.fn(async (threadId: ThreadId): Promise<ProviderSession> => {
@@ -105,81 +115,103 @@ class FakeGeminiCliManager extends GeminiCliServerManager {
   }
 }
 
-const manager = new FakeGeminiCliManager();
-const layer = it.layer(
-  makeGeminiCliAdapterLive({ manager }).pipe(Layer.provideMerge(ServerSettingsService.layerTest())),
+const enabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: true });
+const disabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
+
+const makeAdapterLayer = (manager: FakeGeminiCliManager, config = enabledConfig) =>
+  Layer.effect(GeminiCliAdapter, makeGeminiCliAdapter(config, { manager }));
+
+it.effect("delegates session startup to the manager", () =>
+  Effect.gen(function* () {
+    const manager = new FakeGeminiCliManager();
+    const adapter = yield* GeminiCliAdapter;
+
+    const session = yield* adapter.startSession({
+      threadId: asThreadId("thread-1"),
+      runtimeMode: "full-access",
+    });
+
+    assert.equal(session.provider, "geminiCli");
+    assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
+  }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
 );
 
-layer("GeminiCliAdapterLive", (it) => {
-  it.effect("delegates session startup to the manager", () =>
-    Effect.gen(function* () {
-      manager.startSessionImpl.mockClear();
-      const adapter = yield* GeminiCliAdapter;
+it.effect("returns validation error when the provider is disabled", () =>
+  Effect.gen(function* () {
+    const adapter = yield* GeminiCliAdapter;
 
-      const session = yield* adapter.startSession({
-        threadId: asThreadId("thread-1"),
+    const result = yield* adapter
+      .startSession({
+        threadId: asThreadId("thread-disabled"),
         runtimeMode: "full-access",
-      });
+      })
+      .pipe(Effect.result);
 
-      assert.equal(session.provider, "geminiCli");
-      assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
-    }),
-  );
+    assert.equal(result._tag, "Failure");
+    if (result._tag !== "Failure") return;
+    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+  }).pipe(
+    Effect.provide(makeAdapterLayer(new FakeGeminiCliManager(), disabledConfig)),
+    Effect.scoped,
+  ),
+);
 
-  it.effect("rejects attachments until Gemini CLI attachment wiring exists", () =>
-    Effect.gen(function* () {
-      const adapter = yield* GeminiCliAdapter;
-      const result = yield* adapter
-        .sendTurn({
-          threadId: asThreadId("thread-attachments"),
-          input: "hello",
-          attachments: [{ id: "attachment-1" }] as never,
-        })
-        .pipe(Effect.result);
+it.effect("rejects attachments until Gemini CLI attachment wiring exists", () =>
+  Effect.gen(function* () {
+    const adapter = yield* GeminiCliAdapter;
+    const result = yield* adapter
+      .sendTurn({
+        threadId: asThreadId("thread-attachments"),
+        input: "hello",
+        attachments: [{ id: "attachment-1" }] as never,
+      })
+      .pipe(Effect.result);
 
-      assert.equal(result._tag, "Failure");
-      if (result._tag !== "Failure") {
-        return;
-      }
-      assert.equal(result.failure._tag, "ProviderAdapterValidationError");
-    }),
-  );
+    assert.equal(result._tag, "Failure");
+    if (result._tag !== "Failure") {
+      return;
+    }
+    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+  }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
+);
 
-  it.effect("forwards manager runtime events through the adapter stream", () =>
-    Effect.gen(function* () {
-      const adapter = yield* GeminiCliAdapter;
+it.effect("forwards manager runtime events through the adapter stream", () =>
+  Effect.gen(function* () {
+    const manager = new FakeGeminiCliManager();
+    const layer = makeAdapterLayer(manager);
+    const adapter = yield* GeminiCliAdapter;
 
-      const event = {
-        type: "content.delta",
-        eventId: asEventId("evt-gemini-delta"),
-        provider: "geminiCli",
-        createdAt: new Date().toISOString(),
-        threadId: asThreadId("thread-1"),
-        turnId: asTurnId("turn-1"),
-        itemId: asItemId("item-1"),
-        payload: {
-          streamKind: "assistant_text",
-          delta: "hello",
-        },
-      } as unknown as ProviderRuntimeEvent;
+    const event = {
+      type: "content.delta",
+      eventId: asEventId("evt-gemini-delta"),
+      provider: "geminiCli",
+      createdAt: new Date().toISOString(),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      itemId: asItemId("item-1"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "hello",
+      },
+    } as unknown as ProviderRuntimeEvent;
 
-      // Emit first — the event is buffered in the unbounded queue via the
-      // listener that was registered during layer construction.
-      manager.emit("event", event);
+    // Event must be emitted AFTER the listener is attached (i.e. after the
+    // layer is built and the adapter is yielded); the buffered queue then
+    // holds the event so the subsequent `runHead` resolves immediately.
+    manager.emit("event", event);
 
-      // Now consume the head. Since the queue already has an item, this
-      // resolves immediately without a race condition.
-      const received = yield* Stream.runHead(adapter.streamEvents);
+    const received = yield* Stream.runHead(adapter.streamEvents);
 
-      assert.equal(received._tag, "Some");
-      if (received._tag !== "Some") {
-        return;
-      }
-      assert.equal(received.value.type, "content.delta");
-      if (received.value.type !== "content.delta") {
-        return;
-      }
-      assert.equal(received.value.payload.delta, "hello");
-    }),
-  );
-});
+    assert.equal(received._tag, "Some");
+    if (received._tag !== "Some") {
+      return;
+    }
+    assert.equal(received.value.type, "content.delta");
+    if (received.value.type !== "content.delta") {
+      return;
+    }
+    assert.equal(received.value.payload.delta, "hello");
+
+    void layer; // keep ref so eslint doesn't complain
+  }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
+);

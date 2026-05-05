@@ -1,14 +1,5 @@
-import { Effect, Option, Schema, SchemaIssue, Struct } from "effect";
-import {
-  AmpModelOptions,
-  ClaudeModelOptions,
-  CodexModelOptions,
-  CopilotModelOptions,
-  CursorModelOptions,
-  GeminiCliModelOptions,
-  KiloModelOptions,
-  OpencodeModelOptions,
-} from "./model.ts";
+import { Effect, Option, Schema, SchemaIssue, SchemaTransformation, Struct } from "effect";
+import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
   ApprovalRequestId,
@@ -18,13 +9,13 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
-  PositiveInt,
   ProjectId,
   ProviderItemId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -35,17 +26,6 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeThread: "orchestration.subscribeThread",
 } as const;
 
-export const ProviderKind = Schema.Literals([
-  "codex",
-  "copilot",
-  "claudeAgent",
-  "cursor",
-  "opencode",
-  "geminiCli",
-  "amp",
-  "kilo",
-]);
-export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
   "on-failure",
@@ -60,180 +40,73 @@ export const ProviderSandboxMode = Schema.Literals([
 ]);
 export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
 
-export const DEFAULT_PROVIDER_KIND: ProviderKind = "codex";
-
-export const CodexModelSelection = Schema.Struct({
-  provider: Schema.Literal("codex"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(CodexModelOptions),
-});
-export type CodexModelSelection = typeof CodexModelSelection.Type;
-
-export const ClaudeModelSelection = Schema.Struct({
-  provider: Schema.Literal("claudeAgent"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(ClaudeModelOptions),
-});
-export type ClaudeModelSelection = typeof ClaudeModelSelection.Type;
-
-export const CopilotModelSelection = Schema.Struct({
-  provider: Schema.Literal("copilot"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(CopilotModelOptions),
-});
-export type CopilotModelSelection = typeof CopilotModelSelection.Type;
-
-export const CursorModelSelection = Schema.Struct({
-  provider: Schema.Literal("cursor"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(CursorModelOptions),
-});
-export type CursorModelSelection = typeof CursorModelSelection.Type;
-
-export const OpencodeModelSelection = Schema.Struct({
-  provider: Schema.Literal("opencode"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(OpencodeModelOptions),
-});
-export type OpencodeModelSelection = typeof OpencodeModelSelection.Type;
 /**
- * Upstream-compatible alias so upstream-authored code that imports
- * `OpenCodeModelSelection` still resolves against the fork's richer schema.
+ * `ModelSelection` — selection of a model on a configured provider instance.
+ *
+ * The routing key is `instanceId` (a user-defined slug identifying one
+ * configured provider instance). Drivers, credentials, working-directory
+ * bindings, and any other per-instance state are recovered from the
+ * runtime registry via the instance id.
+ *
+ * Wire legacy: persisted selections produced before the driver/instance
+ * split carried a `provider: <driver-id>` field instead. The schema absorbs
+ * that shape via a pre-decoding transform — `{provider, model}` is promoted
+ * to `{instanceId: defaultInstanceIdForDriver(provider), model}`. No
+ * post-decode compatibility code lives in the runtime; the transform is the
+ * only compat surface.
  */
-export const OpenCodeModelSelection = OpencodeModelSelection;
-export type OpenCodeModelSelection = OpencodeModelSelection;
-
-export const GeminiCliModelSelection = Schema.Struct({
-  provider: Schema.Literal("geminiCli"),
+const ModelSelectionWire = Schema.Struct({
+  instanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(GeminiCliModelOptions),
+  options: Schema.optionalKey(ProviderOptionSelections),
 });
-export type GeminiCliModelSelection = typeof GeminiCliModelSelection.Type;
 
-export const AmpModelSelection = Schema.Struct({
-  provider: Schema.Literal("amp"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(AmpModelOptions),
+// Source shape for persisted legacy payloads. Fields are typed as
+// `Schema.Unknown` so malformed drafts still make it into the transform and
+// fail validation through the target schema (with proper error messages)
+// rather than at the source-struct layer where the error is less actionable.
+const ModelSelectionSource = Schema.Struct({
+  provider: Schema.optional(Schema.Unknown),
+  instanceId: Schema.optional(Schema.Unknown),
+  model: Schema.Unknown,
+  options: Schema.optional(Schema.Unknown),
 });
-export type AmpModelSelection = typeof AmpModelSelection.Type;
 
-export const KiloModelSelection = Schema.Struct({
-  provider: Schema.Literal("kilo"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(KiloModelOptions),
-});
-export type KiloModelSelection = typeof KiloModelSelection.Type;
-
-export const ModelSelection = Schema.Union([
-  CodexModelSelection,
-  ClaudeModelSelection,
-  CopilotModelSelection,
-  CursorModelSelection,
-  OpencodeModelSelection,
-  GeminiCliModelSelection,
-  AmpModelSelection,
-  KiloModelSelection,
-]);
+export const ModelSelection = ModelSelectionSource.pipe(
+  Schema.decodeTo(
+    ModelSelectionWire,
+    SchemaTransformation.transformOrFail({
+      decode: (raw) => {
+        // Resolve the routing key: prefer an explicit `instanceId`; fall
+        // back to promoting the legacy `provider` slug (the canonical
+        // `defaultInstanceIdForDriver` mapping) so persisted rollout-era
+        // payloads decode without data loss. The target schema brands the
+        // string as `ProviderInstanceId`.
+        const instanceIdSource =
+          raw.instanceId !== undefined
+            ? raw.instanceId
+            : typeof raw.provider === "string"
+              ? raw.provider
+              : undefined;
+        const base: Record<string, unknown> = {
+          instanceId: instanceIdSource,
+          model: raw.model,
+        };
+        if (raw.options !== undefined) base.options = raw.options;
+        return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
+      },
+      encode: (value) => {
+        const base: Record<string, unknown> = {
+          model: value.model,
+          instanceId: value.instanceId,
+        };
+        if (value.options !== undefined) base.options = value.options;
+        return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
+      },
+    }),
+  ),
+);
 export type ModelSelection = typeof ModelSelection.Type;
-
-export const CodexProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  homePath: Schema.optional(TrimmedNonEmptyString),
-});
-export type CodexProviderStartOptions = typeof CodexProviderStartOptions.Type;
-
-export const CopilotProviderStartOptions = Schema.Struct({
-  cliPath: Schema.optional(TrimmedNonEmptyString),
-  configDir: Schema.optional(TrimmedNonEmptyString),
-});
-export type CopilotProviderStartOptions = typeof CopilotProviderStartOptions.Type;
-
-export const ClaudeProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  permissionMode: Schema.optional(TrimmedNonEmptyString),
-  maxThinkingTokens: Schema.optional(NonNegativeInt),
-});
-export type ClaudeProviderStartOptions = typeof ClaudeProviderStartOptions.Type;
-
-export const CursorProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-});
-export type CursorProviderStartOptions = typeof CursorProviderStartOptions.Type;
-
-export const GeminiCliProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-});
-export type GeminiCliProviderStartOptions = typeof GeminiCliProviderStartOptions.Type;
-
-export const AmpProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-});
-export type AmpProviderStartOptions = typeof AmpProviderStartOptions.Type;
-
-export const OpencodeProviderStartOptions = Schema.Struct({
-  serverUrl: Schema.optional(TrimmedNonEmptyString),
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  hostname: Schema.optional(TrimmedNonEmptyString),
-  port: Schema.optional(PositiveInt),
-  workspace: Schema.optional(TrimmedNonEmptyString),
-  username: Schema.optional(TrimmedNonEmptyString),
-  password: Schema.optional(TrimmedNonEmptyString),
-});
-export type OpencodeProviderStartOptions = typeof OpencodeProviderStartOptions.Type;
-
-export const KiloProviderStartOptions = Schema.Struct({
-  serverUrl: Schema.optional(TrimmedNonEmptyString),
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  hostname: Schema.optional(TrimmedNonEmptyString),
-  port: Schema.optional(PositiveInt),
-  workspace: Schema.optional(TrimmedNonEmptyString),
-  username: Schema.optional(TrimmedNonEmptyString),
-  password: Schema.optional(TrimmedNonEmptyString),
-});
-export type KiloProviderStartOptions = typeof KiloProviderStartOptions.Type;
-
-export const ProviderStartOptions = Schema.Struct({
-  codex: Schema.optional(CodexProviderStartOptions),
-  copilot: Schema.optional(CopilotProviderStartOptions),
-  claudeAgent: Schema.optional(ClaudeProviderStartOptions),
-  cursor: Schema.optional(CursorProviderStartOptions),
-  amp: Schema.optional(AmpProviderStartOptions),
-  geminiCli: Schema.optional(GeminiCliProviderStartOptions),
-  opencode: Schema.optional(OpencodeProviderStartOptions),
-  kilo: Schema.optional(KiloProviderStartOptions),
-});
-export type ProviderStartOptions = typeof ProviderStartOptions.Type;
-
-/** Opencode options with credentials stripped for safe persistence in events. */
-const OpencodeProviderStartOptionsRedacted = Schema.Struct({
-  serverUrl: Schema.optional(TrimmedNonEmptyString),
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  hostname: Schema.optional(TrimmedNonEmptyString),
-  port: Schema.optional(PositiveInt),
-  workspace: Schema.optional(TrimmedNonEmptyString),
-});
-
-/** Kilo options with credentials stripped for safe persistence in events. */
-const KiloProviderStartOptionsRedacted = Schema.Struct({
-  serverUrl: Schema.optional(TrimmedNonEmptyString),
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  hostname: Schema.optional(TrimmedNonEmptyString),
-  port: Schema.optional(PositiveInt),
-  workspace: Schema.optional(TrimmedNonEmptyString),
-});
-
-/** ProviderStartOptions without sensitive fields (username/password). Use in persisted events. */
-export const ProviderStartOptionsRedacted = Schema.Struct({
-  codex: Schema.optional(CodexProviderStartOptions),
-  copilot: Schema.optional(CopilotProviderStartOptions),
-  claudeAgent: Schema.optional(ClaudeProviderStartOptions),
-  cursor: Schema.optional(CursorProviderStartOptions),
-  amp: Schema.optional(AmpProviderStartOptions),
-  geminiCli: Schema.optional(GeminiCliProviderStartOptions),
-  opencode: Schema.optional(OpencodeProviderStartOptionsRedacted),
-  kilo: Schema.optional(KiloProviderStartOptionsRedacted),
-});
-export type ProviderStartOptionsRedacted = typeof ProviderStartOptionsRedacted.Type;
 
 export const RuntimeMode = Schema.Literals([
   "approval-required",
@@ -382,6 +255,7 @@ export const OrchestrationSession = Schema.Struct({
   threadId: ThreadId,
   status: OrchestrationSessionStatus,
   providerName: Schema.NullOr(TrimmedNonEmptyString),
+  providerInstanceId: Schema.optional(ProviderInstanceId),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   activeTurnId: Schema.NullOr(TurnId),
   lastError: Schema.NullOr(TrimmedNonEmptyString),
@@ -1297,7 +1171,10 @@ export const DispatchResult = Schema.Struct({
 export type DispatchResult = typeof DispatchResult.Type;
 
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
-  Struct.assign({ threadId: ThreadId }),
+  Struct.assign({
+    threadId: ThreadId,
+    ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  }),
   { unsafePreserveChecks: true },
 );
 export type OrchestrationGetTurnDiffInput = typeof OrchestrationGetTurnDiffInput.Type;
@@ -1308,6 +1185,7 @@ export type OrchestrationGetTurnDiffResult = typeof OrchestrationGetTurnDiffResu
 export const OrchestrationGetFullThreadDiffInput = Schema.Struct({
   threadId: ThreadId,
   toTurnCount: NonNegativeInt,
+  ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationGetFullThreadDiffInput = typeof OrchestrationGetFullThreadDiffInput.Type;
 

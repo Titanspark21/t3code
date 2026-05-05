@@ -13,6 +13,7 @@ import readline from "node:readline";
 import {
   ApprovalRequestId,
   EventId,
+  ProviderDriverKind,
   RuntimeItemId,
   ThreadId,
   TurnId,
@@ -28,9 +29,9 @@ import type { ProviderSessionUsage, ProviderUsageResult } from "@t3tools/contrac
 import type { ProviderThreadSnapshot } from "./provider/Services/ProviderAdapter.ts";
 import { resolveCommandPath } from "./commandPath.ts";
 
-const PROVIDER = "geminiCli" as const;
+const PROVIDER = ProviderDriverKind.make("geminiCli");
 
-// ── Module-level usage tracking ──────────────────────────────────────
+// ── Per-instance usage tracking ──────────────────────────────────────
 
 interface GeminiUsageAccumulator {
   inputTokens: number;
@@ -40,29 +41,13 @@ interface GeminiUsageAccumulator {
   turnCount: number;
 }
 
-let _geminiUsageAccumulator: GeminiUsageAccumulator = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cachedTokens: 0,
-  totalTokens: 0,
-  turnCount: 0,
-};
-
-export function fetchGeminiCliUsage(): ProviderUsageResult {
-  const acc = _geminiUsageAccumulator;
-  let sessionUsage: ProviderSessionUsage | undefined;
-  if (acc.turnCount > 0) {
-    sessionUsage = {
-      inputTokens: acc.inputTokens,
-      outputTokens: acc.outputTokens,
-      ...(acc.cachedTokens > 0 ? { cachedTokens: acc.cachedTokens } : {}),
-      totalTokens: acc.totalTokens,
-      turnCount: acc.turnCount,
-    };
-  }
+function emptyUsageAccumulator(): GeminiUsageAccumulator {
   return {
-    provider: PROVIDER,
-    ...(sessionUsage ? { sessionUsage } : {}),
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    totalTokens: 0,
+    turnCount: 0,
   };
 }
 
@@ -343,7 +328,36 @@ export class GeminiCliServerManager extends EventEmitter<{
   event: [ProviderRuntimeEvent];
 }> {
   private readonly sessions = new Map<ThreadId, GeminiCliSession>();
+  private readonly usageAccumulator: GeminiUsageAccumulator = emptyUsageAccumulator();
   binaryPath: string | undefined;
+
+  constructor(options: { readonly binaryPath?: string | undefined } = {}) {
+    super();
+    this.binaryPath = options.binaryPath;
+  }
+
+  /**
+   * Per-instance usage snapshot. Replaces the old module-level
+   * `fetchGeminiCliUsage()` so two managers running side-by-side don't share
+   * an accumulator.
+   */
+  fetchUsage(): ProviderUsageResult {
+    const acc = this.usageAccumulator;
+    let sessionUsage: ProviderSessionUsage | undefined;
+    if (acc.turnCount > 0) {
+      sessionUsage = {
+        inputTokens: acc.inputTokens,
+        outputTokens: acc.outputTokens,
+        ...(acc.cachedTokens > 0 ? { cachedTokens: acc.cachedTokens } : {}),
+        totalTokens: acc.totalTokens,
+        turnCount: acc.turnCount,
+      };
+    }
+    return {
+      provider: PROVIDER,
+      ...(sessionUsage ? { sessionUsage } : {}),
+    };
+  }
 
   startSession(input: ProviderSessionStartInput): Promise<ProviderSession> {
     const threadId = input.threadId;
@@ -777,15 +791,15 @@ export class GeminiCliServerManager extends EventEmitter<{
 
         // Accumulate session-level usage
         if (usage) {
-          _geminiUsageAccumulator.turnCount++;
+          this.usageAccumulator.turnCount++;
           if (typeof usage.input_tokens === "number")
-            _geminiUsageAccumulator.inputTokens += usage.input_tokens;
+            this.usageAccumulator.inputTokens += usage.input_tokens;
           if (typeof usage.output_tokens === "number")
-            _geminiUsageAccumulator.outputTokens += usage.output_tokens;
+            this.usageAccumulator.outputTokens += usage.output_tokens;
           if (typeof usage.cached_tokens === "number")
-            _geminiUsageAccumulator.cachedTokens += usage.cached_tokens;
+            this.usageAccumulator.cachedTokens += usage.cached_tokens;
           if (typeof usage.total_tokens === "number")
-            _geminiUsageAccumulator.totalTokens += usage.total_tokens;
+            this.usageAccumulator.totalTokens += usage.total_tokens;
         }
 
         // Support both `error_message` (legacy) and `error.message` (0.32+).

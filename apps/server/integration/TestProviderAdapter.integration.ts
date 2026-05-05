@@ -10,7 +10,7 @@ import {
   ProviderTurnStartResult,
   ThreadId,
   TurnId,
-  ProviderKind,
+  ProviderDriverKind,
 } from "@t3tools/contracts";
 import { Effect, Queue, Stream } from "effect";
 
@@ -24,7 +24,6 @@ import type {
   ProviderThreadSnapshot,
   ProviderThreadTurnSnapshot,
 } from "../src/provider/Services/ProviderAdapter.ts";
-import { getProviderCapabilities } from "../src/provider/Services/ProviderAdapter.ts";
 
 export interface TestTurnResponse {
   readonly events: ReadonlyArray<FixtureProviderRuntimeEvent>;
@@ -37,7 +36,7 @@ export interface TestTurnResponse {
 export type FixtureProviderRuntimeEvent = {
   readonly type: string;
   readonly eventId: EventId;
-  readonly provider: ProviderKind;
+  readonly provider: ProviderDriverKind;
   readonly createdAt: string;
   readonly threadId: string;
   readonly turnId?: string | undefined;
@@ -179,7 +178,7 @@ function normalizeFixtureEvent(rawEvent: Record<string, unknown>): ProviderRunti
 
 export interface TestProviderAdapterHarness {
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
-  readonly provider: ProviderKind;
+  readonly provider: ProviderDriverKind;
   readonly queueTurnResponse: (
     threadId: ThreadId,
     response: TestTurnResponse,
@@ -199,7 +198,7 @@ export interface TestProviderAdapterHarness {
 }
 
 interface MakeTestProviderAdapterHarnessOptions {
-  readonly provider?: ProviderKind;
+  readonly provider?: ProviderDriverKind;
 }
 
 function nowIso(): string {
@@ -207,7 +206,7 @@ function nowIso(): string {
 }
 
 function sessionNotFound(
-  provider: ProviderKind,
+  provider: ProviderDriverKind,
   threadId: ThreadId,
 ): ProviderAdapterSessionNotFoundError {
   return new ProviderAdapterSessionNotFoundError({
@@ -217,7 +216,7 @@ function sessionNotFound(
 }
 
 function missingSessionEffect(
-  provider: ProviderKind,
+  provider: ProviderDriverKind,
   threadId: ThreadId,
 ): Effect.Effect<never, ProviderAdapterError> {
   return Effect.fail(sessionNotFound(provider, threadId));
@@ -225,7 +224,7 @@ function missingSessionEffect(
 
 export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapterHarnessOptions) =>
   Effect.gen(function* () {
-    const provider = options?.provider ?? "codex";
+    const provider = options?.provider ?? ProviderDriverKind.make("codex");
     const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
     let sessionCount = 0;
     const sessions = new Map<ThreadId, SessionState>();
@@ -258,6 +257,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
 
         const session: ProviderSession = {
           provider,
+          ...(input.providerInstanceId !== undefined
+            ? { providerInstanceId: input.providerInstanceId }
+            : {}),
           status: "ready",
           runtimeMode: input.runtimeMode,
           threadId,
@@ -475,7 +477,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
 
     const adapter: ProviderAdapterShape<ProviderAdapterError> = {
       provider,
-      capabilities: getProviderCapabilities(provider),
+      capabilities: { sessionModelSwitch: "in-session" },
       startSession,
       sendTurn,
       interruptTurn,

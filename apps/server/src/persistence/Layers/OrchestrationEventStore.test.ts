@@ -1,4 +1,4 @@
-import { CommandId, EventId, ProjectId } from "@t3tools/contracts";
+import { CommandId, EventId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -185,7 +185,7 @@ layer("OrchestrationEventStore", (it) => {
         return;
       }
       assert.deepStrictEqual(replayedEvent.payload.modelSelection, {
-        provider: "geminiCli",
+        instanceId: ProviderInstanceId.make("geminiCli"),
         model: "gemini-2.5-pro",
       });
     }),

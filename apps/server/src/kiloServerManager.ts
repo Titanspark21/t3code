@@ -552,6 +552,16 @@ export class KiloServerManager extends EventEmitter<KiloManagerEvents> {
     this.serverPromise = undefined;
   }
 
+  /**
+   * Returns the manager's shared Kilo server, starting it if needed. The child
+   * process is owned by this manager — `stopAll()` will kill it. Use this from
+   * callers (e.g. text generation) that need the server but don't want to
+   * register a full session on the manager.
+   */
+  async getOrStartServer(options?: KiloProviderOptions): Promise<SharedServerState> {
+    return this.ensureServer(options);
+  }
+
   private requireSession(threadId: ThreadId): KiloSessionContext {
     const context = this.sessions.get(threadId);
     if (!context) {
