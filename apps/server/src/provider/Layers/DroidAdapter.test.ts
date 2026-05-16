@@ -530,6 +530,58 @@ it.effect("does not duplicate Droid final create_message text after streaming de
       if (completed?.type === "item.completed") {
         assert.equal(completed.payload.detail, "stream");
       }
+      assert.equal(
+        events.filter(
+          (event) =>
+            event.type === "item.completed" && event.payload.itemType === "assistant_message",
+        ).length,
+        1,
+      );
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rejects concurrent Droid turns for the same thread", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let finishTurn: (() => void) | undefined;
+      const turnFinished = new Promise<void>((resolve) => {
+        finishTurn = resolve;
+      });
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async () =>
+            fakeSession({
+              onStream: async function* () {
+                yield {
+                  type: DroidMessageType.AssistantTextDelta,
+                  messageId: "active-turn",
+                  blockIndex: 0,
+                  text: "working",
+                };
+                await turnFinished;
+                yield { type: DroidMessageType.TurnComplete, tokenUsage: null };
+              },
+            }),
+          resumeSession: async () => fakeSession({}),
+        },
+      });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "first" });
+
+      const secondTurn = yield* adapter.sendTurn({ threadId, input: "second" }).pipe(Effect.exit);
+      assert.equal(secondTurn._tag, "Failure");
+      if (secondTurn._tag === "Failure") {
+        assert.match(String(secondTurn.cause), /already has an active turn/);
+      }
+
+      finishTurn?.();
+      yield* adapter.stopSession(threadId);
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -943,8 +995,19 @@ it.effect("reads and rolls back Droid thread snapshots", () =>
         provider: ProviderDriverKind.make("droid"),
         runtimeMode: "full-access",
       });
+      const waitForTurnCompleted = () =>
+        adapter.streamEvents.pipe(
+          Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkChild,
+        );
+      const firstCompleted = yield* waitForTurnCompleted();
       yield* adapter.sendTurn({ threadId, input: "first" });
+      yield* Fiber.join(firstCompleted).pipe(Effect.timeout("2 seconds"));
+      const secondCompleted = yield* waitForTurnCompleted();
       yield* adapter.sendTurn({ threadId, input: "second" });
+      yield* Fiber.join(secondCompleted).pipe(Effect.timeout("2 seconds"));
 
       const before = yield* adapter.readThread(threadId);
       assert.equal(before.turns.length, 2);

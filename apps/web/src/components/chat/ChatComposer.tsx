@@ -162,7 +162,10 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 }) {
   const runtimeModeConfig = getRuntimeModeConfig(props.provider);
   const runtimeModeOptions = getRuntimeModeOptions(props.provider);
-  const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
+  const selectedRuntimeMode = runtimeModeOptions.includes(props.runtimeMode)
+    ? props.runtimeMode
+    : "auto-accept-edits";
+  const runtimeModeOption = runtimeModeConfig[selectedRuntimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
 
   return (
@@ -194,7 +197,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       ) : null}
 
       <Select
-        value={props.runtimeMode}
+        value={selectedRuntimeMode}
         onValueChange={(value) => props.onRuntimeModeChange(value!)}
       >
         <SelectTrigger

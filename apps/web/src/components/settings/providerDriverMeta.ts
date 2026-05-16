@@ -79,7 +79,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     value: ProviderDriverKind.make("droid"),
     label: "Droid",
     icon: DroidIcon,
-    badgeLabel: "WIP",
+    badgeLabel: "Early Access",
     settingsSchema: DroidSettings,
   },
   {

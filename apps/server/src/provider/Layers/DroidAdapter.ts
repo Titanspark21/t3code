@@ -270,6 +270,13 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
           issue: `Unknown Droid thread: ${input.threadId}`,
         });
       }
+      if (context.session.status === "running" || context.session.activeTurnId) {
+        return yield* new ProviderAdapterValidationError({
+          provider: DROID_PROVIDER,
+          operation: "sendTurn",
+          issue: `Droid thread ${input.threadId} already has an active turn.`,
+        });
+      }
       const text = input.input?.trim();
       const images = yield* resolveDroidImages(input.attachments ?? [], {
         attachmentsDir: serverConfig.attachmentsDir,

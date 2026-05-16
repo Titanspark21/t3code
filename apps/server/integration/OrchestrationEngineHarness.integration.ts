@@ -416,13 +416,13 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
 
     const scope = yield* Scope.make("sequential");
-    yield* tryRuntimePromise("start OrchestrationReactor", () =>
-      runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
-    ).pipe(Effect.orDie);
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
       Ref.update(receiptHistory, (history) => [...history, receipt]).pipe(Effect.asVoid),
     ).pipe(Effect.forkIn(scope));
+    yield* tryRuntimePromise("start OrchestrationReactor", () =>
+      runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
+    ).pipe(Effect.orDie);
     yield* Effect.sleep(10);
 
     const waitForThread: OrchestrationIntegrationHarness["waitForThread"] = (
@@ -567,15 +567,17 @@ export const makeOrchestrationIntegrationHarness = (
         }
       });
 
-      yield* shutdown.pipe(
-        Effect.timeout("5 seconds"),
+      const shutdownResult = yield* shutdown.pipe(
+        Effect.timeoutOption("5 seconds"),
         Effect.catchCause((cause) =>
-          Effect.logWarning("orchestration integration harness disposal timed out", {
-            cause,
-          }),
+          Effect.logWarning("orchestration integration harness disposal failed", { cause }).pipe(
+            Effect.as(Option.some(undefined)),
+          ),
         ),
-        Effect.asVoid,
       );
+      if (Option.isNone(shutdownResult)) {
+        yield* Effect.logWarning("orchestration integration harness disposal timed out");
+      }
     });
 
     return {

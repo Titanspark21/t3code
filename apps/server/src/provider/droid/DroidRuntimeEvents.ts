@@ -121,8 +121,7 @@ export async function handleDroidMessage(input: {
       const firstTextIndex = message.content.findIndex((block) => block.type === "text");
       const firstTextBlock = message.content[firstTextIndex];
       const completedItemId =
-        firstTextBlock?.id ??
-        (firstTextIndex >= 0 ? `${message.messageId}-${firstTextIndex}` : message.messageId);
+        firstTextIndex >= 0 ? `${message.messageId}-${firstTextIndex}` : message.messageId;
       if (!context.activeCompletedAssistantItems.has(completedItemId)) {
         context.activeCompletedAssistantItems.add(completedItemId);
         return emitNow({
