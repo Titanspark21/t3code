@@ -1260,6 +1260,10 @@ export default function ChatView(props: ChatViewProps) {
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
   const providerConfigLoaded = serverConfig != null;
   const requestedProvider = selectedProviderByThreadId ?? threadProvider ?? null;
+  const requestedProviderEntry =
+    requestedProvider == null
+      ? null
+      : providerStatuses.find((candidate) => candidate.instanceId === requestedProvider);
   const unlockedSelectedProvider = providerConfigLoaded
     ? resolveSelectableProvider(
         providerStatuses,
@@ -1267,7 +1271,12 @@ export default function ChatView(props: ChatViewProps) {
       )
     : ProviderDriverKind.make("codex");
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
-  const runtimeMode = providerConfigLoaded
+  const canNormalizeRuntimeMode =
+    providerConfigLoaded &&
+    (lockedProvider
+      ? unlockedSelectedProvider === lockedProvider
+      : requestedProvider == null || requestedProviderEntry?.enabled === true);
+  const runtimeMode = canNormalizeRuntimeMode
     ? normalizeRuntimeModeForProvider(selectedProvider, rawRuntimeMode)
     : rawRuntimeMode;
   useEffect(() => {

@@ -88,6 +88,16 @@ const testLayer = ServerConfig.layerTest(process.cwd(), process.cwd()).pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
+function joinIterableFiber<A, E>(fiber: Fiber.Fiber<Iterable<A>, E>) {
+  return Effect.gen(function* () {
+    const result = yield* Fiber.join(fiber).pipe(Effect.timeoutOption("2 seconds"));
+    if (result._tag === "None") {
+      return yield* Effect.die(new Error("Timed out waiting for Droid test events."));
+    }
+    return Array.from(result.value);
+  });
+}
+
 it.effect("maps Droid SDK stream messages into canonical runtime events", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -159,7 +169,7 @@ it.effect("maps Droid SDK stream messages into canonical runtime events", () =>
       });
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       assert.equal(createOptions?.modelId, "claude-sonnet");
       assert.equal(createOptions?.autonomyLevel, AutonomyLevel.High);
       assert.equal(createOptions?.interactionMode, DroidInteractionMode.Auto);
@@ -255,9 +265,7 @@ it.effect("keeps Droid token usage cumulative across turns", () =>
         runtimeMode: "full-access",
       });
       yield* adapter.sendTurn({ threadId: usageThreadId, input: "first" });
-      const firstEvents = Array.from(
-        yield* Fiber.join(firstEventsFiber).pipe(Effect.timeout("2 seconds")),
-      );
+      const firstEvents = yield* joinIterableFiber(firstEventsFiber);
 
       const secondEventsFiber = yield* adapter.streamEvents.pipe(
         Stream.filter((event) => event.threadId === usageThreadId),
@@ -266,9 +274,7 @@ it.effect("keeps Droid token usage cumulative across turns", () =>
         Effect.forkChild,
       );
       yield* adapter.sendTurn({ threadId: usageThreadId, input: "second" });
-      const secondEvents = Array.from(
-        yield* Fiber.join(secondEventsFiber).pipe(Effect.timeout("2 seconds")),
-      );
+      const secondEvents = yield* joinIterableFiber(secondEventsFiber);
       const events = [...firstEvents, ...secondEvents];
       const usageEvents = events.filter((event) => event.type === "thread.token-usage.updated");
       const completedTurns = events.filter((event) => event.type === "turn.completed");
@@ -459,7 +465,7 @@ it.effect("uses final Droid create_message content when deltas are absent", () =
       });
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
       assert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload : undefined)),
@@ -524,7 +530,7 @@ it.effect("does not duplicate Droid final create_message text after streaming de
       });
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
       assert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload.delta : undefined)),
@@ -645,7 +651,7 @@ it.effect("does not duplicate Droid final thinking content after streaming delta
       });
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
       assert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload : undefined)),
@@ -894,17 +900,13 @@ it.effect("settles pending Droid permission and user-input waits when stopped", 
         runtimeMode: "approval-required",
       });
       yield* adapter.sendTurn({ threadId, input: "run lint" });
-      const openedEvents = Array.from(
-        yield* Fiber.join(openedEventsFiber).pipe(Effect.timeout("2 seconds")),
-      );
+      const openedEvents = yield* joinIterableFiber(openedEventsFiber);
       assert.deepEqual(openedEvents.map((event) => event.type).toSorted(), [
         "request.opened",
         "user-input.requested",
       ]);
       yield* adapter.stopSession(threadId);
-      const resolvedEvents = Array.from(
-        yield* Fiber.join(resolvedEventsFiber).pipe(Effect.timeout("2 seconds")),
-      );
+      const resolvedEvents = yield* joinIterableFiber(resolvedEventsFiber);
       assert.deepEqual(resolvedEvents.map((event) => event.type).toSorted(), [
         "request.resolved",
         "user-input.resolved",
@@ -1010,7 +1012,7 @@ it.effect("marks Droid stream errors as failed turns", () =>
         runtimeMode: "full-access",
       });
       yield* adapter.sendTurn({ threadId, input: "hello" });
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       const runtimeError = events.find((event) => event.type === "runtime.error");
       const turnCompleted = events.find((event) => event.type === "turn.completed");
 
@@ -1070,7 +1072,7 @@ it.effect("marks aborted Droid turns as interrupted without runtime error", () =
       yield* Effect.promise(() => abortReady).pipe(Effect.timeout("2 seconds"));
       yield* adapter.interruptTurn(threadId);
 
-      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const events = yield* joinIterableFiber(eventsFiber);
       assert.equal(
         events.some((event) => event.type === "runtime.error"),
         false,
