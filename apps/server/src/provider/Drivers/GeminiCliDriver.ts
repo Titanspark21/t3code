@@ -25,10 +25,7 @@ import { ServerConfig } from "../../config.ts";
 import { makeGeminiCliTextGeneration } from "../../textGeneration/GeminiCliTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeGeminiCliAdapter } from "../Layers/GeminiCliAdapter.ts";
-import {
-  checkGeminiCliStatus,
-  makePendingGeminiCliProvider,
-} from "../Layers/GeminiCliProvider.ts";
+import { checkGeminiCliStatus, makePendingGeminiCliProvider } from "../Layers/GeminiCliProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {

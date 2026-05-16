@@ -20,10 +20,7 @@ import { Effect, Queue, Stream } from "effect";
 import { KiloServerManager } from "../../kiloServerManager.ts";
 import type { KiloSessionStartInput } from "../../kilo/types.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
-import {
-  ProviderAdapterRequestError,
-  ProviderAdapterValidationError,
-} from "../Errors.ts";
+import { ProviderAdapterRequestError, ProviderAdapterValidationError } from "../Errors.ts";
 import { makeErrorHelpers } from "./ProviderAdapterUtils.ts";
 import type { KiloSettings } from "./KiloProvider.ts";
 
@@ -51,8 +48,7 @@ export const makeKiloAdapter = Effect.fn("makeKiloAdapter")(function* (
 ) {
   const _instanceId = options?.instanceId ?? ProviderInstanceId.make("kilo");
   void _instanceId; // reserved for future per-instance tagging
-  const manager =
-    options?.manager ?? options?.makeManager?.() ?? new KiloServerManager();
+  const manager = options?.manager ?? options?.makeManager?.() ?? new KiloServerManager();
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
 
   // Acquire the manager event listener at scope start, release at scope close.

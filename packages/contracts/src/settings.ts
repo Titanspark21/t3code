@@ -340,8 +340,7 @@ export const AmpSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Config directory",
-        description:
-          "Custom Amp configuration directory. Leave blank to use the Amp default.",
+        description: "Custom Amp configuration directory. Leave blank to use the Amp default.",
         providerSettingsForm: {
           placeholder: "~/.config/amp",
           clearWhenEmpty: "omit",
@@ -401,8 +400,7 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
     binaryPath: makeBinaryPathSetting("gemini").pipe(
       Schema.annotateKey({
         title: "Binary path",
-        description:
-          "Path to the `gemini` executable. Leave blank to resolve from PATH.",
+        description: "Path to the `gemini` executable. Leave blank to resolve from PATH.",
         providerSettingsForm: { placeholder: "gemini", clearWhenEmpty: "omit" },
       }),
     ),
@@ -410,8 +408,7 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Config directory",
-        description:
-          "Override `GEMINI_HOME` (Gemini CLI honours `~/.gemini` by default).",
+        description: "Override `GEMINI_HOME` (Gemini CLI honours `~/.gemini` by default).",
         providerSettingsForm: { placeholder: "~/.gemini", clearWhenEmpty: "omit" },
       }),
     ),
@@ -443,8 +440,7 @@ export const KiloSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Config directory",
-        description:
-          "Custom Kilo configuration directory. Leave blank to use the Kilo default.",
+        description: "Custom Kilo configuration directory. Leave blank to use the Kilo default.",
         providerSettingsForm: {
           placeholder: "~/.config/kilo",
           clearWhenEmpty: "omit",

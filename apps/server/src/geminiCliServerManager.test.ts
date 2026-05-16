@@ -104,7 +104,10 @@ describe("GeminiCliServerManager", () => {
           provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
           cwd: "/tmp",
-          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-pro" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("geminiCli"),
+            model: "gemini-2.5-pro",
+          },
         });
 
         expect(session.provider).toBe("geminiCli");
@@ -288,13 +291,19 @@ describe("GeminiCliServerManager", () => {
           threadId: asThreadId("thread-1"),
           provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-3-flash" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("geminiCli"),
+            model: "gemini-3-flash",
+          },
         });
         await manager.startSession({
           threadId: asThreadId("thread-2"),
           provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-pro" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("geminiCli"),
+            model: "gemini-2.5-pro",
+          },
         });
 
         const sessions = manager.listSessions();
@@ -717,7 +726,10 @@ describe.skipIf(!hasGemini || process.env.RUN_GEMINI_LIVE_TESTS !== "1")(
           threadId: asThreadId("live-thread"),
           provider: ProviderDriverKind.make("geminiCli"),
           runtimeMode: "full-access",
-          modelSelection: { instanceId: ProviderInstanceId.make("geminiCli"), model: "gemini-2.5-flash" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("geminiCli"),
+            model: "gemini-2.5-flash",
+          },
         });
 
         const result = await manager.sendTurn({

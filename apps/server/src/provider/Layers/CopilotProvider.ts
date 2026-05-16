@@ -29,10 +29,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import {
-  resolveBundledCopilotCliPath,
-  withSanitizedCopilotDesktopEnv,
-} from "./copilotCliPath.ts";
+import { resolveBundledCopilotCliPath, withSanitizedCopilotDesktopEnv } from "./copilotCliPath.ts";
 import type { CopilotSettings } from "../Drivers/CopilotSettings.ts";
 
 const PROVIDER = ProviderDriverKind.make("copilot");
