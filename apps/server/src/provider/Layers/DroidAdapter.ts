@@ -48,6 +48,7 @@ import {
   permissionDetail,
   toAskUserResult,
   toAutonomyLevel,
+  toAutonomyLevelForRuntimeMode,
   toModelId,
   toOutcome,
   toReasoningEffort,
@@ -71,28 +72,55 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
     );
     const runtimeContext = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(runtimeContext);
+    const emit = (event: ProviderRuntimeEvent) =>
+      Queue.offer(runtimeEvents, event).pipe(Effect.asVoid);
+    const emitNow = (event: ProviderRuntimeEvent) => runPromise(emit(event));
+    const eventBase = makeDroidEventBase(instanceId);
+    const settlePendingInteractions = (context: DroidContext) =>
+      Effect.gen(function* () {
+        for (const [requestId, pending] of context.pendingPermissions) {
+          context.pendingPermissions.delete(requestId);
+          pending.resolve(ToolConfirmationOutcome.Cancel);
+          yield* emit({
+            ...eventBase(context, { requestId }),
+            type: "request.resolved",
+            payload: { requestType: pending.requestType, decision: "cancel" },
+          });
+        }
+        for (const [requestId, pending] of context.pendingUserInputs) {
+          context.pendingUserInputs.delete(requestId);
+          pending.resolve({ cancelled: true, answers: [] });
+          yield* emit({
+            ...eventBase(context, { requestId }),
+            type: "user-input.resolved",
+            payload: { answers: {} },
+          });
+        }
+      });
+    const abortContext = (context: DroidContext) =>
+      Effect.gen(function* () {
+        context.activeAbort?.abort();
+        context.activeAbort = undefined;
+        yield* settlePendingInteractions(context);
+      });
+    const closeContext = (context: DroidContext) =>
+      Effect.gen(function* () {
+        yield* abortContext(context);
+        yield* Effect.tryPromise(() => context.droid.close()).pipe(Effect.ignore);
+      });
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         const contexts = [...sessions.values()];
         sessions.clear();
-        yield* Effect.forEach(
-          contexts,
-          (context) =>
-            Effect.tryPromise(() => {
-              context.activeAbort?.abort();
-              return context.droid.close();
-            }).pipe(Effect.ignore),
-          { concurrency: "unbounded", discard: true },
-        );
+        yield* Effect.forEach(contexts, (context) => closeContext(context), {
+          concurrency: "unbounded",
+          discard: true,
+        });
         yield* Queue.shutdown(runtimeEvents);
       }),
     );
 
-    const emit = (event: ProviderRuntimeEvent) =>
-      Queue.offer(runtimeEvents, event).pipe(Effect.asVoid);
-    const emitNow = (event: ProviderRuntimeEvent) => runPromise(emit(event));
-    const eventBase = makeDroidEventBase(instanceId);
     const requireSession = Effect.fn("requireDroidSession")(function* (threadId: ThreadId) {
       const context = sessions.get(threadId);
       if (!context) {
@@ -106,6 +134,12 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
 
     const startSession: DroidAdapterShape["startSession"] = Effect.fn("startDroidSession")(
       function* (input) {
+        const existingContext = sessions.get(input.threadId);
+        if (existingContext) {
+          sessions.delete(input.threadId);
+          yield* closeContext(existingContext);
+        }
+
         let contextRef: DroidContext | undefined;
         const permissionHandler = (params: RequestPermissionRequestParams) =>
           new Promise<ToolConfirmationOutcome>((resolve) => {
@@ -162,16 +196,20 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
           getModelSelectionStringOptionValue(modelSelection, "reasoningEffort"),
         );
         const droid = yield* Effect.tryPromise({
-          try: () =>
-            typeof input.resumeCursor === "string"
-              ? sdk.resumeSession(input.resumeCursor, sdkOptions)
-              : sdk.createSession({
-                  ...sdkOptions,
-                  ...(modelId ? { modelId } : {}),
-                  autonomyLevel: toAutonomyLevel(input),
-                  interactionMode: DroidInteractionMode.Auto,
-                  ...(reasoningEffort ? { reasoningEffort } : {}),
-                }),
+          try: async () => {
+            if (typeof input.resumeCursor === "string") {
+              const resumed = await sdk.resumeSession(input.resumeCursor, sdkOptions);
+              await resumed.updateSettings({ autonomyLevel: toAutonomyLevel(input) });
+              return resumed;
+            }
+            return sdk.createSession({
+              ...sdkOptions,
+              ...(modelId ? { modelId } : {}),
+              autonomyLevel: toAutonomyLevel(input),
+              interactionMode: DroidInteractionMode.Auto,
+              ...(reasoningEffort ? { reasoningEffort } : {}),
+            });
+          },
           catch: (cause) =>
             new ProviderAdapterRequestError({
               provider: DROID_PROVIDER,
@@ -272,22 +310,22 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
           const reasoningEffort = toReasoningEffort(
             getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort"),
           );
+          const autonomyLevel = toAutonomyLevelForRuntimeMode(context.session.runtimeMode);
           if (input.interactionMode === "plan") {
             await context.droid.enterSpecMode({
               ...(modelId ? { specModeModelId: modelId } : {}),
               ...(reasoningEffort ? { specModeReasoningEffort: reasoningEffort } : {}),
             });
           }
-          if (modelId || reasoningEffort) {
-            await context.droid.updateSettings({
-              ...(modelId ? { modelId } : {}),
-              ...(reasoningEffort ? { reasoningEffort } : {}),
-              ...(input.interactionMode === "plan" && modelId ? { specModeModelId: modelId } : {}),
-              ...(input.interactionMode === "plan" && reasoningEffort
-                ? { specModeReasoningEffort: reasoningEffort }
-                : {}),
-            });
-          }
+          await context.droid.updateSettings({
+            autonomyLevel,
+            ...(modelId ? { modelId } : {}),
+            ...(reasoningEffort ? { reasoningEffort } : {}),
+            ...(input.interactionMode === "plan" && modelId ? { specModeModelId: modelId } : {}),
+            ...(input.interactionMode === "plan" && reasoningEffort
+              ? { specModeReasoningEffort: reasoningEffort }
+              : {}),
+          });
           const messageOptions: MessageOptions = {
             abortSignal: abort.signal,
             ...(images.length > 0 ? { images } : {}),
@@ -345,8 +383,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
         const context = sessions.get(threadId);
         if (!context) return;
         sessions.delete(threadId);
-        context.activeAbort?.abort();
-        yield* Effect.tryPromise(() => context.droid.close()).pipe(Effect.ignore);
+        yield* closeContext(context);
         yield* emit({
           ...eventBase(context),
           type: "session.exited",
@@ -363,7 +400,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
         Effect.gen(function* () {
           const context = sessions.get(threadId);
           if (!context) return;
-          context.activeAbort?.abort();
+          yield* abortContext(context);
           yield* Effect.tryPromise(() => context.droid.interrupt()).pipe(Effect.ignore);
         }),
       respondToRequest: (threadId, requestId, decision) =>

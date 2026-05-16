@@ -15,6 +15,7 @@ import type {
   ProviderApprovalDecision,
   ProviderSessionStartInput,
   ProviderUserInputAnswers,
+  RuntimeMode,
   ThreadTokenUsageSnapshot,
   ToolLifecycleItemType,
   UserInputQuestion,
@@ -51,8 +52,8 @@ export function toReasoningEffort(value: string | undefined): ReasoningEffort | 
   }
 }
 
-export function toAutonomyLevel(input: ProviderSessionStartInput): AutonomyLevel {
-  switch (input.runtimeMode) {
+export function toAutonomyLevelForRuntimeMode(runtimeMode: RuntimeMode): AutonomyLevel {
+  switch (runtimeMode) {
     case "approval-required":
       return AutonomyLevel.Off;
     case "auto-accept-edits":
@@ -62,6 +63,10 @@ export function toAutonomyLevel(input: ProviderSessionStartInput): AutonomyLevel
     case "full-access":
       return AutonomyLevel.High;
   }
+}
+
+export function toAutonomyLevel(input: ProviderSessionStartInput): AutonomyLevel {
+  return toAutonomyLevelForRuntimeMode(input.runtimeMode);
 }
 
 export function contentBlockText(block: ContentBlock): string {

@@ -337,6 +337,86 @@ it.effect("maps Droid medium access to medium autonomy", () =>
   ).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("applies runtime autonomy when resuming Droid sessions and sending turns", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const updateSettingsCalls: unknown[] = [];
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async () => fakeSession({}),
+          resumeSession: async (sessionId) =>
+            fakeSession({
+              sessionId,
+              messages: [{ type: DroidMessageType.TurnComplete, tokenUsage: null }],
+              onUpdateSettings: (params) => updateSettingsCalls.push(params),
+            }),
+        },
+      });
+      const completedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.completed"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "approval-required",
+        resumeCursor: "droid-session-resume",
+      });
+      yield* adapter.sendTurn({ threadId, input: "hello" });
+
+      const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
+      assert.equal(completed._tag, "Some");
+      assert.deepEqual(updateSettingsCalls, [
+        { autonomyLevel: AutonomyLevel.Off },
+        { autonomyLevel: AutonomyLevel.Off },
+      ]);
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("closes an existing Droid session before replacing the same thread", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const closedSessionIds: string[] = [];
+      let createCount = 0;
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async () => {
+            createCount += 1;
+            const sessionId = `droid-session-${createCount}`;
+            return fakeSession({
+              sessionId,
+              onClose: async () => {
+                closedSessionIds.push(sessionId);
+              },
+            });
+          },
+          resumeSession: async () => fakeSession({}),
+        },
+      });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "full-access",
+      });
+      const secondSession = yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(closedSessionIds, ["droid-session-1"]);
+      assert.equal(secondSession.resumeCursor, "droid-session-2");
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions.length, 1);
+      assert.equal(sessions[0]?.resumeCursor, "droid-session-2");
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("uses final Droid create_message content when deltas are absent", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -602,6 +682,7 @@ it.effect("passes custom model reasoning into Droid spec mode", () =>
         specModeReasoningEffort: ReasoningEffort.ExtraHigh,
       });
       assert.deepEqual(updateSettingsParams, {
+        autonomyLevel: AutonomyLevel.High,
         modelId: "custom:Direct-GPT-5.5-xhigh-27",
         reasoningEffort: ReasoningEffort.ExtraHigh,
         specModeModelId: "custom:Direct-GPT-5.5-xhigh-27",
@@ -674,6 +755,120 @@ it.effect("routes Droid permission requests through adapter approvals", () =>
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
       assert.equal(completed._tag, "Some");
       assert.equal(permissionResult, ToolConfirmationOutcome.ProceedAlways);
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("settles pending Droid permission and user-input waits when stopped", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let permissionResult: unknown;
+      let userInputResult: unknown;
+      const permissionParams: RequestPermissionRequestParams = {
+        options: [
+          { label: "Proceed once", value: ToolConfirmationOutcome.ProceedOnce },
+          { label: "Cancel", value: ToolConfirmationOutcome.Cancel },
+        ],
+        toolUses: [
+          {
+            toolUse: { type: "tool_use", id: "tool-1", input: {}, name: "Execute" },
+            confirmationType: ToolConfirmationType.Execute,
+            details: {
+              type: ToolConfirmationType.Execute,
+              fullCommand: "bun lint",
+              command: "bun",
+            },
+          },
+        ],
+      };
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async (options) =>
+            fakeSession({
+              onStream: async function* () {
+                const [permission, userInput] = await Promise.all([
+                  options?.permissionHandler?.(permissionParams),
+                  options?.askUserHandler?.({
+                    toolCallId: "ask-user-1",
+                    questions: [
+                      {
+                        index: 0,
+                        topic: "Decision",
+                        question: "Continue?",
+                        options: ["Yes", "No"],
+                      },
+                    ],
+                  }),
+                ]);
+                permissionResult =
+                  typeof permission === "string" ? permission : permission?.selectedOption;
+                userInputResult = userInput;
+                yield { type: DroidMessageType.TurnComplete, tokenUsage: null };
+              },
+            }),
+          resumeSession: async () => fakeSession({}),
+        },
+      });
+      const openedEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) => event.type === "request.opened" || event.type === "user-input.requested",
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const resolvedEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) => event.type === "request.resolved" || event.type === "user-input.resolved",
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const completedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.completed"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({ threadId, input: "run lint" });
+      const openedEvents = Array.from(
+        yield* Fiber.join(openedEventsFiber).pipe(Effect.timeout("2 seconds")),
+      );
+      assert.deepEqual(openedEvents.map((event) => event.type).toSorted(), [
+        "request.opened",
+        "user-input.requested",
+      ]);
+      yield* adapter.stopSession(threadId);
+      const resolvedEvents = Array.from(
+        yield* Fiber.join(resolvedEventsFiber).pipe(Effect.timeout("2 seconds")),
+      );
+      assert.deepEqual(resolvedEvents.map((event) => event.type).toSorted(), [
+        "request.resolved",
+        "user-input.resolved",
+      ]);
+      const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
+
+      assert.equal(completed._tag, "Some");
+      assert.equal(permissionResult, ToolConfirmationOutcome.Cancel);
+      assert.deepEqual(userInputResult, { cancelled: true, answers: [] });
+      const resolvedApproval = resolvedEvents.find((event) => event.type === "request.resolved");
+      assert.equal(resolvedApproval?.type, "request.resolved");
+      if (resolvedApproval?.type === "request.resolved") {
+        assert.equal(resolvedApproval.payload.decision, "cancel");
+      }
+      const resolvedUserInput = resolvedEvents.find(
+        (event) => event.type === "user-input.resolved",
+      );
+      assert.equal(resolvedUserInput?.type, "user-input.resolved");
+      if (resolvedUserInput?.type === "user-input.resolved") {
+        assert.deepEqual(resolvedUserInput.payload.answers, {});
+      }
     }),
   ).pipe(Effect.provide(testLayer)),
 );
