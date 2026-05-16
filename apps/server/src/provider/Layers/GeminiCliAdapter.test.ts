@@ -18,10 +18,7 @@ import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { vi } from "vitest";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
-import {
-  makeGeminiCliAdapter,
-  type GeminiCliAdapterShape,
-} from "./GeminiCliAdapter.ts";
+import { makeGeminiCliAdapter, type GeminiCliAdapterShape } from "./GeminiCliAdapter.ts";
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
@@ -121,9 +118,9 @@ const disabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: fal
 const makeAdapterLayer = (manager: FakeGeminiCliManager, config = enabledConfig) =>
   Layer.effect(GeminiCliAdapter, makeGeminiCliAdapter(config, { manager }));
 
-it.effect("delegates session startup to the manager", () =>
-  Effect.gen(function* () {
-    const manager = new FakeGeminiCliManager();
+it.effect("delegates session startup to the manager", () => {
+  const manager = new FakeGeminiCliManager();
+  return Effect.gen(function* () {
     const adapter = yield* GeminiCliAdapter;
 
     const session = yield* adapter.startSession({
@@ -133,8 +130,8 @@ it.effect("delegates session startup to the manager", () =>
 
     assert.equal(session.provider, "geminiCli");
     assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
-  }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
-);
+  }).pipe(Effect.provide(makeAdapterLayer(manager)), Effect.scoped);
+});
 
 it.effect("returns validation error when the provider is disabled", () =>
   Effect.gen(function* () {
@@ -175,10 +172,9 @@ it.effect("rejects attachments until Gemini CLI attachment wiring exists", () =>
   }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
 );
 
-it.effect("forwards manager runtime events through the adapter stream", () =>
-  Effect.gen(function* () {
-    const manager = new FakeGeminiCliManager();
-    const layer = makeAdapterLayer(manager);
+it.effect("forwards manager runtime events through the adapter stream", () => {
+  const manager = new FakeGeminiCliManager();
+  return Effect.gen(function* () {
     const adapter = yield* GeminiCliAdapter;
 
     const event = {
@@ -211,7 +207,5 @@ it.effect("forwards manager runtime events through the adapter stream", () =>
       return;
     }
     assert.equal(received.value.payload.delta, "hello");
-
-    void layer; // keep ref so eslint doesn't complain
-  }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
-);
+  }).pipe(Effect.provide(makeAdapterLayer(manager)), Effect.scoped);
+});

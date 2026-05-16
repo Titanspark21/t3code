@@ -2064,7 +2064,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await waitForServerConfigToApply();
       const menuButton = await waitForElement(
-        () => document.querySelector('button[aria-label="Copy options"]'),
+        () => document.querySelector('button[aria-label="Select editor"]'),
         "Unable to find Open picker button.",
       );
       (menuButton as HTMLButtonElement).click();
@@ -2113,7 +2113,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await waitForServerConfigToApply();
       const menuButton = await waitForElement(
-        () => document.querySelector('button[aria-label="Copy options"]'),
+        () => document.querySelector('button[aria-label="Select editor"]'),
         "Unable to find Open picker button.",
       );
       (menuButton as HTMLButtonElement).click();

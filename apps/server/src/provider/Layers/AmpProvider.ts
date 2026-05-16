@@ -189,7 +189,9 @@ export const checkAmpStatus = Effect.fn("checkAmpStatus")(function* (
   });
 });
 
-export const makePendingAmpProvider = (ampSettings: GenericProviderSettings): ServerProviderDraft => {
+export const makePendingAmpProvider = (
+  ampSettings: GenericProviderSettings,
+): ServerProviderDraft => {
   const checkedAt = new Date().toISOString();
   const models = providerModelsFromSettings(
     BUILT_IN_MODELS,

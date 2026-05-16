@@ -11,10 +11,9 @@ import {
 } from "./kilo/types.ts";
 
 vi.mock("./kilo/serverLifecycle.ts", async () => {
-  const actual =
-    await vi.importActual<typeof import("./kilo/serverLifecycle.ts")>(
-      "./kilo/serverLifecycle.ts",
-    );
+  const actual = await vi.importActual<typeof import("./kilo/serverLifecycle.ts")>(
+    "./kilo/serverLifecycle.ts",
+  );
   return {
     ...actual,
     ensureServer: vi.fn(),

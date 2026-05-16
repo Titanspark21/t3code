@@ -167,9 +167,7 @@ export const checkKiloProviderStatus = Effect.fn("checkKiloProviderStatus")(func
         status: "authenticated",
         type: "kilo",
       },
-      message: parsedVersion
-        ? `Kilo v${parsedVersion} detected.`
-        : "Kilo CLI detected.",
+      message: parsedVersion ? `Kilo v${parsedVersion} detected.` : "Kilo CLI detected.",
     },
   });
 });
