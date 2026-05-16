@@ -368,6 +368,30 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
           'amp-custom'
         )
       `;
+      yield* sql`
+        INSERT INTO provider_session_runtime (
+          thread_id,
+          provider_name,
+          adapter_key,
+          runtime_mode,
+          status,
+          last_seen_at,
+          resume_cursor_json,
+          runtime_payload_json,
+          provider_instance_id
+        )
+        VALUES (
+          'thread-amp-custom',
+          'amp',
+          'amp',
+          'full-access',
+          'running',
+          '2026-01-01T00:00:00.000Z',
+          NULL,
+          NULL,
+          'amp-custom'
+        )
+      `;
 
       yield* runMigrations({ toMigrationInclusive: 31 });
 
@@ -377,6 +401,13 @@ layer("029_BackfillForkProviderInstanceIds", (it) => {
         WHERE thread_id = 'thread-amp-custom'
       `;
       assert.deepStrictEqual(rows, [{ providerInstanceId: "amp-custom" }]);
+
+      const runtimeRows = yield* sql<{ readonly providerInstanceId: string }>`
+        SELECT provider_instance_id AS "providerInstanceId"
+        FROM provider_session_runtime
+        WHERE thread_id = 'thread-amp-custom'
+      `;
+      assert.deepStrictEqual(runtimeRows, [{ providerInstanceId: "amp-custom" }]);
     }),
   );
 });
