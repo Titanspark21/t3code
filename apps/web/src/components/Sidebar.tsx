@@ -2723,15 +2723,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 export default function Sidebar() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
-  // Threads (with activities) are subscribed to here only for the rate-limits
-  // panel, which derives `account.rate-limited` events from each thread's
-  // activity stream. Activity arrays change frequently — using `useShallow`
-  // keeps the reference stable when the activity slices haven't changed.
-  const threadsWithActivities = useStore(
-    useShallow((state) =>
-      selectThreadsAcrossEnvironments(state).map((thread) => ({ activities: thread.activities })),
-    ),
-  );
+  // Threads are subscribed to here only for the rate-limits panel, which
+  // derives `account.rate-limited` events from each thread's activity stream.
+  // Keep the original thread object references so Zustand's shallow selector
+  // can cache snapshots between renders.
+  const threadsWithActivities = useStore(useShallow(selectThreadsAcrossEnvironments));
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
