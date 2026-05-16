@@ -15,7 +15,7 @@
  *   - `configDir`      — Optional override for the Copilot config dir.
  *   - `customModels`   — User-added model slugs.
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export const CopilotSettings = Schema.Struct({

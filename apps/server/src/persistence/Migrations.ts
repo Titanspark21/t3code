@@ -50,6 +50,8 @@ import Migration0030 from "./Migrations/028_ProjectionThreadSessionInstanceId.ts
 // drivers (amp/copilot/geminiCli/kilo) so existing rows resolve under the
 // new instance-based routing model introduced by upstream PR #2277.
 import Migration0031 from "./Migrations/029_BackfillForkProviderInstanceIds.ts";
+import Migration0032 from "./Migrations/029_ProjectionThreadDetailOrderingIndexes.ts";
+import Migration0033 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -93,6 +95,8 @@ export const migrationEntries = [
   [29, "ProviderSessionRuntimeInstanceId", Migration0029],
   [30, "ProjectionThreadSessionInstanceId", Migration0030],
   [31, "BackfillForkProviderInstanceIds", Migration0031],
+  [32, "ProjectionThreadDetailOrderingIndexes", Migration0032],
+  [33, "ProjectionThreadShellArchiveIndexes", Migration0033],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

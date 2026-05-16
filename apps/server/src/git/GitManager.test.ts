@@ -1,10 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, PlatformError, Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
+import * as Scope from "effect/Scope";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { expect } from "vitest";
 import type {
@@ -32,6 +37,7 @@ import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
   ProjectSetupScriptRunner,
+  ProjectSetupScriptRunnerError,
   type ProjectSetupScriptRunnerInput,
   type ProjectSetupScriptRunnerShape,
 } from "../project/Services/ProjectSetupScriptRunner.ts";
@@ -291,6 +297,18 @@ function configureRemote(
       `remote.${remoteName}.fetch`,
       `+refs/heads/*:refs/remotes/${fetchNamespace}/*`,
     ]);
+  });
+}
+
+function configureVisibleRemoteUrlWithLocalRewrite(
+  cwd: string,
+  remoteName: string,
+  visibleUrl: string,
+  localRemotePath: string,
+): Effect.Effect<void, GitCommandError, GitVcsDriver.GitVcsDriver> {
+  return Effect.gen(function* () {
+    yield* runGit(cwd, ["config", `remote.${remoteName}.url`, visibleUrl]);
+    yield* runGit(cwd, ["config", `url.${localRemotePath}.insteadOf`, visibleUrl]);
   });
 }
 
@@ -701,6 +719,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 13,
@@ -742,6 +761,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 14,
@@ -780,6 +800,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 0,
@@ -831,6 +852,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 16,
@@ -943,6 +965,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       };
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr]), JSON.stringify([existingPr])],
         },
       });
@@ -969,6 +992,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager } = yield* makeManager({
           ghScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -1012,17 +1036,21 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-488/statemachine"]);
         yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.fork-seed.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
           "git@github.com:jasonLaster/codething-mvp.git",
-        ]);
+          forkDir,
+        );
 
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 488,
@@ -1077,17 +1105,19 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "effect-atom"]);
         yield* runGit(repoDir, ["push", "-u", "origin", "effect-atom"]);
         yield* runGit(repoDir, ["push", "-u", "my-org/upstream", "effect-atom"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.origin.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "origin",
           "git@github.com:pingdotgg/codething-mvp.git",
-        ]);
+          originDir,
+        );
         yield* runGit(repoDir, ["config", "remote.origin.pushurl", originDir]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.my-org/upstream.url",
-          "git@github.com:pingdotgg/codething-mvp.git",
-        ]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "my-org/upstream",
+          "ssh://git@github.com/pingdotgg/codething-mvp.git",
+          upstreamDir,
+        );
         yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
         yield* runGit(repoDir, ["checkout", "main"]);
         yield* runGit(repoDir, ["branch", "-D", "effect-atom"]);
@@ -1096,6 +1126,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -1107,6 +1138,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   updatedAt: "2026-03-01T10:00:00Z",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -1118,8 +1150,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   updatedAt: "2026-04-01T10:00:00Z",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "pingdotgg:effect-atom": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "my-org/upstream:effect-atom": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "pingdotgg:upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -1131,6 +1166,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   updatedAt: "2026-04-01T10:00:00Z",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "my-org/upstream:upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -1180,6 +1216,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 22,
@@ -1217,6 +1254,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 23,
@@ -1248,6 +1286,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 45,
@@ -1598,6 +1637,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ghScenario: {
             prListSequence: [
               "[]",
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 77,
@@ -1733,6 +1773,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 303,
@@ -1779,6 +1820,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 404,
@@ -1819,6 +1861,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 42,
@@ -1863,16 +1906,19 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.fork-seed.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
           "git@github.com:octocat/codething-mvp.git",
-        ]);
+          forkDir,
+        );
 
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 142,
@@ -1926,17 +1972,19 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "effect-atom"]);
         yield* runGit(repoDir, ["push", "-u", "origin", "effect-atom"]);
         yield* runGit(repoDir, ["push", "-u", "my-org/upstream", "effect-atom"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.origin.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "origin",
           "git@github.com:pingdotgg/codething-mvp.git",
-        ]);
+          originDir,
+        );
         yield* runGit(repoDir, ["config", "remote.origin.pushurl", originDir]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.my-org/upstream.url",
-          "git@github.com:pingdotgg/codething-mvp.git",
-        ]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "my-org/upstream",
+          "ssh://git@github.com/pingdotgg/codething-mvp.git",
+          upstreamDir,
+        );
         yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
         yield* runGit(repoDir, ["checkout", "main"]);
         yield* runGit(repoDir, ["branch", "-D", "effect-atom"]);
@@ -1948,6 +1996,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -1957,6 +2006,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   headRefName: "effect-atom",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -1966,8 +2016,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   headRefName: "upstream/effect-atom",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "pingdotgg:effect-atom": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "my-org/upstream:effect-atom": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "pingdotgg:upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -1977,6 +2030,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   headRefName: "upstream/effect-atom",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "my-org/upstream:upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -2017,16 +2071,19 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
         yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.fork-seed.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
           "git@github.com:octocat/codething-mvp.git",
-        ]);
+          forkDir,
+        );
 
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               statemachine: JSON.stringify([
                 {
                   number: 41,
@@ -2036,6 +2093,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   headRefName: "statemachine",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "octocat:statemachine": JSON.stringify([
                 {
                   number: 142,
@@ -2053,6 +2111,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   },
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "fork-seed:statemachine": JSON.stringify([]),
             },
           },
@@ -2088,15 +2147,17 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
         yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.fork-seed.url",
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
           "git@github.com:octocat/codething-mvp.git",
-        ]);
+          forkDir,
+        );
 
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "octocat:statemachine": JSON.stringify([
                 {
                   number: 142,
@@ -2114,8 +2175,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   },
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "fork-seed:statemachine": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               statemachine: JSON.stringify([]),
             },
           },
@@ -2155,6 +2219,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 88,
@@ -2200,6 +2265,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -2217,6 +2283,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   },
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -2268,17 +2335,20 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
       yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-91/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-      yield* runGit(repoDir, [
-        "config",
-        "remote.fork-seed.url",
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
         "git@github.com:octocat/codething-mvp.git",
-      ]);
+        forkDir,
+      );
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequenceByHeadSelector: {
             "octocat:statemachine": [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -2297,7 +2367,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 },
               ]),
             ],
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             "fork-seed:statemachine": [JSON.stringify([])],
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             statemachine: [JSON.stringify([])],
           },
         },
@@ -2854,7 +2926,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "existing.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Existing worktree branch"]);
       yield* runGit(repoDir, ["checkout", "main"]);
-      const worktreePath = path.join(repoDir, "..", `pr-existing-${Date.now()}`);
+      const worktreePath = path.join(repoDir, "..", `pr-existing-${path.basename(repoDir)}`);
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-existing-worktree"]);
 
       const setupCalls: ProjectSetupScriptRunnerInput[] = [];
@@ -3028,7 +3100,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* runGit(repoDir, ["commit", "-m", "Reused fork PR branch"]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "feature/pr-reused-fork"]);
       yield* runGit(repoDir, ["checkout", "main"]);
-      const worktreePath = path.join(repoDir, "..", `pr-reused-fork-${Date.now()}`);
+      const worktreePath = path.join(repoDir, "..", `pr-reused-fork-${path.basename(repoDir)}`);
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-fork"]);
       yield* runGit(worktreePath, ["branch", "--unset-upstream"], true);
 
@@ -3096,7 +3168,8 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           },
         },
         setupScriptRunner: {
-          runForThread: () => Effect.fail(new Error("terminal start failed")),
+          runForThread: () =>
+            Effect.fail(new ProjectSetupScriptRunnerError({ message: "terminal start failed" })),
         },
       });
 
@@ -3152,7 +3225,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       fs.writeFileSync(path.join(repoDir, "hooked.txt"), "hooked\n");
       fs.writeFileSync(
         path.join(repoDir, ".git", "hooks", "pre-commit"),
-        '#!/bin/sh\necho "hook: start" >&2\nsleep 1\necho "hook: end" >&2\n',
+        '#!/bin/sh\necho "hook: start" >&2\nsleep 0.05\necho "hook: end" >&2\n',
         { mode: 0o755 },
       );
 
@@ -3273,7 +3346,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([]),
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 201,

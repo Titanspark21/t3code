@@ -14,7 +14,9 @@ import {
   type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
 import { it, vi } from "@effect/vitest";
-import { Effect, Schema, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import { AmpServerManager } from "../../ampServerManager.ts";
 import { makeAmpAdapter } from "./AmpAdapter.ts";

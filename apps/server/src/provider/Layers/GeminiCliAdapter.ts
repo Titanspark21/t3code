@@ -18,7 +18,9 @@ import {
   ProviderInstanceId,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
-import { Effect, Queue, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
 import { ProviderAdapterValidationError, type ProviderAdapterError } from "../Errors.ts";

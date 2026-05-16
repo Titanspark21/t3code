@@ -22,7 +22,12 @@
  * @module provider/Drivers/CopilotDriver
  */
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
-import { Duration, Effect, FileSystem, Path, Schema, Stream } from "effect";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../../config.ts";
@@ -35,6 +40,7 @@ import {
 } from "../Layers/CopilotProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -46,6 +52,10 @@ import { CopilotSettings } from "./CopilotSettings.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("copilot");
 const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
+const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
+  provider: DRIVER_KIND,
+  packageName: null,
+});
 
 export type CopilotDriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -107,10 +117,12 @@ export const CopilotDriver: ProviderDriver<CopilotSettings, CopilotDriverEnv> = 
       );
 
       const snapshot = yield* makeManagedServerProvider<CopilotSettings>({
+        maintenanceCapabilities: MAINTENANCE_CAPABILITIES,
         getSettings: Effect.succeed(effectiveConfig),
         streamSettings: Stream.never,
         haveSettingsChanged: () => false,
-        initialSnapshot: (settings) => stampIdentity(makePendingCopilotProvider(settings)),
+        initialSnapshot: (settings) =>
+          Effect.succeed(stampIdentity(makePendingCopilotProvider(settings))),
         checkProvider,
         refreshInterval: SNAPSHOT_REFRESH_INTERVAL,
       }).pipe(

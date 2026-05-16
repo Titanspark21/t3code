@@ -57,7 +57,10 @@ import type {
  * Kept in sync with `dist/types.d.ts` (`"low" | "medium" | "high" | "xhigh"`).
  */
 type CopilotReasoningEffort = "low" | "medium" | "high" | "xhigh";
-import { Effect, Layer, Queue, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";

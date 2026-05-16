@@ -1,8 +1,8 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-import { OpenError, OpenInEditorInput } from "./editor.ts";
+import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import { AuthAccessStreamEvent } from "./auth.ts";
 import {
   FilesystemBrowseInput,
@@ -71,8 +71,18 @@ import {
 import {
   ServerConfigStreamEvent,
   ServerConfig,
+  ServerProviderUpdateError,
+  ServerProviderUpdateInput,
   ServerLifecycleStreamEvent,
+  ServerRemoveKeybindingInput,
+  ServerRemoveKeybindingResult,
   ServerProviderUpdatedPayload,
+  ServerTraceDiagnosticsResult,
+  ServerProcessDiagnosticsResult,
+  ServerProcessResourceHistoryInput,
+  ServerProcessResourceHistoryResult,
+  ServerSignalProcessInput,
+  ServerSignalProcessResult,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -129,10 +139,16 @@ export const WS_METHODS = {
   // Server meta
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
+  serverUpdateProvider: "server.updateProvider",
   serverUpsertKeybinding: "server.upsertKeybinding",
+  serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
+  serverGetTraceDiagnostics: "server.getTraceDiagnostics",
+  serverGetProcessDiagnostics: "server.getProcessDiagnostics",
+  serverGetProcessResourceHistory: "server.getProcessResourceHistory",
+  serverSignalProcess: "server.signalProcess",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -150,6 +166,12 @@ export const WS_METHODS = {
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
   success: ServerUpsertKeybindingResult,
+  error: KeybindingsConfigError,
+});
+
+export const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, {
+  payload: ServerRemoveKeybindingInput,
+  success: ServerRemoveKeybindingResult,
   error: KeybindingsConfigError,
 });
 
@@ -172,6 +194,12 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   success: ServerProviderUpdatedPayload,
 });
 
+export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
+  payload: ServerProviderUpdateInput,
+  success: ServerProviderUpdatedPayload,
+  error: ServerProviderUpdateError,
+});
+
 export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
   payload: Schema.Struct({}),
   success: ServerSettings,
@@ -187,6 +215,29 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   payload: Schema.Struct({}),
   success: SourceControlDiscoveryResult,
+});
+
+export const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTraceDiagnostics, {
+  payload: Schema.Struct({}),
+  success: ServerTraceDiagnosticsResult,
+});
+
+export const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDiagnostics, {
+  payload: Schema.Struct({}),
+  success: ServerProcessDiagnosticsResult,
+});
+
+export const WsServerGetProcessResourceHistoryRpc = Rpc.make(
+  WS_METHODS.serverGetProcessResourceHistory,
+  {
+    payload: ServerProcessResourceHistoryInput,
+    success: ServerProcessResourceHistoryResult,
+  },
+);
+
+export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
+  payload: ServerSignalProcessInput,
+  success: ServerSignalProcessResult,
 });
 
 export const WsSourceControlLookupRepositoryRpc = Rpc.make(
@@ -226,8 +277,8 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
 });
 
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
-  payload: OpenInEditorInput,
-  error: OpenError,
+  payload: LaunchEditorInput,
+  error: ExternalLauncherError,
 });
 
 export const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
@@ -370,6 +421,15 @@ export const WsOrchestrationReplayEventsRpc = Rpc.make(ORCHESTRATION_WS_METHODS.
   error: OrchestrationReplayEventsError,
 });
 
+export const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot,
+  {
+    payload: OrchestrationRpcSchemas.getArchivedShellSnapshot.input,
+    success: OrchestrationRpcSchemas.getArchivedShellSnapshot.output,
+    error: OrchestrationGetSnapshotError,
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -415,10 +475,16 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
+  WsServerUpdateProviderRpc,
   WsServerUpsertKeybindingRpc,
+  WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,
+  WsServerGetTraceDiagnosticsRpc,
+  WsServerGetProcessDiagnosticsRpc,
+  WsServerGetProcessResourceHistoryRpc,
+  WsServerSignalProcessRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
@@ -452,6 +518,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationReplayEventsRpc,
+  WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS, type UnifiedSettings } from "@t3tools/contracts/settings";
 import type { ProviderKind } from "./providerKind";

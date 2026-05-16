@@ -11,7 +11,7 @@
  *
  * @module AmpTextGeneration
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { GenericProviderSettings } from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";

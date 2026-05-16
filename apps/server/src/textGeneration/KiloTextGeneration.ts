@@ -12,10 +12,12 @@
  *
  * @module KiloTextGeneration
  */
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { TextGenerationError, type ChatAttachment, type ModelSelection } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
 import { KiloServerManager } from "../kiloServerManager.ts";
 import { parseKiloModel, readJsonData } from "../kilo/utils.ts";
@@ -29,7 +31,6 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
-  extractJsonObject,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
