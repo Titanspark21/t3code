@@ -178,6 +178,7 @@
       "devDependencies": {
         "@effect/language-service": "catalog:",
         "@effect/vitest": "catalog:",
+        "tsdown": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
@@ -192,6 +193,7 @@
         "@effect/openapi-generator": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
+        "tsdown": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
@@ -206,6 +208,7 @@
         "@effect/openapi-generator": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
+        "tsdown": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
