@@ -43,6 +43,7 @@ export interface DroidContext {
   activeAssistantItems: Map<string, string>;
   activeThinkingItems: Map<string, string>;
   activeCompletedAssistantItems: Set<string>;
+  activeTurnError: string | undefined;
   activeTokenUsage: ThreadTokenUsageSnapshot | undefined;
   activeTokenUsageBaseline: ThreadTokenUsageSnapshot | undefined;
   cumulativeTokenUsage: ThreadTokenUsageSnapshot | undefined;

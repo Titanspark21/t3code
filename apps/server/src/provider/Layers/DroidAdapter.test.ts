@@ -3,8 +3,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import {
   AutonomyLevel,
+  DroidErrorType,
   DroidInteractionMode,
   DroidMessageType,
+  type MessageOptions,
   ReasoningEffort,
   ToolConfirmationOutcome,
   ToolConfirmationType,
@@ -39,7 +41,10 @@ const threadId = ThreadId.make("thread-droid");
 function fakeSession(input: {
   readonly sessionId?: string;
   readonly messages?: ReadonlyArray<DroidMessage>;
-  readonly onStream?: () => AsyncGenerator<DroidMessage, void, undefined>;
+  readonly onStream?: (
+    message: string,
+    options?: MessageOptions,
+  ) => AsyncGenerator<DroidMessage, void, undefined>;
   readonly onClose?: () => Promise<void>;
   readonly onInterrupt?: () => Promise<void>;
   readonly onEnterSpecMode?: (params: unknown) => void;
@@ -48,8 +53,8 @@ function fakeSession(input: {
   return {
     sessionId: input.sessionId ?? "droid-session-1",
     initResult: { sessionId: input.sessionId ?? "droid-session-1" },
-    stream: () =>
-      input.onStream?.() ??
+    stream: (message: string, options?: MessageOptions) =>
+      input.onStream?.(message, options) ??
       (async function* () {
         for (const message of input.messages ?? []) {
           yield message;
@@ -972,7 +977,112 @@ it.effect("continues stopping Droid sessions when one close fails", () =>
   ).pipe(Effect.provide(testLayer)),
 );
 
-it.effect("reads and rolls back Droid thread snapshots", () =>
+it.effect("marks Droid stream errors as failed turns", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async () =>
+            fakeSession({
+              messages: [
+                {
+                  type: DroidMessageType.Error,
+                  message: "Droid stream failed",
+                  errorType: DroidErrorType.ERROR,
+                  timestamp: new Date(0).toISOString(),
+                },
+                { type: DroidMessageType.TurnComplete, tokenUsage: null },
+              ],
+            }),
+          resumeSession: async () => fakeSession({}),
+        },
+      });
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(5),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "hello" });
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const runtimeError = events.find((event) => event.type === "runtime.error");
+      const turnCompleted = events.find((event) => event.type === "turn.completed");
+
+      assert.equal(runtimeError?.type, "runtime.error");
+      assert.deepEqual(turnCompleted?.payload, {
+        state: "failed",
+        errorMessage: "Droid stream failed",
+      });
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("marks aborted Droid turns as interrupted without runtime error", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let markAbortReady: (() => void) | undefined;
+      const abortReady = new Promise<void>((resolve) => {
+        markAbortReady = resolve;
+      });
+      const adapter = yield* makeDroidAdapter(settings, {
+        sdk: {
+          createSession: async () =>
+            fakeSession({
+              onStream: async function* (_message, options) {
+                yield {
+                  type: DroidMessageType.AssistantTextDelta,
+                  messageId: "interrupted-message",
+                  blockIndex: 0,
+                  text: "working",
+                };
+                await new Promise<void>((_resolve, reject) => {
+                  options?.abortSignal?.addEventListener(
+                    "abort",
+                    () => reject(new DOMException("Aborted", "AbortError")),
+                    { once: true },
+                  );
+                  markAbortReady?.();
+                });
+              },
+            }),
+          resumeSession: async () => fakeSession({}),
+        },
+      });
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(5),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("droid"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "hello" });
+      yield* Effect.promise(() => abortReady).pipe(Effect.timeout("2 seconds"));
+      yield* adapter.interruptTurn(threadId);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      assert.equal(
+        events.some((event) => event.type === "runtime.error"),
+        false,
+      );
+      assert.deepEqual(events.find((event) => event.type === "turn.completed")?.payload, {
+        state: "interrupted",
+      });
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("reads Droid thread snapshots and rejects unsupported rollback", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const adapter = yield* makeDroidAdapter(settings, {
@@ -1011,9 +1121,13 @@ it.effect("reads and rolls back Droid thread snapshots", () =>
 
       const before = yield* adapter.readThread(threadId);
       assert.equal(before.turns.length, 2);
-      const after = yield* adapter.rollbackThread(threadId, 1);
-      assert.equal(after.turns.length, 1);
-      assert.equal(after.turns[0]?.id, before.turns[0]?.id);
+      const rollback = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.exit);
+      assert.equal(rollback._tag, "Failure");
+      if (rollback._tag === "Failure") {
+        assert.match(String(rollback.cause), /provider-native rewind\/fork support/);
+      }
+      const after = yield* adapter.readThread(threadId);
+      assert.equal(after.turns.length, 2);
 
       const invalid = yield* adapter.rollbackThread(threadId, 0).pipe(Effect.exit);
       assert.equal(invalid._tag, "Failure");

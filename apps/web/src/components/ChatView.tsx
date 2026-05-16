@@ -1258,12 +1258,18 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
-  const unlockedSelectedProvider = resolveSelectableProvider(
-    providerStatuses,
-    selectedProviderByThreadId ?? threadProvider ?? ProviderDriverKind.make("codex"),
-  );
+  const providerConfigLoaded = serverConfig != null;
+  const requestedProvider = selectedProviderByThreadId ?? threadProvider ?? null;
+  const unlockedSelectedProvider = providerConfigLoaded
+    ? resolveSelectableProvider(
+        providerStatuses,
+        requestedProvider ?? ProviderDriverKind.make("codex"),
+      )
+    : ProviderDriverKind.make("codex");
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
-  const runtimeMode = normalizeRuntimeModeForProvider(selectedProvider, rawRuntimeMode);
+  const runtimeMode = providerConfigLoaded
+    ? normalizeRuntimeModeForProvider(selectedProvider, rawRuntimeMode)
+    : rawRuntimeMode;
   useEffect(() => {
     if (runtimeMode === rawRuntimeMode) return;
     setComposerDraftRuntimeMode(composerDraftTarget, runtimeMode);

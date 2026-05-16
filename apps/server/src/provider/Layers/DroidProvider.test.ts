@@ -1,10 +1,20 @@
-import { ModelProvider, ReasoningEffort, type AvailableModelConfig } from "@factory/droid-sdk";
+import {
+  ModelProvider,
+  ReasoningEffort,
+  type AvailableModelConfig,
+  type CreateSessionOptions,
+  type DroidSession,
+} from "@factory/droid-sdk";
 import { DroidSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { buildDroidModelsFromSdkModels, makePendingDroidProvider } from "./DroidProvider.ts";
+import {
+  buildDroidModelsFromSdkModels,
+  discoverDroidModels,
+  makePendingDroidProvider,
+} from "./DroidProvider.ts";
 
 const sdkModel = (model: AvailableModelConfig): AvailableModelConfig => model;
 const decodeDroidSettings = Schema.decodeSync(DroidSettings);
@@ -72,5 +82,30 @@ describe("DroidProvider", () => {
         { id: "high", label: "High", isDefault: true },
       ],
     });
+  });
+
+  it("cancels Droid SDK model discovery on interruption", async () => {
+    const settings = decodeDroidSettings({
+      enabled: true,
+      binaryPath: "fake-droid",
+    });
+    let receivedOptions: CreateSessionOptions | undefined;
+    const effect = discoverDroidModels(
+      settings,
+      {},
+      {
+        sdk: {
+          createSession: (options) => {
+            receivedOptions = options;
+            return new Promise<DroidSession>(() => undefined);
+          },
+        },
+      },
+    ).pipe(Effect.timeoutOption("10 millis"));
+
+    const result = await Effect.runPromise(effect);
+
+    expect(result._tag).toBe("None");
+    expect(receivedOptions?.abortSignal?.aborted).toBe(true);
   });
 });

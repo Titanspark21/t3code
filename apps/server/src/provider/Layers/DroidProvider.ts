@@ -179,30 +179,54 @@ export function buildDroidModelsFromSdkModels(
   return resolved;
 }
 
-const discoverDroidModels = (
+export const discoverDroidModels = (
   settings: DroidSettings,
   environment: NodeJS.ProcessEnv,
   options?: DroidProviderStatusOptions,
 ): Effect.Effect<ReadonlyArray<ServerProviderModel>, DroidModelDiscoveryError> =>
-  Effect.tryPromise({
-    try: async () => {
-      let session: DroidSession | undefined;
+  Effect.callback((resume, signal) => {
+    let session: DroidSession | undefined;
+    let settled = false;
+    const abort = new AbortController();
+    signal.addEventListener("abort", () => abort.abort(), { once: true });
+
+    void (async () => {
       try {
         session = await (options?.sdk ?? defaultSdk).createSession({
           cwd: tmpdir(),
           execPath: settings.binaryPath,
           env: compactEnvironment(environment),
+          abortSignal: abort.signal,
         });
-        return buildDroidModelsFromSdkModels(session.initResult.availableModels);
-      } finally {
+        const models = buildDroidModelsFromSdkModels(session.initResult.availableModels);
+        await session.close().catch(() => undefined);
+        if (!settled) {
+          settled = true;
+          resume(Effect.succeed(models));
+        }
+      } catch (cause) {
         await session?.close().catch(() => undefined);
+        if (!settled) {
+          settled = true;
+          resume(
+            Effect.fail(
+              new DroidModelDiscoveryError({
+                message:
+                  cause instanceof Error ? cause.message : "Failed to discover Droid models.",
+                cause,
+              }),
+            ),
+          );
+        }
       }
-    },
-    catch: (cause) =>
-      new DroidModelDiscoveryError({
-        message: cause instanceof Error ? cause.message : "Failed to discover Droid models.",
-        cause,
-      }),
+    })();
+
+    return Effect.sync(() => {
+      if (settled) return;
+      settled = true;
+      abort.abort();
+      void session?.close().catch(() => undefined);
+    });
   });
 
 const modelsWithSettingsFallback = (

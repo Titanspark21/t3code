@@ -228,6 +228,7 @@ export async function handleDroidMessage(input: {
         },
       });
     case DroidMessageType.Error:
+      context.activeTurnError = message.message;
       return emitNow({
         ...base(),
         type: "runtime.error",

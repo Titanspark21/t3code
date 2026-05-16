@@ -240,6 +240,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
           activeAssistantItems: new Map(),
           activeThinkingItems: new Map(),
           activeCompletedAssistantItems: new Set(),
+          activeTurnError: undefined,
           activeTokenUsage: undefined,
           activeTokenUsageBaseline: undefined,
           cumulativeTokenUsage: undefined,
@@ -296,6 +297,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
       context.activeAssistantItems = new Map();
       context.activeThinkingItems = new Map();
       context.activeCompletedAssistantItems = new Set();
+      context.activeTurnError = undefined;
       context.activeTokenUsage = undefined;
       context.activeTokenUsageBaseline = context.cumulativeTokenUsage;
       context.turns.push({ id: turnId, items: [] });
@@ -343,6 +345,21 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
           )) {
             await handleDroidMessage({ context, turnId, message, eventBase, emitNow });
           }
+          if (context.activeTurnError) {
+            const message = context.activeTurnError;
+            context.activeAbort = undefined;
+            updateDroidContextSession(context, {
+              status: "error",
+              activeTurnId: undefined,
+              lastError: message,
+            });
+            await emitNow({
+              ...eventBase(context, { turnId }),
+              type: "turn.completed",
+              payload: { state: "failed", errorMessage: message },
+            });
+            return;
+          }
           for (const [itemId, detail] of context.activeAssistantItems) {
             if (context.activeCompletedAssistantItems.has(itemId)) {
               continue;
@@ -353,6 +370,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
               payload: { itemType: "assistant_message", status: "completed", detail },
             });
           }
+          context.activeAbort = undefined;
           updateDroidContextSession(context, { status: "ready", activeTurnId: undefined });
           await emitNow({
             ...eventBase(context, { turnId }),
@@ -363,7 +381,18 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
             },
           });
         } catch (cause) {
+          if (abort.signal.aborted) {
+            context.activeAbort = undefined;
+            updateDroidContextSession(context, { status: "ready", activeTurnId: undefined });
+            await emitNow({
+              ...eventBase(context, { turnId }),
+              type: "turn.completed",
+              payload: { state: "interrupted" },
+            });
+            return;
+          }
           const message = cause instanceof Error ? cause.message : "Droid turn failed.";
+          context.activeAbort = undefined;
           updateDroidContextSession(context, {
             status: "error",
             activeTurnId: undefined,
@@ -458,7 +487,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
         }),
       rollbackThread: (threadId, numTurns) =>
         Effect.gen(function* () {
-          const context = yield* requireSession(threadId);
+          yield* requireSession(threadId);
           if (!Number.isInteger(numTurns) || numTurns < 1) {
             return yield* new ProviderAdapterValidationError({
               provider: DROID_PROVIDER,
@@ -466,9 +495,12 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
               issue: "numTurns must be an integer >= 1.",
             });
           }
-          const nextLength = Math.max(0, context.turns.length - numTurns);
-          context.turns.splice(nextLength);
-          return { threadId, turns: context.turns };
+          return yield* new ProviderAdapterRequestError({
+            provider: DROID_PROVIDER,
+            method: "rollbackThread",
+            detail:
+              "Droid rollback requires provider-native rewind/fork support and is not yet wired into T3 Code.",
+          });
         }),
       stopAll: () =>
         Effect.forEach([...sessions.keys()], stopSession, {
