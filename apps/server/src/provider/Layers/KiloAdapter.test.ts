@@ -10,7 +10,9 @@ import {
   type ProviderTurnStartResult,
 } from "@t3tools/contracts";
 import { it, vi } from "@effect/vitest";
-import { Effect, Schema, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { GenericProviderSettings } from "@t3tools/contracts";
 
 import { KiloServerManager } from "../../kiloServerManager.ts";

@@ -14,7 +14,12 @@ import {
   ProviderDriverKind,
   type ServerProvider,
 } from "@t3tools/contracts";
-import { Duration, Effect, FileSystem, Path, Schema, Stream } from "effect";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../../config.ts";
@@ -27,6 +32,7 @@ import {
   type KiloSettings,
 } from "../Layers/KiloProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -37,6 +43,10 @@ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment
 
 const DRIVER_KIND = ProviderDriverKind.make("kilo");
 const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
+const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
+  provider: DRIVER_KIND,
+  packageName: null,
+});
 
 export type KiloDriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -100,10 +110,12 @@ export const KiloDriver: ProviderDriver<KiloSettings, KiloDriverEnv> = {
       );
 
       const snapshot = yield* makeManagedServerProvider<KiloSettings>({
+        maintenanceCapabilities: MAINTENANCE_CAPABILITIES,
         getSettings: Effect.succeed(effectiveConfig),
         streamSettings: Stream.never,
         haveSettingsChanged: () => false,
-        initialSnapshot: (settings) => stampIdentity(makePendingKiloProvider(settings)),
+        initialSnapshot: (settings) =>
+          Effect.succeed(stampIdentity(makePendingKiloProvider(settings))),
         checkProvider,
         refreshInterval: SNAPSHOT_REFRESH_INTERVAL,
       }).pipe(

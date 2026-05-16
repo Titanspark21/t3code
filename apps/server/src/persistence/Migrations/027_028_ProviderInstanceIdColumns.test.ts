@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
@@ -12,13 +13,13 @@ layer("027_028_ProviderInstanceIdColumns", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 26 });
+      yield* runMigrations({ toMigrationInclusive: 28 });
       yield* sql`
         ALTER TABLE provider_session_runtime
         ADD COLUMN provider_instance_id TEXT
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 28 });
+      yield* runMigrations({ toMigrationInclusive: 30 });
 
       const migrations = yield* sql<{
         readonly migration_id: number;
@@ -26,16 +27,16 @@ layer("027_028_ProviderInstanceIdColumns", (it) => {
       }>`
         SELECT migration_id, name
         FROM effect_sql_migrations
-        WHERE migration_id IN (27, 28)
+        WHERE migration_id IN (29, 30)
         ORDER BY migration_id
       `;
       assert.deepStrictEqual(migrations, [
         {
-          migration_id: 27,
+          migration_id: 29,
           name: "ProviderSessionRuntimeInstanceId",
         },
         {
-          migration_id: 28,
+          migration_id: 30,
           name: "ProjectionThreadSessionInstanceId",
         },
       ]);

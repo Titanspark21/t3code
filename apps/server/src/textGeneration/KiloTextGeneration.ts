@@ -12,18 +12,14 @@
  *
  * @module KiloTextGeneration
  */
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
-import {
-  TextGenerationError,
-  type ChatAttachment,
-  type ModelSelection,
-} from "@t3tools/contracts";
+import { TextGenerationError, type ChatAttachment, type ModelSelection } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
-import {
-  KiloServerManager,
-} from "../kiloServerManager.ts";
+import { KiloServerManager } from "../kiloServerManager.ts";
 import { parseKiloModel, readJsonData } from "../kilo/utils.ts";
 import { createClient } from "../kilo/serverLifecycle.ts";
 import type { KiloProviderOptions, SharedServerState } from "../kilo/types.ts";
@@ -35,7 +31,6 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
-  extractJsonObject,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -99,7 +94,10 @@ export const makeKiloTextGeneration = Effect.fn("makeKiloTextGeneration")(functi
   // because `getOrStartServer` is internally serialized.
   const manager = new KiloServerManager();
 
-  yield* Effect.acquireRelease(Effect.sync(() => manager), (m) => Effect.sync(() => m.stopAll()));
+  yield* Effect.acquireRelease(
+    Effect.sync(() => manager),
+    (m) => Effect.sync(() => m.stopAll()),
+  );
 
   const resolveBinaryPath = (): string => kiloSettings.binaryPath.trim() || "kilo";
 
@@ -130,9 +128,7 @@ export const makeKiloTextGeneration = Effect.fn("makeKiloTextGeneration")(functi
           directory: input.cwd,
           responseStyle: "data",
           throwOnError: true,
-          ...(shared.authHeader
-            ? { headers: { Authorization: shared.authHeader } }
-            : {}),
+          ...(shared.authHeader ? { headers: { Authorization: shared.authHeader } } : {}),
         });
 
         const created = (await readJsonData(

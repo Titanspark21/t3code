@@ -1,6 +1,5 @@
 {
   "name": "@t3tools/tailscale",
-  "version": "0.0.0-alpha.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,7 +9,6 @@
     }
   },
   "scripts": {
-    "prepare": "effect-language-service patch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

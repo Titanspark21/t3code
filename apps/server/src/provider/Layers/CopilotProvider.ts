@@ -15,7 +15,10 @@ import {
   ProviderDriverKind,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import { Data, Effect, Option, Result } from "effect";
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
@@ -29,10 +32,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import {
-  resolveBundledCopilotCliPath,
-  withSanitizedCopilotDesktopEnv,
-} from "./copilotCliPath.ts";
+import { resolveBundledCopilotCliPath, withSanitizedCopilotDesktopEnv } from "./copilotCliPath.ts";
 import type { CopilotSettings } from "../Drivers/CopilotSettings.ts";
 
 const PROVIDER = ProviderDriverKind.make("copilot");

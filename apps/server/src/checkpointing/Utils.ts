@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { Encoding } from "effect";
+import * as Encoding from "effect/Encoding";
 import { CheckpointRef, ProjectId, type ThreadId } from "@t3tools/contracts";
 
 export const CHECKPOINT_REFS_PREFIX = "refs/t3/checkpoints";

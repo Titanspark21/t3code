@@ -15,7 +15,9 @@ import {
   type GenericProviderSettings,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
-import { Effect, Queue, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import { AmpServerManager } from "../../ampServerManager.ts";
 import { ProviderAdapterValidationError, type ProviderAdapterError } from "../Errors.ts";

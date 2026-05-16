@@ -19,7 +19,7 @@
  *
  * @module GeminiCliTextGeneration
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { type GenericProviderSettings, TextGenerationError } from "@t3tools/contracts";
 

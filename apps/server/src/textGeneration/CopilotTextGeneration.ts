@@ -18,7 +18,7 @@
  *
  * @module CopilotTextGeneration
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -32,7 +32,13 @@ export const makeCopilotTextGeneration = Effect.fn("makeCopilotTextGeneration")(
   _copilotSettings: CopilotSettings,
   _environment: NodeJS.ProcessEnv = process.env,
 ) {
-  const fail = <Op extends "generateCommitMessage" | "generatePrContent" | "generateBranchName" | "generateThreadTitle">(
+  const fail = <
+    Op extends
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadTitle",
+  >(
     operation: Op,
   ) =>
     Effect.fail(

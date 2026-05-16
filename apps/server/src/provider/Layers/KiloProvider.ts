@@ -21,7 +21,10 @@ import {
   type GenericProviderSettings,
   type ModelCapabilities,
 } from "@t3tools/contracts";
-import { Effect, Option, Path, Result } from "effect";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
@@ -167,9 +170,7 @@ export const checkKiloProviderStatus = Effect.fn("checkKiloProviderStatus")(func
         status: "authenticated",
         type: "kilo",
       },
-      message: parsedVersion
-        ? `Kilo v${parsedVersion} detected.`
-        : "Kilo CLI detected.",
+      message: parsedVersion ? `Kilo v${parsedVersion} detected.` : "Kilo CLI detected.",
     },
   });
 });
