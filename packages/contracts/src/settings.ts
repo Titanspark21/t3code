@@ -333,13 +333,37 @@ export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
 // ── Fork provider settings ───────────────────────────────────────────
 //
-// The following four schemas describe the fork's additional drivers (Amp,
-// Copilot, Gemini CLI, Kilo). All four are JSON-compatible with the legacy
+// The following schemas describe additional drivers that are not part of
+// the original core provider set. The fork provider schemas are JSON-compatible
 // `GenericProviderSettings` shape — the driver implementations keep
 // `configSchema = GenericProviderSettings` for now. These typed schemas
 // exist primarily so the web settings UI can render rich form controls
 // (titles, descriptions, placeholders) per field. Once each driver moves
 // its config to its own package, these can shrink or move.
+
+export const DroidSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("droid").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Droid CLI used by the TypeScript SDK.",
+        providerSettingsForm: { placeholder: "droid", clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath"],
+  },
+);
+export type DroidSettings = typeof DroidSettings.Type;
 
 export const AmpSettings = makeProviderSettingsSchema(
   {
@@ -523,6 +547,7 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     copilot: CopilotSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    droid: DroidSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     geminiCli: GeminiCliSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     amp: AmpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -609,6 +634,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const DroidSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
@@ -628,6 +659,7 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       copilot: Schema.optionalKey(GenericProviderSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
+      droid: Schema.optionalKey(DroidSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
       amp: Schema.optionalKey(GenericProviderSettingsPatch),

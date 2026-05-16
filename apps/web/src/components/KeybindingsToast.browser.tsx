@@ -118,6 +118,7 @@ function createBaseServerConfig(): ServerConfig {
           enabled: true,
         },
         cursor: { ...DEFAULT_SERVER_SETTINGS.providers.cursor, enabled: true },
+        droid: { enabled: false, binaryPath: "", customModels: [] },
         opencode: {
           ...DEFAULT_SERVER_SETTINGS.providers.opencode,
           enabled: true,
