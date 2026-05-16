@@ -1,7 +1,6 @@
 // Re-export icons from lucide-react under the names used across the app.
 import type { LucideIcon } from "lucide-react";
 import {
-  AlertCircleIcon,
   AlertTriangleIcon,
   AppWindowIcon,
   ArrowDownIcon as LuArrowDown,
@@ -9,7 +8,6 @@ import {
   ArrowLeftRightIcon,
   ArrowRightIcon as LuArrowRight,
   ArrowUpDownIcon as LuArrowUpDown,
-  BoltIcon,
   BotIcon as LuBot,
   BugIcon as LuBug,
   CheckIcon as LuCheck,

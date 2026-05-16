@@ -11,7 +11,9 @@ export const openUsageQueryKeys = {
     ["openUsage", "provider", provider ?? null] as const,
 };
 
-export function openUsageProviderSnapshotQueryOptions(provider: ProviderDriverKind | null | undefined) {
+export function openUsageProviderSnapshotQueryOptions(
+  provider: ProviderDriverKind | null | undefined,
+) {
   const providerId = openUsageProviderIdForProvider(provider);
 
   return queryOptions({
