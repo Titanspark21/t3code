@@ -6,6 +6,7 @@ import {
   ApprovalRequestId,
   CodexSettings,
   ProviderDriverKind,
+  ThreadId,
   type OrchestrationEvent,
   type OrchestrationThread,
 } from "@t3tools/contracts";
@@ -16,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -46,11 +48,10 @@ import {
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
-import { RepositoryIdentityResolverLive } from "../src/project/Layers/RepositoryIdentityResolver.ts";
+import { RepositoryIdentityResolver } from "../src/project/Services/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "../src/orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "../src/orchestration/Layers/ProjectionSnapshotQuery.ts";
-import { RuntimeReceiptBusTest } from "../src/orchestration/Layers/RuntimeReceiptBus.ts";
 import { OrchestrationReactorLive } from "../src/orchestration/Layers/OrchestrationReactor.ts";
 import { ProviderCommandReactorLive } from "../src/orchestration/Layers/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionLive } from "../src/orchestration/Layers/ProviderRuntimeIngestion.ts";
@@ -244,6 +245,13 @@ export const makeOrchestrationIntegrationHarness = (
           makeAdapterRegistryMock({ [adapterHarness.provider]: adapterHarness.adapter }),
         )
       : null;
+    const receiptPubSub = yield* PubSub.unbounded<OrchestrationRuntimeReceipt>();
+    const runtimeReceiptBusLayer = Layer.succeed(RuntimeReceiptBus, {
+      publish: (receipt) => PubSub.publish(receiptPubSub, receipt).pipe(Effect.asVoid),
+      get streamEventsForTest() {
+        return Stream.fromPubSub(receiptPubSub);
+      },
+    });
     const rootDir = yield* fileSystem.makeTempDirectoryScoped({
       prefix: "t3-orchestration-integration-",
     });
@@ -302,7 +310,7 @@ export const makeOrchestrationIntegrationHarness = (
       ProjectionPendingApprovalRepositoryLive,
       checkpointStoreLayer,
       providerLayer,
-      RuntimeReceiptBusTest,
+      runtimeReceiptBusLayer,
     );
     const serverSettingsLayer = ServerSettingsService.layerTest();
     const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
@@ -369,7 +377,11 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
       Layer.provide(persistenceLayer),
-      Layer.provideMerge(RepositoryIdentityResolverLive),
+      Layer.provideMerge(
+        Layer.succeed(RepositoryIdentityResolver, {
+          resolve: () => Effect.succeed(null),
+        }),
+      ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -404,13 +416,13 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
 
     const scope = yield* Scope.make("sequential");
-    yield* tryRuntimePromise("start OrchestrationReactor", () =>
-      runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
-    ).pipe(Effect.orDie);
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
       Ref.update(receiptHistory, (history) => [...history, receipt]).pipe(Effect.asVoid),
     ).pipe(Effect.forkIn(scope));
+    yield* tryRuntimePromise("start OrchestrationReactor", () =>
+      runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
+    ).pipe(Effect.orDie);
     yield* Effect.sleep(10);
 
     const waitForThread: OrchestrationIntegrationHarness["waitForThread"] = (
@@ -420,12 +432,8 @@ export const makeOrchestrationIntegrationHarness = (
     ) =>
       waitFor(
         snapshotQuery
-          .getSnapshot()
-          .pipe(
-            Effect.map(
-              (snapshot) => snapshot.threads.find((thread) => thread.id === threadId) ?? null,
-            ),
-          ),
+          .getThreadDetailById(ThreadId.make(threadId))
+          .pipe(Effect.map((thread) => Option.getOrNull(thread))),
         (thread): thread is OrchestrationThread => thread !== null && predicate(thread),
         `projected thread '${threadId}'`,
         timeoutMs,
@@ -494,9 +502,40 @@ export const makeOrchestrationIntegrationHarness = (
       predicate: (receipt: OrchestrationRuntimeReceipt) => boolean,
       timeoutMs?: number,
     ) {
-      const readMatchingReceipt = Ref.get(receiptHistory).pipe(
-        Effect.map((history) => history.find(predicate)),
-      );
+      const readMatchingReceipt = Effect.gen(function* () {
+        const inMemoryReceipt = (yield* Ref.get(receiptHistory)).find(predicate);
+        if (inMemoryReceipt) {
+          return inMemoryReceipt;
+        }
+
+        const events = Array.from(yield* Stream.runCollect(engine.readEvents(0)));
+        const durableReceipts = events.flatMap(
+          (event): ReadonlyArray<OrchestrationRuntimeReceipt> => {
+            if (event.type !== "thread.turn-diff-completed") {
+              return [];
+            }
+            return [
+              {
+                type: "checkpoint.diff.finalized",
+                threadId: event.payload.threadId,
+                turnId: event.payload.turnId,
+                checkpointTurnCount: event.payload.checkpointTurnCount,
+                checkpointRef: event.payload.checkpointRef,
+                status: event.payload.status,
+                createdAt: event.payload.completedAt,
+              },
+              {
+                type: "turn.processing.quiesced",
+                threadId: event.payload.threadId,
+                turnId: event.payload.turnId,
+                checkpointTurnCount: event.payload.checkpointTurnCount,
+                createdAt: event.payload.completedAt,
+              },
+            ];
+          },
+        );
+        return durableReceipts.find(predicate);
+      });
 
       return waitFor(
         readMatchingReceipt,
@@ -528,7 +567,17 @@ export const makeOrchestrationIntegrationHarness = (
         }
       });
 
-      yield* shutdown;
+      const shutdownResult = yield* shutdown.pipe(
+        Effect.timeoutOption("5 seconds"),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("orchestration integration harness disposal failed", { cause }).pipe(
+            Effect.as(Option.some(undefined)),
+          ),
+        ),
+      );
+      if (Option.isNone(shutdownResult)) {
+        yield* Effect.logWarning("orchestration integration harness disposal timed out");
+      }
     });
 
     return {

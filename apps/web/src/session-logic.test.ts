@@ -1558,6 +1558,7 @@ describe("PROVIDER_OPTIONS", () => {
     const claude = PROVIDER_OPTIONS.find((option) => option.value === "claudeAgent");
     const cursor = PROVIDER_OPTIONS.find((option) => option.value === "cursor");
     const opencode = PROVIDER_OPTIONS.find((option) => option.value === "opencode");
+    const droid = PROVIDER_OPTIONS.find((option) => option.value === "droid");
     const geminiCli = PROVIDER_OPTIONS.find((option) => option.value === "geminiCli");
     const amp = PROVIDER_OPTIONS.find((option) => option.value === "amp");
     expect(PROVIDER_OPTIONS).toEqual([
@@ -1566,6 +1567,7 @@ describe("PROVIDER_OPTIONS", () => {
       { value: "claudeAgent", label: "Claude Code", available: true },
       { value: "cursor", label: "Cursor Agent", available: true, pickerSidebarBadge: "new" },
       { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
+      { value: "droid", label: "Droid", available: true, pickerSidebarBadge: "new" },
       { value: "geminiCli", label: "Gemini CLI", available: true },
       { value: "amp", label: "AMPcode", available: true },
       { value: "kilo", label: "Kilo", available: true },
@@ -1589,6 +1591,12 @@ describe("PROVIDER_OPTIONS", () => {
     expect(opencode).toEqual({
       value: "opencode",
       label: "OpenCode",
+      available: true,
+      pickerSidebarBadge: "new",
+    });
+    expect(droid).toEqual({
+      value: "droid",
+      label: "Droid",
       available: true,
       pickerSidebarBadge: "new",
     });
