@@ -456,7 +456,8 @@ jobs:
   deploy_web:
     name: Deploy hosted web app
     needs: [preflight, release]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.release.result == 'success' }}
+    # Fork: enable once this fork has its own hosted app deployment configured.
+    if: false
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     env:
