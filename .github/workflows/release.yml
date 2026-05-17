@@ -25,7 +25,6 @@ env:
 jobs:
   check_changes:
     name: Check for changes since last nightly
-    if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     outputs:
       has_changes: ${{ steps.check.outputs.has_changes }}
@@ -38,6 +37,12 @@ jobs:
       - id: check
         name: Compare HEAD to last nightly tag
         run: |
+          if [[ "${GITHUB_EVENT_NAME}" != "schedule" ]]; then
+            echo "Manual or tag release. Proceeding without nightly change detection."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           last_nightly_tag=$(git tag --list 'v*-nightly.*' 'nightly-v*' --sort=-creatordate | head -n 1)
           if [[ -z "$last_nightly_tag" ]]; then
             echo "No previous nightly tag found. Proceeding with release."
