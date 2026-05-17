@@ -18,6 +18,10 @@ permissions:
   contents: write
   id-token: none
 
+env:
+  T3CODE_RELEASE_REPOSITORY: aaditagrawal/t3code
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: aaditagrawal/t3code
+
 jobs:
   check_changes:
     name: Check for changes since last nightly
@@ -63,6 +67,9 @@ jobs:
     outputs:
       version: ${{ steps.release_meta.outputs.version }}
       tag: ${{ steps.release_meta.outputs.tag }}
+      release_name: ${{ steps.release_meta.outputs.release_name }}
+      release_channel: ${{ steps.release_meta.outputs.release_channel }}
+      release_repository: ${{ steps.release_meta.outputs.release_repository }}
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
       ref: ${{ github.sha }}
@@ -74,6 +81,21 @@ jobs:
         name: Resolve release version
         shell: bash
         run: |
+          release_repository="${T3CODE_RELEASE_REPOSITORY:?T3CODE_RELEASE_REPOSITORY is required}"
+          desktop_update_repository="${T3CODE_DESKTOP_UPDATE_REPOSITORY:?T3CODE_DESKTOP_UPDATE_REPOSITORY is required}"
+
+          for repository in "$release_repository" "$desktop_update_repository"; do
+            if [[ ! "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+              echo "Invalid release repository: $repository" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$GITHUB_REPOSITORY" != "$release_repository" || "$GITHUB_REPOSITORY" != "$desktop_update_repository" ]]; then
+            echo "This fork release workflow is configured for release repository $release_repository and desktop updater repository $desktop_update_repository, but it is running in $GITHUB_REPOSITORY." >&2
+            exit 1
+          fi
+
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             raw="${{ github.event.inputs.version }}"
           elif [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
@@ -90,19 +112,27 @@ jobs:
           fi
 
           version="${raw#v}"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.[0-9]+$ ]]; then
             echo "Invalid release version: $raw" >&2
             exit 1
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "release_repository=$release_repository" >> "$GITHUB_OUTPUT"
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release_name=T3 Code v$version" >> "$GITHUB_OUTPUT"
+            echo "release_channel=stable" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
             echo "make_latest=true" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "$version" =~ -nightly\.[0-9]{8}\.[0-9]+$ ]]; then
+            echo "release_name=T3 Code Nightly $version (${GITHUB_SHA::12})" >> "$GITHUB_OUTPUT"
+            echo "release_channel=nightly" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
             echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported prerelease version: $version" >&2
+            exit 1
           fi
 
       - name: Setup Bun
@@ -317,16 +347,19 @@ jobs:
             "release/*.AppImage" \
             "release/*.exe" \
             "release/*.blockmap" \
-            "release/latest*.yml"; do
+            "release/latest*.yml" \
+            "release/nightly*.yml"; do
             for file in $pattern; do
               cp "$file" release-publish/
             done
           done
 
           if [[ "${{ matrix.platform }}" == "mac" && "${{ matrix.arch }}" != "arm64" ]]; then
-            if [[ -f release-publish/latest-mac.yml ]]; then
-              mv release-publish/latest-mac.yml "release-publish/latest-mac-${{ matrix.arch }}.yml"
-            fi
+            for channel in latest nightly; do
+              if [[ -f "release-publish/${channel}-mac.yml" ]]; then
+                mv "release-publish/${channel}-mac.yml" "release-publish/${channel}-mac-${{ matrix.arch }}.yml"
+              fi
+            done
           fi
 
       - name: Upload build artifacts
@@ -342,8 +375,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: read
-      id-token: write
+      contents: write
+      id-token: none
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -373,17 +406,36 @@ jobs:
 
       - name: Merge macOS updater manifests
         run: |
-          bun run scripts/merge-update-manifests.ts --platform mac \
-            release-assets/latest-mac.yml \
-            release-assets/latest-mac-x64.yml
-          rm -f release-assets/latest-mac-x64.yml
+          set -euo pipefail
+          shopt -s nullglob
+
+          found_mac_manifest=false
+          for x64_manifest in release-assets/*-mac-x64.yml; do
+            arm64_manifest="${x64_manifest/-x64.yml/.yml}"
+            if [[ ! -f "$arm64_manifest" ]]; then
+              echo "Missing matching arm64 macOS manifest for $x64_manifest" >&2
+              exit 1
+            fi
+
+            found_mac_manifest=true
+            bun run scripts/merge-update-manifests.ts --platform mac \
+              "$arm64_manifest" \
+              "$x64_manifest"
+            rm -f "$x64_manifest"
+          done
+
+          if [[ "$found_mac_manifest" != true ]]; then
+            echo "No macOS updater manifests found to merge." >&2
+            exit 1
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
-          name: T3 Code v${{ needs.preflight.outputs.version }}
+          name: ${{ needs.preflight.outputs.release_name }}
+          repository: ${{ needs.preflight.outputs.release_repository }}
           generate_release_notes: true
           prerelease: ${{ needs.preflight.outputs.is_prerelease }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}
@@ -393,7 +445,7 @@ jobs:
             release-assets/*.AppImage
             release-assets/*.exe
             release-assets/*.blockmap
-            release-assets/latest*.yml
+            release-assets/*.yml
           fail_on_unmatched_files: true
 
   deploy_web:
@@ -564,61 +616,3 @@ jobs:
           git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock
           git commit -m "chore(release): prepare $RELEASE_TAG"
           git push origin HEAD:main
-
-  announce_discord:
-    name: Announce release on Discord
-    if: |
-      always() && !cancelled() &&
-      needs.preflight.result == 'success' &&
-      needs.release.result == 'success' &&
-      needs.deploy_web.result == 'success' &&
-      (needs.finalize.result == 'success' || needs.finalize.result == 'skipped')
-    needs: [preflight, release, deploy_web, finalize]
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: package.json
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --filter=@t3tools/scripts
-
-      - name: Announce prerelease on Discord
-        if: needs.preflight.outputs.is_prerelease == 'true'
-        continue-on-error: true
-        env:
-          DISCORD_MENTION_ROLE_ID: ${{ secrets.DISCORD_RELEASE_NIGHTLY_ROLE_ID }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-        run: |
-          node scripts/notify-discord-release.ts prerelease \
-            --role-id "$DISCORD_MENTION_ROLE_ID" \
-            --release-name "${{ needs.preflight.outputs.release_name }}" \
-            --release-version "${{ needs.preflight.outputs.version }}" \
-            --tag "${{ needs.preflight.outputs.tag }}" \
-            --release-url "https://github.com/${{ github.repository }}/releases/tag/${{ needs.preflight.outputs.tag }}"
-
-      - name: Announce latest release on Discord
-        if: needs.preflight.outputs.make_latest == 'true'
-        continue-on-error: true
-        env:
-          DISCORD_MENTION_ROLE_ID: ${{ secrets.DISCORD_RELEASE_LATEST_ROLE_ID }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-        run: |
-          node scripts/notify-discord-release.ts latest \
-            --role-id "$DISCORD_MENTION_ROLE_ID" \
-            --release-name "${{ needs.preflight.outputs.release_name }}" \
-            --release-version "${{ needs.preflight.outputs.version }}" \
-            --tag "${{ needs.preflight.outputs.tag }}" \
-            --release-url "https://github.com/${{ github.repository }}/releases/tag/${{ needs.preflight.outputs.tag }}"
