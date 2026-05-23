@@ -195,6 +195,13 @@ git fetch upstream
 git merge --ff-only upstream/main
 ```
 
+Before accepting upstream removals or resolving conflicts, verify the protected fork features still work:
+
+1. Multi-provider runtime support for Codex CLI, Claude Code, Cursor, Droid, OpenCode, Amp, Copilot, Gemini CLI, and Kilo.
+2. Usage and limit monitoring for token/context usage, provider usage events, and account rate-limit UI.
+3. Provider management UX for custom instances, per-instance config/environment/model state, and provider-scoped traits.
+4. Provider-neutral orchestration reliability for persistence, replay/live ordering, reconnects, restarts, and projections.
+
 Then refresh the alpha branch:
 
 ```bash
