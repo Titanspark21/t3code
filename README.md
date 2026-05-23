@@ -2,29 +2,33 @@
 
 T3 Code is a minimal web GUI for coding agents made by [Pingdotgg](https://github.com/pingdotgg). This project is a downstream fork of the original [T3 Code](https://github.com/pingdotgg/t3code), maintained in [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code).
 
-This fork focuses on expanding provider support, improving persistence layers, and refining provider management across the app.
+This fork focuses on expanding provider support, keeping usage and limit monitoring visible, improving persistence layers, and refining provider management across the app.
 
-It supports Codex, Claude Code, Cursor, Copilot, Gemini CLI, Amp, Kilo, and OpenCode.
+It supports Codex, Claude Code, Cursor, Droid, OpenCode, Copilot, Gemini CLI, Amp, and Kilo.
 
 (NOTE: Amp /mode free is not supported, as Amp Code doesn't support it in headless mode - since they need to show ads for that business model to work.)
 
 ## Why this fork?
 
-This fork aims to provide a more robust and feature-rich multi-provider experience, with improved server management, more reliable persistence of orchestration events, and UI refinements for settings and model selection.
+This fork aims to provide a more robust and feature-rich multi-provider experience, with improved server management, visible usage/rate-limit monitoring, more reliable persistence of orchestration events, and UI refinements for settings and model selection.
+
+The protected fork features are multi-provider runtime support, usage and limit monitoring, provider management UX, and provider-neutral orchestration reliability. Upstream syncs should preserve those unless a change explicitly replaces them with equivalent or better behavior.
 
 ### Multi-provider support (Enhanced)
 
 Adds full provider adapters (server managers, service layers, runtime layers) for agents that are not yet on the upstream roadmap:
 
-| Provider    | What's included                                                           |
-| ----------- | ------------------------------------------------------------------------- |
-| Gemini CLI  | **Enhanced:** Adapter + `geminiCliServerManager` with full test coverage  |
-| Amp         | Adapter + `ampServerManager` for headless Amp sessions                    |
-| Copilot     | Adapter + CLI binary resolution + text generation layer                   |
-| Cursor      | Adapter + ACP probe integration + usage tracking                          |
-| Kilo        | Adapter + `kiloServerManager` + OpenCode-style server URL config          |
-| OpenCode    | Adapter + `opencodeServerManager` with hostname/port/workspace config     |
-| Claude Code | Full adapter with permission mode, thinking token limits, and SDK typings |
+| Provider       | What's included                                                           |
+| -------------- | ------------------------------------------------------------------------- |
+| Codex CLI      | App-server JSON-RPC support with usage/rate-limit monitoring              |
+| Claude Code    | Full adapter with permission mode, thinking token limits, and SDK typings |
+| Cursor         | ACP adapter, probe integration, permissions, and usage tracking           |
+| Droid          | Factory Droid SDK runtime integration                                     |
+| OpenCode       | Adapter with hostname/port/workspace config                               |
+| Amp            | Adapter + `ampServerManager` for headless Amp sessions                    |
+| GitHub Copilot | Adapter + CLI binary resolution + text generation layer                   |
+| Gemini CLI     | **Enhanced:** Adapter + `geminiCliServerManager` with full test coverage  |
+| Kilo           | Adapter + `kiloServerManager` + OpenCode-style server URL config          |
 
 ### Persistence & Orchestration Improvements
 
@@ -43,6 +47,7 @@ Adds full provider adapters (server managers, service layers, runtime layers) fo
 | Sidebar search      | Normalized thread title search with instant filtering                                      |
 | Plan sidebar        | Dedicated panel for reviewing, downloading, or saving proposed agent plans                 |
 | Terminal drawer     | Theme-aware integrated terminal with accent color styling                                  |
+| Usage monitoring    | Context window meter, token usage events, and account rate-limit banner/panel visibility   |
 
 ## Getting started
 
@@ -78,6 +83,7 @@ bun run dev
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [Claude Code](https://github.com/anthropics/claude-code)
 - [Cursor](https://cursor.sh)
+- [Droid](https://factory.ai)
 - [Codex CLI](https://github.com/openai/codex) (requires v0.37.0 or later)
 - [Copilot](https://github.com/features/copilot)
 - [Amp](https://ampcode.com)

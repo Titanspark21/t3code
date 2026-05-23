@@ -2,7 +2,16 @@
 
 First off, thank you for considering contributing to this fork! It's people like you that make the open-source community such an amazing place to learn, inspire, and create.
 
-This fork is maintained in [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code) and focuses on expanding provider support while improving the core orchestration and persistence layers.
+This fork is maintained in [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code) and focuses on expanding provider support, preserving usage and limit monitoring, and improving the core orchestration and persistence layers.
+
+## Protected Fork Features
+
+Pull requests and upstream syncs should preserve these four fork features unless the change explicitly replaces them with equivalent or better behavior:
+
+1. Multi-provider runtime support across Codex CLI, Claude Code, Cursor, Droid, OpenCode, Amp, Copilot, Gemini CLI, and Kilo.
+2. Usage and limit monitoring, including token/context usage, provider usage events, and rate-limit UI.
+3. Provider management UX for custom instances, per-instance config/environment/model state, and provider-scoped traits.
+4. Provider-neutral orchestration reliability for persistence, replay/live ordering, reconnects, restarts, and projections.
 
 ## How Can I Contribute?
 

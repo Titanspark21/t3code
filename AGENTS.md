@@ -6,6 +6,7 @@
 - **NEVER create PRs, push branches, post comments, or perform ANY write operation against `pingdotgg/t3code` or any upstream/third-party repo.**
 - **NEVER run `gh pr create` without `--repo aaditagrawal/t3code`.** Always explicitly target the fork.
 - **NEVER run `gh` write commands (pr create, issue create, pr comment, pr close, pr merge) against any repo other than `aaditagrawal/t3code`.**
+- Any request involving PRs, issues, GitHub Actions, workflows, checks, comments, labels, releases, or other GitHub repo operations is fork-only: use `aaditagrawal/t3code` explicitly and do not target upstream.
 - The ONLY interaction with upstream is `git fetch upstream` to pull changes. Everything else targets `origin` (the fork).
 - When merging upstream changes, create a PR on `aaditagrawal/t3code` targeting the fork's `main` branch.
 
@@ -14,6 +15,15 @@
 - The fork's `README.md` takes priority over upstream's. On merge conflicts, keep ours.
 - Do NOT commit scratch/analysis markdown files (e.g. `CONFLICT_ANALYSIS.md`, plan dumps) into the repo.
 
+## Protected Fork Features
+
+When syncing upstream, preserve these fork features unless the user explicitly asks to remove them:
+
+1. Multi-provider runtime support for the built-in drivers: Codex CLI, Claude Code, Cursor, Droid, OpenCode, Amp, Copilot, Gemini CLI, and Kilo.
+2. Usage and limit monitoring, including token/context usage snapshots, provider usage events, Codex account rate-limit streams, and the web rate-limit banner/panel UX.
+3. Provider management UX, including custom provider instances, per-instance environment/config/model state, custom model slugs, and provider-scoped traits such as reasoning, context window, fast mode, and agent selection.
+4. Provider-neutral orchestration reliability, including SQLite event persistence, command receipts, replay/live stream ordering, session restart/reconnect behavior, and projection consistency.
+
 ## Task Completion Requirements
 
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
@@ -21,16 +31,17 @@
 
 ## Project Snapshot
 
-T3 Code is a multi-provider web GUI for coding agents. It supports 8 providers:
+T3 Code is a multi-provider web GUI for coding agents. This fork supports 9 built-in provider drivers:
 
 - **Codex CLI** (v0.37.0+) — JSON-RPC over stdio
 - **Claude Code** — Claude Agent SDK with thinking tokens and permission modes
 - **Cursor** — ACP (Agent Communication Protocol) over stdio
+- **Droid** — Factory Droid SDK runtime
+- **OpenCode** — SDK CLI server
 - **Copilot** — GitHub Copilot CLI
 - **Gemini CLI** — Google Gemini CLI with persistent JSON
 - **Amp** — Amp Code headless mode (no `/mode free`)
 - **Kilo** — HTTP SSE transport
-- **OpenCode** — SDK CLI server
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 
