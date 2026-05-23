@@ -22,7 +22,7 @@ import { generateAssetCatalogForIcon } from "../../../scripts/lib/macos-icon-com
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
 const APP_BUNDLE_ID = isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code";
-const LAUNCHER_VERSION = 2;
+const LAUNCHER_VERSION = 3;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const desktopDir = resolve(__dirname, "..");
@@ -240,7 +240,7 @@ async function buildMacLauncher(electronBinaryPath) {
   }
 
   rmSync(targetAppBundlePath, { recursive: true, force: true });
-  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true });
+  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true, verbatimSymlinks: true });
   patchMainBundleInfoPlist(targetAppBundlePath);
   const refreshedIconMetadata = await stageMainBundleIcons(
     targetAppBundlePath,

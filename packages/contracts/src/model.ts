@@ -139,7 +139,7 @@ export const DEFAULT_GIT_TEXT_GENERATION_MODEL = "gpt-5.4-mini";
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-sonnet-4-6",
-  [CURSOR_DRIVER_KIND]: "auto",
+  [CURSOR_DRIVER_KIND]: "composer-2.5",
   [DROID_DRIVER_KIND]: "default",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
@@ -150,7 +150,7 @@ export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
 > = {
   [CODEX_DRIVER_KIND]: DEFAULT_GIT_TEXT_GENERATION_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
-  [CURSOR_DRIVER_KIND]: "composer-2",
+  [CURSOR_DRIVER_KIND]: "composer-2.5",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
 
@@ -182,7 +182,11 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "claude-haiku-4-5-20251001": "claude-haiku-4-5",
   },
   [CURSOR_DRIVER_KIND]: {
-    composer: "composer-2",
+    auto: "composer-2.5",
+    default: "composer-2.5",
+    composer: "composer-2.5",
+    "composer-latest": "composer-2.5",
+    "composer-2": "composer-2.5",
     "composer-1.5": "composer-1.5",
     "composer-1": "composer-1.5",
     "opus-4.6-thinking": "claude-opus-4-6",

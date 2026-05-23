@@ -35,7 +35,7 @@ T3 Code is a multi-provider web GUI for coding agents. This fork supports 9 buil
 
 - **Codex CLI** (v0.37.0+) — JSON-RPC over stdio
 - **Claude Code** — Claude Agent SDK with thinking tokens and permission modes
-- **Cursor** — ACP (Agent Communication Protocol) over stdio
+- **Cursor** — TypeScript SDK with local agents, SDK model discovery, and usage-dashboard tracking
 - **Droid** — Factory Droid SDK runtime
 - **OpenCode** — SDK CLI server
 - **Copilot** — GitHub Copilot CLI

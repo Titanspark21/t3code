@@ -29,6 +29,7 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("droid.sdk.message"),
   Schema.Literal("droid.sdk.permission"),
   Schema.Literal("codex.sdk.thread-event"),
+  Schema.Literal("cursor.sdk.message"),
   Schema.Literal("cursor.acp.notification"),
   Schema.Literal("cursor.acp.request"),
   Schema.Literal("cursor.acp.response"),
