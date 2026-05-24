@@ -47,7 +47,6 @@
     "test:desktop-smoke": "turbo run smoke-test --filter=@t3tools/desktop",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "probe:cursor-acp": "node scripts/cursor-acp-probe.mjs",
     "sync:upstream-prs": "node scripts/sync-upstream-pr-tracks.mjs",
     "build:contracts": "turbo run build --filter=@t3tools/contracts",
     "dist:desktop:artifact": "node scripts/build-desktop-artifact.ts",

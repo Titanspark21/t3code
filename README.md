@@ -22,7 +22,7 @@ Adds full provider adapters (server managers, service layers, runtime layers) fo
 | -------------- | ------------------------------------------------------------------------- |
 | Codex CLI      | App-server JSON-RPC support with usage/rate-limit monitoring              |
 | Claude Code    | Full adapter with permission mode, thinking token limits, and SDK typings |
-| Cursor         | ACP adapter, probe integration, permissions, and usage tracking           |
+| Cursor         | TypeScript SDK adapter + SDK model discovery + usage-dashboard tracking   |
 | Droid          | Factory Droid SDK runtime integration                                     |
 | OpenCode       | Adapter with hostname/port/workspace config                               |
 | Amp            | Adapter + `ampServerManager` for headless Amp sessions                    |

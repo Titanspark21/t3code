@@ -42,6 +42,7 @@ delete childEnv.ELECTRON_RUN_AS_NODE;
 let shuttingDown = false;
 let restartTimer = null;
 let currentApp = null;
+let launchingApp = false;
 let restartQueue = Promise.resolve();
 const expectedExits = new WeakSet();
 const watchers = [];
@@ -62,43 +63,55 @@ function cleanupStaleDevApps() {
   spawnSync("pkill", ["-f", "--", `--t3code-dev-root=${desktopDir}`], { stdio: "ignore" });
 }
 
-function startApp() {
-  if (shuttingDown || currentApp !== null) {
+async function startApp() {
+  if (shuttingDown || currentApp !== null || launchingApp) {
     return;
   }
 
-  const app = spawn(
-    resolveElectronPath(),
-    [`--t3code-dev-root=${desktopDir}`, "dist-electron/main.cjs"],
-    {
+  launchingApp = true;
+
+  try {
+    const electronPath = await resolveElectronPath();
+    if (shuttingDown || currentApp !== null) {
+      return;
+    }
+
+    const app = spawn(electronPath, [`--t3code-dev-root=${desktopDir}`, "dist-electron/main.cjs"], {
       cwd: desktopDir,
       env: childEnv,
       stdio: "inherit",
-    },
-  );
+    });
 
-  currentApp = app;
+    currentApp = app;
 
-  app.once("error", () => {
-    if (currentApp === app) {
-      currentApp = null;
-    }
+    app.once("error", () => {
+      if (currentApp === app) {
+        currentApp = null;
+      }
 
+      if (!shuttingDown) {
+        scheduleRestart();
+      }
+    });
+
+    app.once("exit", (code, signal) => {
+      if (currentApp === app) {
+        currentApp = null;
+      }
+
+      const exitedAbnormally = signal !== null || code !== 0;
+      if (!shuttingDown && !expectedExits.has(app) && exitedAbnormally) {
+        scheduleRestart();
+      }
+    });
+  } catch (error) {
     if (!shuttingDown) {
+      console.error("[desktop-dev] Failed to launch Electron.", error);
       scheduleRestart();
     }
-  });
-
-  app.once("exit", (code, signal) => {
-    if (currentApp === app) {
-      currentApp = null;
-    }
-
-    const exitedAbnormally = signal !== null || code !== 0;
-    if (!shuttingDown && !expectedExits.has(app) && exitedAbnormally) {
-      scheduleRestart();
-    }
-  });
+  } finally {
+    launchingApp = false;
+  }
 }
 
 async function stopApp() {
@@ -154,7 +167,7 @@ function scheduleRestart() {
       .then(async () => {
         await stopApp();
         if (!shuttingDown) {
-          startApp();
+          await startApp();
         }
       });
   }, restartDebounceMs);
@@ -212,7 +225,7 @@ async function shutdown(exitCode) {
 
 startWatchers();
 cleanupStaleDevApps();
-startApp();
+await startApp();
 
 process.once("SIGINT", () => {
   void shutdown(130);
