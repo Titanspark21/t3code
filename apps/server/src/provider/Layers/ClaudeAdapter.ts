@@ -70,6 +70,7 @@ import { ServerConfig } from "../../config.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
+  isClaudeUltracodeEffort,
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
   resolveClaudeEffort,
@@ -255,8 +256,11 @@ function normalizeClaudeStreamMessages(
   return squashed.length > 0 ? [squashed] : [];
 }
 
-function getEffectiveClaudeAgentEffort(effort: string | null | undefined): ClaudeSdkEffort | null {
-  const normalized = normalizeClaudeCliEffort(effort);
+function getEffectiveClaudeAgentEffort(
+  effort: string | null | undefined,
+  model: string | null | undefined,
+): ClaudeSdkEffort | null {
+  const normalized = normalizeClaudeCliEffort(effort, model);
   return normalized ? (normalized as ClaudeSdkEffort) : null;
 }
 
@@ -2887,7 +2891,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const thinking = thinkingSupported
         ? getModelSelectionBooleanOptionValue(modelSelection, "thinking")
         : undefined;
-      const effectiveEffort = getEffectiveClaudeAgentEffort(effort);
+      const ultracode = isClaudeUltracodeEffort(effort);
+      const effectiveEffort = getEffectiveClaudeAgentEffort(effort, modelSelection?.model);
       const runtimeModeToPermission: Record<string, PermissionMode> = {
         "auto-accept-edits": "acceptEdits",
         "full-access": "bypassPermissions",
@@ -2896,6 +2901,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const settings = {
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(fastMode ? { fastMode: true } : {}),
+        ...(ultracode ? { ultracode: true } : {}),
       };
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -2903,8 +2909,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: { type: "preset", preset: "claude_code" },
         settingSources: [...CLAUDE_SETTING_SOURCES],
-        // The SDK type lags the CLI here: Opus 4.7 accepts `xhigh` even though
-        // the published `Options["effort"]` union currently stops at `max`.
+        // `ultracode` is a Claude Code setting, not an API effort level. It is
+        // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort
           ? {
               effort: effectiveEffort as unknown as NonNullable<ClaudeQueryOptions["effort"]>,
