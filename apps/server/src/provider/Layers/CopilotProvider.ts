@@ -42,8 +42,33 @@ const COPILOT_PRESENTATION = {
   showInteractionModeToggle: true,
 } as const;
 
+/**
+ * GitHub Copilot exposes a per-model reasoning effort (low/medium/high/xhigh).
+ * The adapter already reads, validates (against the live model's
+ * `supportedReasoningEfforts`) and forwards a selected effort end-to-end; the
+ * only missing link was this descriptor, without which the trait never
+ * rendered. The descriptor is intentionally opt-in — no `isDefault` /
+ * `currentValue` — because these capabilities are global (stamped onto every
+ * Copilot model) while effort support is decided per-model at session start.
+ * Forcing a default would auto-dispatch it and get rejected by
+ * `validateSessionConfiguration` on any model that does not list that effort.
+ * Leaving it unset keeps the selection `undefined` until the user picks one,
+ * which the adapter treats as "no effort" (its prior behavior).
+ */
 const DEFAULT_COPILOT_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
+  optionDescriptors: [
+    {
+      id: "reasoningEffort",
+      label: "Reasoning",
+      type: "select" as const,
+      options: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+        { id: "xhigh", label: "Extra High" },
+      ],
+    },
+  ],
 });
 
 /**
