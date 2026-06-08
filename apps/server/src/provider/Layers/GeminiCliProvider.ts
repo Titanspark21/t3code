@@ -26,7 +26,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
 import {
-  buildSelectOptionDescriptor,
   buildServerProvider,
   DEFAULT_TIMEOUT_MS,
   detailFromResult,
@@ -44,23 +43,17 @@ const GEMINI_PRESENTATION = {
 } as const;
 
 /**
- * Capabilities for known Gemini models. Includes a `thinkingBudget` selector
- * (fork-only feature) — kept in this layer because the probe / adapter both
- * need it.
+ * Capabilities for known Gemini models.
+ *
+ * A `thinkingBudget` selector used to live here, but it was inert: the chosen
+ * value was never read by the adapter and never reached the Gemini CLI (which
+ * exposes no per-invocation thinking flag), so it rendered a control that did
+ * nothing. It has been removed rather than ship a misleading trait. Reinstate
+ * it only together with real wiring (e.g. a per-turn settings.json
+ * `thinkingConfig` override) verified against an actual Gemini CLI.
  */
-const THINKING_BUDGET_DESCRIPTOR = buildSelectOptionDescriptor({
-  id: "thinkingBudget",
-  label: "Thinking Budget",
-  options: [
-    { value: "auto", label: "Auto", isDefault: true },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-  ],
-});
-
 const DEFAULT_GEMINI_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [THINKING_BUDGET_DESCRIPTOR],
+  optionDescriptors: [],
 });
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
