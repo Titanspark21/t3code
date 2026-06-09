@@ -154,7 +154,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     Effect.mapError(
       (cause) =>
         new SshCommandError({
-          command: ["ssh"],
+          command: [SSH_COMMAND],
           exitCode: null,
           stderr: "",
           message: "Failed to prepare SSH authentication helpers.",
@@ -215,7 +215,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     Effect.mapError(
       (cause) =>
         new SshCommandError({
-          command: ["ssh", ...args],
+          command: [SSH_COMMAND, ...args],
           exitCode: null,
           stderr: "",
           message:
@@ -228,12 +228,12 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   if (exitCode !== 0) {
     yield* Effect.logWarning("ssh.command.failed", {
       ...sshTargetLogFields(target),
-      command: ["ssh", ...args],
+      command: [SSH_COMMAND, ...args],
       exitCode,
       stderr,
     });
     return yield* new SshCommandError({
-      command: ["ssh", ...args],
+      command: [SSH_COMMAND, ...args],
       exitCode,
       stderr,
       message: normalizeSshErrorMessage(
@@ -245,7 +245,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
 
   yield* Effect.logDebug("ssh.command.succeeded", {
     ...sshTargetLogFields(target),
-    command: ["ssh", ...args],
+    command: [SSH_COMMAND, ...args],
   });
   return { stdout, stderr };
 });
@@ -275,7 +275,7 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
               hasStdin: input.stdin !== undefined,
             });
             return yield* new SshCommandError({
-              command: ["ssh"],
+              command: [SSH_COMMAND],
               exitCode: null,
               stderr: "",
               message: `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,
