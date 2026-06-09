@@ -11,6 +11,12 @@ jobs:
     name: Format, Lint, Typecheck, Test, Browser Test, Build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # The default Electron binary source (GitHub releases) was returning a
+      # partial/empty archive on the runner, leaving node_modules/electron
+      # without a usable binary and failing every apps/desktop test. Pull the
+      # prebuilt binary from a mirror instead.
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
     steps:
       - name: Checkout
         uses: actions/checkout@v6
