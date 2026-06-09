@@ -20,7 +20,9 @@ import {
   ProviderDriverKind,
   type GenericProviderSettings,
   type ModelCapabilities,
+  type ServerProviderModel,
 } from "@t3tools/contracts";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -38,6 +40,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { fetchKiloModels, type KiloDiscoveredModel } from "../../kiloServerManager.ts";
 
 const PROVIDER = ProviderDriverKind.make("kilo");
 const KILO_PRESENTATION = {
@@ -50,6 +53,57 @@ const DEFAULT_KILO_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabiliti
 });
 
 export type KiloSettings = GenericProviderSettings;
+
+class KiloModelDiscoveryError extends Data.TaggedError("KiloModelDiscoveryError")<{
+  readonly message: string;
+}> {}
+
+/**
+ * Map Kilo's discovered models into the contract `ServerProviderModel` shape
+ * the snapshot consumes. Mirrors OpenCode's `flattenOpenCodeModels`: discovered
+ * models are `isCustom: false` and carry the default capabilities so the trait
+ * picker still renders. The `connected` flag is informational — Kilo lists all
+ * configured providers, so we surface every discovered model (the user can pick
+ * one before its upstream provider connects).
+ */
+export function kiloDiscoveredToServerModels(
+  discovered: ReadonlyArray<KiloDiscoveredModel>,
+): ReadonlyArray<ServerProviderModel> {
+  return discovered.map((model) => ({
+    slug: model.slug,
+    name: model.name,
+    isCustom: false,
+    capabilities: DEFAULT_KILO_MODEL_CAPABILITIES,
+  }));
+}
+
+/**
+ * Best-effort dynamic model discovery. `fetchKiloModels` spins up and tears
+ * down its own throwaway `KiloServerManager` to query the live Kilo server.
+ * Any failure — Kilo not installed, server unreachable, SDK error, or timeout —
+ * degrades to an empty list so the snapshot still publishes with just the
+ * custom models (the pre-wire-up behavior). Bounded by `DEFAULT_TIMEOUT_MS`.
+ */
+const discoverKiloModels = (
+  kiloSettings: KiloSettings,
+): Effect.Effect<ReadonlyArray<KiloDiscoveredModel>> =>
+  Effect.tryPromise({
+    try: () => {
+      const binaryPath = kiloSettings.binaryPath.trim();
+      return fetchKiloModels(binaryPath ? { binaryPath } : {});
+    },
+    catch: (cause) =>
+      new KiloModelDiscoveryError({
+        message: cause instanceof Error ? cause.message : String(cause),
+      }),
+  }).pipe(
+    Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
+    Effect.result,
+    Effect.map(
+      (result): ReadonlyArray<KiloDiscoveredModel> =>
+        Result.isSuccess(result) && Option.isSome(result.success) ? result.success.value : [],
+    ),
+  );
 
 const runKiloCommand = Effect.fn("runKiloCommand")(function* (
   kiloSettings: KiloSettings,
@@ -157,11 +211,21 @@ export const checkKiloProviderStatus = Effect.fn("checkKiloProviderStatus")(func
     });
   }
 
+  // The CLI is healthy — query the live Kilo server for its configured models
+  // and merge them (deduped by slug) with any user-supplied custom slugs.
+  const discovered = yield* discoverKiloModels(kiloSettings);
+  const readyModels = providerModelsFromSettings(
+    kiloDiscoveredToServerModels(discovered),
+    PROVIDER,
+    kiloSettings.customModels,
+    DEFAULT_KILO_MODEL_CAPABILITIES,
+  );
+
   return buildServerProvider({
     presentation: KILO_PRESENTATION,
     enabled: true,
     checkedAt,
-    models: allModels,
+    models: readyModels,
     probe: {
       installed: true,
       version: parsedVersion,
