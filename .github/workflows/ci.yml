@@ -43,8 +43,37 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
+      - name: Cache Electron binary
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Electron's postinstall downloads its prebuilt binary from a remote
+      # release. That download is uncached and intermittently rate-limited on
+      # CI runners, which leaves node_modules/electron without a binary and
+      # fails every apps/desktop test with "Electron failed to install
+      # correctly". Re-run the install (using the cached download above) with
+      # backoff until the binary is present.
+      - name: Ensure Electron binary is installed
+        working-directory: apps/desktop
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node -e "require('electron')" >/dev/null 2>&1; then
+              echo "Electron binary present."
+              exit 0
+            fi
+            echo "::warning::Electron binary missing (attempt $attempt/5); reinstalling…"
+            node node_modules/electron/install.js || true
+            sleep $((attempt * 15))
+          done
+          echo "::error::Electron binary failed to install after 5 attempts."
+          node -e "require('electron')"
 
       - name: Format
         run: bun run fmt:check
