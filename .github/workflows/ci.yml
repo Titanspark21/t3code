@@ -54,23 +54,31 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Electron's postinstall downloads its prebuilt binary from a remote
-      # release. That download is uncached and intermittently rate-limited on
-      # CI runners, which leaves node_modules/electron without a binary and
-      # fails every apps/desktop test with "Electron failed to install
-      # correctly". Re-run the install (using the cached download above) with
-      # backoff until the binary is present.
+      # apps/desktop tests need Electron's prebuilt binary, which its
+      # postinstall downloads. On CI that binary ends up missing (every desktop
+      # test fails with "Electron failed to install correctly"). Diagnose the
+      # state, then force a clean download (unset any skip flag, clear the
+      # install marker) with retries, surfacing the real installer output.
       - name: Ensure Electron binary is installed
         working-directory: apps/desktop
         run: |
+          install_js="$(node -e "console.log(require.resolve('electron/install.js'))")"
+          electron_dir="$(dirname "$install_js")"
+          echo "ELECTRON_SKIP_BINARY_DOWNLOAD=${ELECTRON_SKIP_BINARY_DOWNLOAD:-<unset>}"
+          echo "electron dir: $electron_dir"
+          ls -la "$electron_dir" | head
+          echo "dist:"; ls -la "$electron_dir/dist" 2>&1 | head
+          echo "@electron/get resolvable: $(node -e "try{console.log(require.resolve('@electron/get',{paths:['$electron_dir']}))}catch(e){console.log('NO -',e.code)}")"
           for attempt in 1 2 3 4 5; do
             if node -e "require('electron')" >/dev/null 2>&1; then
               echo "Electron binary present."
               exit 0
             fi
-            echo "::warning::Electron binary missing (attempt $attempt/5); reinstalling…"
-            node node_modules/electron/install.js || true
-            sleep $((attempt * 15))
+            echo "::warning::Electron binary missing (attempt $attempt/5); forcing download…"
+            rm -f "$electron_dir/path.txt"
+            rm -rf "$electron_dir/dist"
+            ( cd "$electron_dir" && unset ELECTRON_SKIP_BINARY_DOWNLOAD && force_no_cache=true node ./install.js ) || echo "install.js exited $?"
+            sleep $((attempt * 10))
           done
           echo "::error::Electron binary failed to install after 5 attempts."
           node -e "require('electron')"
