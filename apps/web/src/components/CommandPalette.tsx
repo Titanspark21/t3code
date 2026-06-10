@@ -649,6 +649,7 @@ function OpenCommandPaletteDialog() {
       buildProjectActionItems({
         projects,
         valuePrefix: "new-thread-in",
+        shortcutCommand: "chat.new",
         icon: (project) => (
           <ProjectFavicon
             environmentId={project.environmentId}

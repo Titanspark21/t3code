@@ -154,7 +154,7 @@ jobs:
         run: vp run typecheck
 
       - name: Test
-        run: vp run -r --filter '!@t3tools/desktop' test
+        run: vp run --filter './apps/*' --filter './packages/*' --filter '!@t3tools/desktop' test
 
   build:
     name: Build ${{ matrix.label }}
