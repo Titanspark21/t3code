@@ -27,6 +27,7 @@ import { CopilotDriver, type CopilotDriverEnv } from "./Drivers/CopilotDriver.ts
 import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
 import { DroidDriver, type DroidDriverEnv } from "./Drivers/DroidDriver.ts";
 import { GeminiCliDriver, type GeminiCliDriverEnv } from "./Drivers/GeminiCliDriver.ts";
+import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { KiloDriver, type KiloDriverEnv } from "./Drivers/KiloDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
@@ -41,6 +42,7 @@ export type BuiltInDriversEnv =
   | CodexDriverEnv
   | CursorDriverEnv
   | DroidDriverEnv
+  | GrokDriverEnv
   | OpenCodeDriverEnv
   | AmpDriverEnv
   | CopilotDriverEnv
@@ -60,6 +62,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   ClaudeDriver,
   CursorDriver,
   DroidDriver,
+  GrokDriver,
   OpenCodeDriver,
   AmpDriver,
   CopilotDriver,

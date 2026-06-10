@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import * as Schema from "effect/Schema";
-import { describe, it } from "vitest";
+import { describe, it } from "vite-plus/test";
 
 import { GenericProviderSettings } from "@t3tools/contracts";
 import { makePendingGeminiCliProvider } from "./GeminiCliProvider.ts";

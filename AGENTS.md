@@ -26,8 +26,9 @@ When syncing upstream, preserve these fork features unless the user explicitly a
 
 ## Task Completion Requirements
 
-- All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
-- NEVER run `bun test`. Always use `bun run test` (runs Vitest).
+- `vp check` and `vp run typecheck` must pass before considering tasks completed.
+  - If changing native mobile code, `vp run lint:mobile` must also pass.
+- Use `vp test` for the built-in Vite+ test command and `vp run test` when you specifically need the `test` package script.
 
 ## Project Snapshot
 
@@ -63,8 +64,10 @@ Long-term maintainability is a core priority. If you add new functionality, firs
 - `apps/web` (`"@t3tools/web"`) — React/Vite UI. Session UX, conversation/event rendering, and client-side state. Connects to the server via WebSocket.
 - `apps/desktop` (`"@t3tools/desktop"`) — Electron desktop app wrapping the web UI.
 - `apps/marketing` (`"@t3tools/marketing"`) — Astro marketing site.
+- `apps/mobile` — Expo/React Native mobile app (WIP), sharing client code via `packages/client-runtime`.
 - `packages/contracts` (`"@t3tools/contracts"`) — Shared Effect/Schema schemas and TypeScript contracts for provider events, WebSocket protocol, and model/session types. Keep this package schema-only — no runtime logic.
 - `packages/shared` (`"@t3tools/shared"`) — Shared runtime utilities consumed by both server and web. Uses explicit subpath exports (e.g. `@t3tools/shared/git`, `@t3tools/shared/model`, `@t3tools/shared/logging`) — no barrel index.
+- `packages/client-runtime` — Shared runtime package for sharing client code across web and mobile.
 
 ## Server Architecture
 
@@ -108,3 +111,20 @@ The server uses Effect throughout for dependency injection, typed errors, and st
 - Codex-Monitor (Tauri, feature-complete reference): https://github.com/Dimillian/CodexMonitor
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
+
+## Vendored Repositories
+
+This project vendors external repositories under `.repos/` as read-only reference material for coding
+agents.
+
+- Prefer examples and patterns from the vendored source code over generated guesses or web search results.
+- Do not edit files under `.repos/` unless explicitly asked.
+- Do not import from `.repos/`; application code must continue importing from normal package dependencies.
+- Manage vendored subtrees with `bun run sync:repos`; use `bun run sync:repos --repo <id>` to sync one
+  configured repository.
+- When updating a dependency with a configured vendored subtree, sync that subtree in the same change so
+  `.repos/` matches the installed dependency version.
+- When writing Effect code, read `.repos/effect-smol/LLMS.md` first and inspect `.repos/effect-smol/` for
+  examples of idiomatic usage, tests, module structure, and API design.
+- When writing relay infrastructure code with Alchemy, inspect `.repos/alchemy-effect/` for examples of
+  idiomatic usage, tests, module structure, and API design.

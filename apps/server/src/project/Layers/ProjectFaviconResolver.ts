@@ -80,15 +80,13 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
     // against the canonical root, not the possibly-symlinked one.
     const realProjectCwd = yield* fileSystem
       .realPath(projectCwd)
-      .pipe(Effect.catch(() => Effect.succeed(projectCwd)));
+      .pipe(Effect.orElseSucceed(() => projectCwd));
 
     for (const candidate of candidates) {
       if (!isPathWithinProject(projectCwd, candidate)) {
         continue;
       }
-      const stats = yield* fileSystem
-        .stat(candidate)
-        .pipe(Effect.catch(() => Effect.succeed(null)));
+      const stats = yield* fileSystem.stat(candidate).pipe(Effect.orElseSucceed(() => null));
       if (stats?.type !== "File") {
         continue;
       }
@@ -96,7 +94,7 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
       // the project directory (e.g. favicon.svg -> /etc/passwd).
       const realCandidate = yield* fileSystem
         .realPath(candidate)
-        .pipe(Effect.catch(() => Effect.succeed(null)));
+        .pipe(Effect.orElseSucceed(() => null));
       if (!realCandidate || !isPathWithinProject(realProjectCwd, realCandidate)) {
         continue;
       }
@@ -120,7 +118,7 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
       const sourcePath = path.join(cwd, sourceFile);
       const source = yield* fileSystem
         .readFileString(sourcePath)
-        .pipe(Effect.catch(() => Effect.succeed(null)));
+        .pipe(Effect.orElseSucceed(() => null));
       if (!source) {
         continue;
       }

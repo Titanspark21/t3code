@@ -128,7 +128,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
         ? yield* readDnsName
         : input.statusJson
           ? yield* parseTailscaleMagicDnsName(input.statusJson).pipe(
-              Effect.catch(() => Effect.succeed(null)),
+              Effect.orElseSucceed(() => null),
             )
           : null;
     const magicDnsEndpoint = yield* resolveTailscaleMagicDnsAdvertisedEndpoint({

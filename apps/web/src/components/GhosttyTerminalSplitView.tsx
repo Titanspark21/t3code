@@ -242,70 +242,63 @@ function GhosttyPane({
           });
         });
 
-        // Listen for PTY output → write to terminal
-        const unsubscribe = api.terminal.onEvent((event) => {
-          if (event.threadId !== threadId || event.terminalId !== terminalId) return;
-          const activeTerminal = terminalRef.current;
-          if (!activeTerminal) return;
-
-          switch (event.type) {
-            case "output":
-              activeTerminal.write(event.data);
-              break;
-            case "started":
-            case "restarted":
-              activeTerminal.write("\u001bc");
-              if (event.snapshot.history.length > 0) {
-                activeTerminal.write(event.snapshot.history);
-              }
-              break;
-            case "cleared":
-              activeTerminal.clear();
-              activeTerminal.write("\u001bc");
-              break;
-            case "error":
-              activeTerminal.write(`\r\n[ghostty] ${event.message}\r\n`);
-              break;
-            case "exited": {
-              const details = [
-                typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
-                typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
-              ]
-                .filter((v): v is string => v !== null)
-                .join(", ");
-              activeTerminal.write(
-                `\r\n[ghostty] ${details ? `Process exited (${details})` : "Process exited"}\r\n`,
-              );
-              break;
-            }
-          }
-        });
-
-        // Open the terminal session on the server
-        try {
-          fitAddon.fit();
-          const snapshot = await api.terminal.open({
+        // Attach to the terminal session: the stream replays a snapshot first,
+        // then delivers ordered live events for this thread/terminal pair.
+        fitAddon.fit();
+        const unsubscribe = api.terminal.attach(
+          {
             threadId,
             terminalId,
             cwd,
             cols: terminal.cols,
             rows: terminal.rows,
             ...(runtimeEnv ? { env: runtimeEnv } : {}),
-          });
-          if (disposed) return;
-          terminal.write("\u001bc");
-          if (snapshot.history.length > 0) {
-            terminal.write(snapshot.history);
-          }
-          if (isActive) {
-            window.requestAnimationFrame(() => terminal.focus());
-          }
-        } catch (err) {
-          if (disposed) return;
-          terminal.write(
-            `\r\n[ghostty] ${err instanceof Error ? err.message : "Failed to open terminal"}\r\n`,
-          );
-        }
+          },
+          (event) => {
+            const activeTerminal = terminalRef.current;
+            if (!activeTerminal || disposed) return;
+
+            switch (event.type) {
+              case "snapshot":
+                activeTerminal.write("\u001bc");
+                if (event.snapshot.history.length > 0) {
+                  activeTerminal.write(event.snapshot.history);
+                }
+                if (isActive) {
+                  window.requestAnimationFrame(() => activeTerminal.focus());
+                }
+                break;
+              case "output":
+                activeTerminal.write(event.data);
+                break;
+              case "restarted":
+                activeTerminal.write("\u001bc");
+                if (event.snapshot.history.length > 0) {
+                  activeTerminal.write(event.snapshot.history);
+                }
+                break;
+              case "cleared":
+                activeTerminal.clear();
+                activeTerminal.write("\u001bc");
+                break;
+              case "error":
+                activeTerminal.write(`\r\n[ghostty] ${event.message}\r\n`);
+                break;
+              case "exited": {
+                const details = [
+                  typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
+                  typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
+                ]
+                  .filter((v): v is string => v !== null)
+                  .join(", ");
+                activeTerminal.write(
+                  `\r\n[ghostty] ${details ? `Process exited (${details})` : "Process exited"}\r\n`,
+                );
+                break;
+              }
+            }
+          },
+        );
 
         // Theme observer
         const themeObserver = new MutationObserver(() => {

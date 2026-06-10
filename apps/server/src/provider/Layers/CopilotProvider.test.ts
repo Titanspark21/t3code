@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import * as Schema from "effect/Schema";
-import { describe, it } from "vitest";
+import { describe, it } from "vite-plus/test";
 
 import { CopilotSettings } from "../Drivers/CopilotSettings.ts";
 import { makePendingCopilotProvider } from "./CopilotProvider.ts";

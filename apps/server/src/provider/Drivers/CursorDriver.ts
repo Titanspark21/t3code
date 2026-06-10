@@ -4,6 +4,7 @@
  * @module provider/Drivers/CursorDriver
  */
 import { CursorSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -46,6 +47,7 @@ const UPDATE = makeStaticProviderMaintenanceResolver(
 );
 
 export type CursorDriverEnv =
+  | Crypto.Crypto
   | FileSystem.FileSystem
   | HttpClient.HttpClient
   | Path.Path

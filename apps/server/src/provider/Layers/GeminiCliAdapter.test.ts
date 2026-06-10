@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { vi } from "vitest";
+import { vi } from "vite-plus/test";
 
 import { GeminiCliServerManager } from "../../geminiCliServerManager.ts";
 import { makeGeminiCliAdapter, type GeminiCliAdapterShape } from "./GeminiCliAdapter.ts";
@@ -33,7 +33,7 @@ const asItemId = (value: string): RuntimeItemId => RuntimeItemId.make(value);
 // the new factory returns a shape directly, so tests inject it through a
 // throwaway Context.Service tag.
 class GeminiCliAdapter extends Context.Service<GeminiCliAdapter, GeminiCliAdapterShape>()(
-  "test/GeminiCliAdapter",
+  "t3/provider/Layers/GeminiCliAdapter.test/GeminiCliAdapter",
 ) {}
 
 class FakeGeminiCliManager extends GeminiCliServerManager {
