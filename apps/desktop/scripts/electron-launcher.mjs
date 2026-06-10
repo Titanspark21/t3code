@@ -3,31 +3,45 @@
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
 
 import { generateAssetCatalogForIcon } from "../../../scripts/lib/macos-icon-composer.ts";
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
-const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
-const APP_BUNDLE_ID = isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code";
-const LAUNCHER_VERSION = 3;
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const desktopDir = resolve(__dirname, "..");
 const repoRoot = resolve(desktopDir, "..", "..");
+const devBundleIdSuffix = basename(repoRoot)
+  .toLowerCase()
+  .replaceAll(/[^a-z0-9]+/g, "");
+export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+export const APP_BUNDLE_ID = isDevelopment
+  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
+  : "com.t3tools.t3code";
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+const LAUNCHER_VERSION = 10;
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
+
+function resolveDevelopmentProtocolCallbackPort() {
+  const configuredPort = Number.parseInt(process.env.T3CODE_PORT ?? "", 10);
+  if (Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort < 65535) {
+    return configuredPort + 1;
+  }
+  return 13774;
+}
 
 function setPlistString(plistPath, key, value) {
   const replaceResult = spawnSync("plutil", ["-replace", key, "-string", value, plistPath], {
@@ -48,6 +62,26 @@ function setPlistString(plistPath, key, value) {
   throw new Error(`Failed to update plist key "${key}" at ${plistPath}: ${details}`.trim());
 }
 
+function setPlistJson(plistPath, key, value) {
+  const serialized = JSON.stringify(value);
+  const replaceResult = spawnSync("plutil", ["-replace", key, "-json", serialized, plistPath], {
+    encoding: "utf8",
+  });
+  if (replaceResult.status === 0) {
+    return;
+  }
+
+  const insertResult = spawnSync("plutil", ["-insert", key, "-json", serialized, plistPath], {
+    encoding: "utf8",
+  });
+  if (insertResult.status === 0) {
+    return;
+  }
+
+  const details = [replaceResult.stderr, insertResult.stderr].filter(Boolean).join("\n");
+  throw new Error(`Failed to update plist key "${key}" at ${plistPath}: ${details}`.trim());
+}
+
 function runChecked(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" });
   if (result.status === 0) {
@@ -56,6 +90,71 @@ function runChecked(command, args) {
 
   const details = [result.stdout, result.stderr].filter(Boolean).join("\n");
   throw new Error(`Failed to run ${command} ${args.join(" ")}: ${details}`.trim());
+}
+
+function shellSingleQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
+  const mainEntryPath = join(desktopDir, "dist-electron", "main.cjs");
+  const protocolCallbackUrl = `http://127.0.0.1:${resolveDevelopmentProtocolCallbackPort()}/auth/callback`;
+  const envEntries = [
+    ["VITE_DEV_SERVER_URL", process.env.VITE_DEV_SERVER_URL],
+    ["T3CODE_PORT", process.env.T3CODE_PORT],
+    ["T3CODE_HOME", process.env.T3CODE_HOME],
+    ["T3CODE_COMMIT_HASH", process.env.T3CODE_COMMIT_HASH],
+    ["T3CODE_OTLP_TRACES_URL", process.env.T3CODE_OTLP_TRACES_URL],
+    ["T3CODE_OTLP_EXPORT_INTERVAL_MS", process.env.T3CODE_OTLP_EXPORT_INTERVAL_MS],
+    ["T3CODE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
+    ["T3CODE_DESKTOP_PROTOCOL_REGISTRATION_MANAGED", "1"],
+    ["T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL", protocolCallbackUrl],
+  ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
+  writeFileSync(
+    targetBinaryPath,
+    [
+      "#!/bin/sh",
+      ...envEntries.map(([name, value]) => `export ${name}=${shellSingleQuote(value)}`),
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      "    t3code-dev://auth/callback*)",
+      '      if [ -n "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" ]; then',
+      '        /usr/bin/curl -fsS --max-time 2 -X POST --data-binary "$arg" "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" >/dev/null 2>&1 && exit 0',
+      "      fi",
+      "      ;;",
+      "  esac",
+      "done",
+      `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopDir)} ${shellSingleQuote(mainEntryPath)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(targetBinaryPath, 0o755);
+}
+
+function registerMacLauncherBundle(appBundlePath) {
+  runChecked(
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+    ["-f", appBundlePath],
+  );
+
+  if (!isDevelopment) {
+    return;
+  }
+
+  for (const scheme of APP_PROTOCOL_SCHEMES) {
+    runChecked("osascript", [
+      "-l",
+      "JavaScript",
+      "-e",
+      [
+        'ObjC.import("CoreServices");',
+        `const scheme = $.NSString.alloc.initWithUTF8String(${JSON.stringify(scheme)});`,
+        `const bundle = $.NSString.alloc.initWithUTF8String(${JSON.stringify(APP_BUNDLE_ID)});`,
+        "const status = $.LSSetDefaultHandlerForURLScheme(scheme, bundle);",
+        "if (status !== 0) throw new Error(`LSSetDefaultHandlerForURLScheme failed: ${status}`);",
+      ].join(" "),
+    ]);
+  }
 }
 
 function ensureDevelopmentIconIcns(runtimeDir, fallbackIconPath) {
@@ -116,39 +215,42 @@ function patchMainBundleInfoPlist(appBundlePath) {
   setPlistString(infoPlistPath, "CFBundleName", APP_DISPLAY_NAME);
   setPlistString(infoPlistPath, "CFBundleIdentifier", APP_BUNDLE_ID);
   setPlistString(infoPlistPath, "CFBundleIconFile", "icon.icns");
+  setPlistJson(infoPlistPath, "CFBundleURLTypes", [
+    {
+      CFBundleURLName: APP_BUNDLE_ID,
+      CFBundleURLSchemes: APP_PROTOCOL_SCHEMES,
+    },
+  ]);
 }
 
 function patchHelperBundleInfoPlists(appBundlePath) {
-  const frameworksDir = join(appBundlePath, "Contents", "Frameworks");
-  if (!existsSync(frameworksDir)) {
-    return;
-  }
+  const helperBundleNames = [
+    ["Electron Helper.app", "helper", `${APP_DISPLAY_NAME} Helper`],
+    ["Electron Helper (GPU).app", "helper.gpu", `${APP_DISPLAY_NAME} Helper (GPU)`],
+    ["Electron Helper (Plugin).app", "helper.plugin", `${APP_DISPLAY_NAME} Helper (Plugin)`],
+    ["Electron Helper (Renderer).app", "helper.renderer", `${APP_DISPLAY_NAME} Helper (Renderer)`],
+  ];
 
-  for (const entry of readdirSync(frameworksDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.endsWith(".app")) {
+  for (const [bundleName, bundleIdentifierSuffix, bundleDisplayName] of helperBundleNames) {
+    const infoPlistPath = join(
+      appBundlePath,
+      "Contents",
+      "Frameworks",
+      bundleName,
+      "Contents",
+      "Info.plist",
+    );
+    if (!existsSync(infoPlistPath)) {
       continue;
     }
-    if (!entry.name.startsWith("Electron Helper")) {
-      continue;
-    }
 
-    const helperPlistPath = join(frameworksDir, entry.name, "Contents", "Info.plist");
-    if (!existsSync(helperPlistPath)) {
-      continue;
-    }
-
-    const suffix = entry.name.replace("Electron Helper", "").replace(".app", "").trim();
-    const helperName = suffix
-      ? `${APP_DISPLAY_NAME} Helper ${suffix}`
-      : `${APP_DISPLAY_NAME} Helper`;
-    const helperIdSuffix = suffix.replace(/[()]/g, "").trim().toLowerCase().replace(/\s+/g, "-");
-    const helperBundleId = helperIdSuffix
-      ? `${APP_BUNDLE_ID}.helper.${helperIdSuffix}`
-      : `${APP_BUNDLE_ID}.helper`;
-
-    setPlistString(helperPlistPath, "CFBundleDisplayName", helperName);
-    setPlistString(helperPlistPath, "CFBundleName", helperName);
-    setPlistString(helperPlistPath, "CFBundleIdentifier", helperBundleId);
+    setPlistString(infoPlistPath, "CFBundleDisplayName", bundleDisplayName);
+    setPlistString(infoPlistPath, "CFBundleName", bundleDisplayName);
+    setPlistString(
+      infoPlistPath,
+      "CFBundleIdentifier",
+      `${APP_BUNDLE_ID}.${bundleIdentifierSuffix}`,
+    );
   }
 }
 
@@ -160,7 +262,7 @@ function readJson(path) {
   }
 }
 
-function resolveIconSourceMetadata(desktopResourcesDir) {
+function resolveIconSourceMetadata(desktopResourcesDir, legacyIconOverride) {
   const iconComposerPath = join(desktopResourcesDir, "icon.icon");
   if (existsSync(iconComposerPath)) {
     return {
@@ -169,7 +271,7 @@ function resolveIconSourceMetadata(desktopResourcesDir) {
     };
   }
 
-  const legacyIconPath = join(desktopResourcesDir, "icon.icns");
+  const legacyIconPath = legacyIconOverride ?? join(desktopResourcesDir, "icon.icns");
   return {
     iconAssetKind: "icns",
     iconMtimeMs: statSync(legacyIconPath).mtimeMs,
@@ -189,22 +291,15 @@ async function stageMainBundleIcons(appBundlePath, desktopResourcesDir, legacyIc
     writeFileSync(join(resourcesDir, "Assets.car"), compiled.assetCatalog);
     writeFileSync(join(resourcesDir, "icon.icns"), compiled.icnsFile);
     writeFileSync(join(resourcesDir, "electron.icns"), compiled.icnsFile);
-    return {
-      iconAssetKind: "icon",
-      iconMtimeMs: statSync(iconComposerPath).mtimeMs,
-    };
+    return;
   }
 
   copyFileSync(legacyIconPath, join(resourcesDir, "icon.icns"));
   copyFileSync(legacyIconPath, join(resourcesDir, "electron.icns"));
-  return {
-    iconAssetKind: "icns",
-    iconMtimeMs: statSync(legacyIconPath).mtimeMs,
-  };
 }
 
 async function buildMacLauncher(electronBinaryPath) {
-  const sourceAppBundlePath = resolve(electronBinaryPath, "../../..");
+  const sourceAppBundlePath = resolve(dirname(electronBinaryPath), "../..");
   const runtimeDir = join(desktopDir, ".electron-runtime");
   const targetAppBundlePath = join(runtimeDir, `${APP_DISPLAY_NAME}.app`);
   const targetBinaryPath = join(targetAppBundlePath, "Contents", "MacOS", "Electron");
@@ -221,12 +316,14 @@ async function buildMacLauncher(electronBinaryPath) {
     ? ensureDevelopmentIconIcns(runtimeDir, defaultLegacyIconPath)
     : undefined;
 
-  const iconMetadata = resolveIconSourceMetadata(desktopResourcesDir);
+  const iconMetadata = resolveIconSourceMetadata(desktopResourcesDir, legacyIconOverride);
 
   const expectedMetadata = {
     launcherVersion: LAUNCHER_VERSION,
     sourceAppBundlePath,
     sourceAppMtimeMs: statSync(sourceAppBundlePath).mtimeMs,
+    appBundleId: APP_BUNDLE_ID,
+    appProtocolSchemes: APP_PROTOCOL_SCHEMES,
     ...iconMetadata,
   };
 
@@ -236,27 +333,27 @@ async function buildMacLauncher(electronBinaryPath) {
     currentMetadata &&
     JSON.stringify(currentMetadata) === JSON.stringify(expectedMetadata)
   ) {
+    registerMacLauncherBundle(targetAppBundlePath);
     return targetBinaryPath;
   }
 
   rmSync(targetAppBundlePath, { recursive: true, force: true });
-  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true, verbatimSymlinks: true });
+  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true });
   patchMainBundleInfoPlist(targetAppBundlePath);
-  const refreshedIconMetadata = await stageMainBundleIcons(
-    targetAppBundlePath,
-    desktopResourcesDir,
-    legacyIconOverride,
-  );
+  await stageMainBundleIcons(targetAppBundlePath, desktopResourcesDir, legacyIconOverride);
   patchHelperBundleInfoPlists(targetAppBundlePath);
-  writeFileSync(
-    metadataPath,
-    `${JSON.stringify({ ...expectedMetadata, ...refreshedIconMetadata }, null, 2)}\n`,
-  );
+  if (isDevelopment) {
+    writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath);
+  }
+  writeFileSync(metadataPath, `${JSON.stringify(expectedMetadata, null, 2)}\n`);
+  registerMacLauncherBundle(targetAppBundlePath);
 
   return targetBinaryPath;
 }
 
 export async function resolveElectronPath() {
+  ensureElectronRuntime();
+
   const require = createRequire(import.meta.url);
   const electronBinaryPath = require("electron");
 
@@ -265,4 +362,18 @@ export async function resolveElectronPath() {
   }
 
   return await buildMacLauncher(electronBinaryPath);
+}
+
+export async function resolveDevProtocolClient() {
+  if (process.platform !== "darwin" || !isDevelopment) {
+    return null;
+  }
+
+  const require = createRequire(import.meta.url);
+  const electronBinaryPath = require("electron");
+  const launcherBinaryPath = await buildMacLauncher(electronBinaryPath);
+  return {
+    appBundlePath: resolve(launcherBinaryPath, "..", "..", ".."),
+    appBundleId: APP_BUNDLE_ID,
+  };
 }

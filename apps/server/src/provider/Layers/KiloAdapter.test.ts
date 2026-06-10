@@ -156,11 +156,14 @@ it.effect("makeKiloAdapter forwards manager runtime events through the stream", 
   ),
 );
 
+const disabledKiloSettings = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
+
 it.effect("makeKiloAdapter rejects startSession when disabled", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const disabled = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
-      const adapter = yield* makeKiloAdapter(disabled, { manager: new FakeKiloManager() });
+      const adapter = yield* makeKiloAdapter(disabledKiloSettings, {
+        manager: new FakeKiloManager(),
+      });
 
       const result = yield* adapter
         .startSession({ threadId: asThreadId("thread-disabled"), runtimeMode: "full-access" })

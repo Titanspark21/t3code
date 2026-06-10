@@ -51,12 +51,13 @@ const decodeRequestPermissionResponse = Schema.decodeEffect(
 const mockPeerPath = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(import.meta.dirname, "../test/fixtures/acp-mock-peer.ts"),
 );
+const mockPeerArgs = (path: string) => [path];
 
 const makeHandle = (env?: Record<string, string>) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const path = yield* Path.Path;
-    const command = ChildProcess.make("bun", ["run", yield* mockPeerPath], {
+    const command = ChildProcess.make(process.execPath, mockPeerArgs(yield* mockPeerPath), {
       cwd: path.join(import.meta.dirname, ".."),
       ...(env ? { env: { ...process.env, ...env } } : {}),
     });

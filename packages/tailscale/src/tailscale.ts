@@ -113,11 +113,14 @@ export const parseTailscaleStatus = (
     Effect.mapError((cause) => new TailscaleStatusParseError({ cause })),
     Effect.map((parsed) => {
       const rawIps = parsed.Self?.TailscaleIPs;
-      const tailnetIpv4Addresses = Array.isArray(rawIps)
-        ? rawIps
-            .filter((address): address is string => typeof address === "string")
-            .filter(isTailscaleIpv4Address)
-        : [];
+      const tailnetIpv4Addresses: Array<string> = [];
+      if (Array.isArray(rawIps)) {
+        for (const address of rawIps) {
+          if (typeof address === "string" && isTailscaleIpv4Address(address)) {
+            tailnetIpv4Addresses.push(address);
+          }
+        }
+      }
 
       return {
         magicDnsName: normalizeMagicDnsName(parsed),
@@ -294,7 +297,7 @@ export const probeTailscaleHttpsEndpoint = (input: {
       onNone: () => false,
       onSome: (httpResponse) => httpResponse.status >= 200 && httpResponse.status < 300,
     });
-  }).pipe(Effect.catch(() => Effect.succeed(false)));
+  }).pipe(Effect.orElseSucceed(() => false));
 
 export const resolveTailscaleHttpsBaseUrl = (
   input: {

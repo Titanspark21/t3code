@@ -10,16 +10,23 @@ import {
   use,
   useCallback,
   useEffect,
+  Fragment,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
+import { FileDiff } from "@pierre/diffs/react";
 import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
 import { useAppSettings } from "../../appSettings";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
+import {
+  getRenderablePatch,
+  resolveDiffThemeName,
+  resolveFileDiffPath,
+} from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
@@ -68,6 +75,11 @@ import {
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import {
+  buildReviewCommentRenderablePatch,
+  parseReviewCommentMessageSegments,
+  type ReviewCommentContext,
+} from "../../reviewCommentContext";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -376,6 +388,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           text={displayedUserMessage.visibleText}
           terminalContexts={terminalContexts}
           skills={ctx.skills}
+          markdownCwd={ctx.markdownCwd}
           footer={
             <>
               <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
@@ -400,16 +413,23 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
   const activity = use(TimelineRowActivityCtx);
 
   return (
-    <Button
-      type="button"
-      size="xs"
-      variant="outline"
-      disabled={activity.isRevertingCheckpoint || activity.isWorking}
-      onClick={() => ctx.onRevertUserMessage(messageId)}
-      title="Revert to this message"
-    >
-      <Undo2Icon className="size-3" />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={activity.isRevertingCheckpoint || activity.isWorking}
+            onClick={() => ctx.onRevertUserMessage(messageId)}
+            aria-label="Revert to this message"
+          />
+        }
+      >
+        <Undo2Icon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -778,6 +798,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  markdownCwd: string | undefined;
   footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -807,6 +828,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             text={props.text}
             terminalContexts={props.terminalContexts}
             skills={props.skills}
+            markdownCwd={props.markdownCwd}
           />
         </div>
       ) : null}
@@ -844,7 +866,59 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  markdownCwd: string | undefined;
 }) {
+  const renderInlineMarkdownSegment = (text: string, key: string) => {
+    const leadingWhitespace = /^\s+/.exec(text)?.[0] ?? "";
+    const textWithoutLeadingWhitespace = text.slice(leadingWhitespace.length);
+    const trailingWhitespace = /\s+$/.exec(textWithoutLeadingWhitespace)?.[0] ?? "";
+    const content = textWithoutLeadingWhitespace.slice(
+      0,
+      textWithoutLeadingWhitespace.length - trailingWhitespace.length,
+    );
+
+    return (
+      <Fragment key={key}>
+        {leadingWhitespace ? <span aria-hidden="true">{leadingWhitespace}</span> : null}
+        {content ? (
+          <ChatMarkdown
+            text={content}
+            cwd={props.markdownCwd}
+            skills={props.skills}
+            className="text-foreground"
+            lineBreaks
+          />
+        ) : null}
+        {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
+      </Fragment>
+    );
+  };
+
+  const reviewCommentSegments = parseReviewCommentMessageSegments(props.text);
+  if (reviewCommentSegments.some((segment) => segment.kind === "review-comment")) {
+    return (
+      <div className="space-y-3 text-sm leading-relaxed text-foreground">
+        {reviewCommentSegments.map((segment) =>
+          segment.kind === "text" ? (
+            segment.text.trim().length > 0 ? (
+              <div key={segment.id} className="wrap-break-word">
+                <ChatMarkdown
+                  text={segment.text.trim()}
+                  cwd={props.markdownCwd}
+                  skills={props.skills}
+                  className="text-foreground"
+                  lineBreaks
+                />
+              </div>
+            ) : null
+          ) : (
+            <UserMessageReviewCommentCard key={segment.comment.id} comment={segment.comment} />
+          ),
+        )}
+      </div>
+    );
+  }
+
   if (props.terminalContexts.length > 0) {
     const hasEmbeddedInlineLabels = textContainsInlineTerminalContextLabels(
       props.text,
@@ -865,9 +939,10 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
         if (matchIndex > cursor) {
           inlineNodes.push(
-            <span key={`user-terminal-context-inline-before:${context.header}:${cursor}`}>
-              <SkillInlineText text={props.text.slice(cursor, matchIndex)} skills={props.skills} />
-            </span>,
+            renderInlineMarkdownSegment(
+              props.text.slice(cursor, matchIndex),
+              `user-terminal-context-inline-before:${context.header}:${cursor}`,
+            ),
           );
         }
         inlineNodes.push(
@@ -882,9 +957,10 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       if (inlineNodes.length > 0) {
         if (cursor < props.text.length) {
           inlineNodes.push(
-            <span key={`user-message-terminal-context-inline-rest:${cursor}`}>
-              <SkillInlineText text={props.text.slice(cursor)} skills={props.skills} />
-            </span>,
+            renderInlineMarkdownSegment(
+              props.text.slice(cursor),
+              `user-message-terminal-context-inline-rest:${cursor}`,
+            ),
           );
         }
 
@@ -912,9 +988,14 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
     if (props.text.length > 0) {
       inlineNodes.push(
-        <span key="user-message-terminal-context-inline-text">
-          <SkillInlineText text={props.text} skills={props.skills} />
-        </span>,
+        <ChatMarkdown
+          key="user-message-terminal-context-inline-text"
+          text={props.text}
+          cwd={props.markdownCwd}
+          skills={props.skills}
+          className="text-foreground"
+          lineBreaks
+        />,
       );
     } else if (inlinePrefix.length === 0) {
       return null;
@@ -932,11 +1013,58 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   }
 
   return (
-    <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
-      <SkillInlineText text={props.text} skills={props.skills} />
-    </div>
+    <ChatMarkdown
+      text={props.text}
+      cwd={props.markdownCwd}
+      skills={props.skills}
+      className="text-foreground"
+      lineBreaks
+    />
   );
 });
+
+function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
+  const ctx = use(TimelineRowCtx);
+  const renderablePatch = getRenderablePatch(
+    buildReviewCommentRenderablePatch(comment),
+    `review-comment:${comment.id}`,
+  );
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/70 bg-background/70 p-3">
+      <div className="space-y-1">
+        <div className="text-xs font-medium text-foreground">
+          {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {comment.sectionTitle} · {comment.rangeLabel}
+        </div>
+      </div>
+      {comment.text.length > 0 && (
+        <div className="whitespace-pre-wrap wrap-break-word text-sm">
+          <SkillInlineText text={comment.text} skills={ctx.skills} />
+        </div>
+      )}
+      {renderablePatch?.kind === "files" &&
+        renderablePatch.files.map((fileDiff) => (
+          <FileDiff
+            key={resolveFileDiffPath(fileDiff)}
+            fileDiff={fileDiff}
+            options={{
+              collapsed: false,
+              diffStyle: "unified",
+              theme: resolveDiffThemeName(ctx.resolvedTheme),
+            }}
+          />
+        ))}
+      {renderablePatch?.kind === "raw" && (
+        <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 text-xs">
+          {renderablePatch.text}
+        </pre>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Structural sharing — reuse old row references when data hasn't changed
@@ -1213,13 +1341,21 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           {workEntry.changedFiles?.slice(0, 4).map((filePath) => {
             const displayPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
             return (
-              <span
-                key={`${workEntry.id}:${filePath}`}
-                className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
-                title={displayPath}
-              >
-                {displayPath}
-              </span>
+              <Tooltip key={`${workEntry.id}:${filePath}`}>
+                <TooltipTrigger
+                  render={
+                    <span
+                      className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
+                      aria-label={displayPath}
+                    />
+                  }
+                >
+                  {displayPath}
+                </TooltipTrigger>
+                <TooltipPopup side="top" className="max-w-[min(40rem,calc(100vw-2rem))]">
+                  <span className="font-mono text-[11px] whitespace-nowrap">{displayPath}</span>
+                </TooltipPopup>
+              </Tooltip>
             );
           })}
           {(workEntry.changedFiles?.length ?? 0) > 4 && (

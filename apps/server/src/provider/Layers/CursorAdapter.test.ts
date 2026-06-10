@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { createModelSelection } from "@t3tools/shared/model";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -8,7 +9,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   ApprovalRequestId,
@@ -146,7 +147,11 @@ function makeSdkMessage(partial: Record<string, unknown>): CursorSdkMessage {
 }
 
 function runTest<A, E>(
-  effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | ServerConfig | Scope.Scope>,
+  effect: Effect.Effect<
+    A,
+    E,
+    Crypto.Crypto | FileSystem.FileSystem | Path.Path | ServerConfig | Scope.Scope
+  >,
 ) {
   return Effect.runPromise(Effect.scoped(effect).pipe(Effect.provide(TestLayer)));
 }

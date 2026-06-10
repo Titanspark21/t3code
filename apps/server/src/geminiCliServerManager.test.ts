@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vite-plus/test";
 import type { PathLike } from "node:fs";
 import {
   ProviderDriverKind,

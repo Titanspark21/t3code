@@ -278,6 +278,30 @@ export const CursorSettings = makeProviderSettingsSchema(
 );
 export type CursorSettings = typeof CursorSettings.Type;
 
+export const GrokSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("grok").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Grok CLI binary.",
+        providerSettingsForm: { placeholder: "grok", clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath"],
+  },
+);
+export type GrokSettings = typeof GrokSettings.Type;
+
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -545,6 +569,7 @@ export const ServerSettings = Schema.Struct({
     copilot: CopilotSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     droid: DroidSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     geminiCli: GeminiCliSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     amp: AmpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -569,7 +594,7 @@ export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsE
   {
     settingsPath: Schema.String,
     detail: Schema.String,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
@@ -623,6 +648,12 @@ const CursorSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const GrokSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const OpenCodeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -657,6 +688,7 @@ export const ServerSettingsPatch = Schema.Struct({
       copilot: Schema.optionalKey(GenericProviderSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       droid: Schema.optionalKey(DroidSettingsPatch),
+      grok: Schema.optionalKey(GrokSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
       amp: Schema.optionalKey(GenericProviderSettingsPatch),

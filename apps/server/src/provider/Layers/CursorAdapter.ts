@@ -27,7 +27,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
-import * as Random from "effect/Random";
+import * as Crypto from "effect/Crypto";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -229,6 +229,10 @@ export function makeCursorAdapter(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;
+    const crypto = yield* Crypto.Crypto;
+    // UUID generation is treated as infallible (matching the previous
+    // Random-based identifiers); a failing system RNG is a defect.
+    const randomUUIDv4 = Effect.orDie(crypto.randomUUIDv4);
     const nativeEventLogger =
       options?.nativeEventLogger ??
       (options?.nativeEventLogPath !== undefined
@@ -252,7 +256,7 @@ export function makeCursorAdapter(
       readonly raw?: CursorSdkMessage;
     }) =>
       Effect.gen(function* () {
-        const eventId = EventId.make(yield* Random.nextUUIDv4);
+        const eventId = EventId.make(yield* randomUUIDv4);
         return {
           eventId,
           provider: PROVIDER,
@@ -291,7 +295,7 @@ export function makeCursorAdapter(
           {
             observedAt,
             event: {
-              id: yield* Random.nextUUIDv4,
+              id: yield* randomUUIDv4,
               kind: "sdk_message",
               provider: PROVIDER,
               providerInstanceId: boundInstanceId,
@@ -1087,7 +1091,7 @@ export function makeCursorAdapter(
           ? toCursorSdkModelSelection(modelSelection.model, modelSelection.options)
           : toCursorSdkModelSelection(context.session.model ?? CURSOR_DEFAULT_MODEL);
       const message = yield* buildUserMessage(input);
-      const turnId = TurnId.make(yield* Random.nextUUIDv4);
+      const turnId = TurnId.make(yield* randomUUIDv4);
 
       context.activeTurnId = turnId;
       yield* updateSession(

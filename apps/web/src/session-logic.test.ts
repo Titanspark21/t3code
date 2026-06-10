@@ -5,7 +5,7 @@ import {
   TurnId,
   type OrchestrationThreadActivity,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveCompletionDividerBeforeEntryId,
@@ -23,6 +23,8 @@ import {
   PROVIDER_OPTIONS,
 } from "./session-logic";
 
+let nextActivityId = 0;
+
 function makeActivity(overrides: {
   id?: string;
   createdAt?: string;
@@ -35,7 +37,7 @@ function makeActivity(overrides: {
 }): OrchestrationThreadActivity {
   const payload = overrides.payload ?? {};
   return {
-    id: EventId.make(overrides.id ?? crypto.randomUUID()),
+    id: EventId.make(overrides.id ?? `activity-${nextActivityId++}`),
     createdAt: overrides.createdAt ?? "2026-02-23T00:00:00.000Z",
     kind: overrides.kind ?? "tool.started",
     summary: overrides.summary ?? "Tool call",
@@ -1568,6 +1570,7 @@ describe("PROVIDER_OPTIONS", () => {
       { value: "cursor", label: "Cursor Agent", available: true, pickerSidebarBadge: "new" },
       { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
       { value: "droid", label: "Droid", available: true, pickerSidebarBadge: "new" },
+      { value: "grok", label: "Grok", available: true, pickerSidebarBadge: "new" },
       { value: "geminiCli", label: "Gemini CLI", available: true },
       { value: "amp", label: "AMPcode", available: true },
       { value: "kilo", label: "Kilo", available: true },

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { CursorSettings, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";

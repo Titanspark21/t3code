@@ -8,7 +8,7 @@ import {
 import { DroidSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildDroidModelsFromSdkModels,

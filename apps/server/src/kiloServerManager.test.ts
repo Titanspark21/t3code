@@ -1,5 +1,5 @@
 import { ApprovalRequestId, ThreadId, TurnId, type ProviderRuntimeEvent } from "@t3tools/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { KiloServerManager } from "./kiloServerManager.ts";
 import {

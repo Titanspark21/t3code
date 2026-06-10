@@ -36,19 +36,22 @@
           "globalErrorInEffectFailure": "error",
           "unknownInEffectCatch": "error",
           "strictBooleanExpressions": "off",
-          "preferSchemaOverJson": "off",
+          "lazyEffect": "off",
+          "preferSchemaOverJson": "error",
           "schemaSyncInEffect": "error",
           "cryptoRandomUUID": "error",
           "cryptoRandomUUIDInEffect": "error",
-          "nodeBuiltinImport": "off",
-          "globalDate": "off",
-          "globalDateInEffect": "off",
-          "globalConsole": "off",
-          "globalConsoleInEffect": "off",
+          "nodeBuiltinImport": "error",
+          "globalDate": "error",
+          "globalDateInEffect": "error",
+          "globalConsole": "error",
+          "globalConsoleInEffect": "error",
           "globalRandom": "error",
           "globalRandomInEffect": "error",
-          "globalTimers": "off",
-          "globalTimersInEffect": "off"
+          "globalTimers": "error",
+          "globalTimersInEffect": "error",
+          "globalFetch": "error",
+          "globalFetchInEffect": "error"
         }
       }
     ]
