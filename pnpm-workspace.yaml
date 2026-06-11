@@ -47,6 +47,10 @@ overrides:
   "@clerk/clerk-js>@solana/wallet-adapter-react": "-"
   "@clerk/clerk-js>@solana/wallet-standard": "-"
   "@clerk/clerk-js>@wallet-standard/core": "-"
+  # Pin to the patched version: expo declares ~56.0.13, so a fresh resolve
+  # (e.g. release-smoke's lockfile-only install) would otherwise float to a
+  # newer 56.0.x and orphan the patchedDependencies entry below.
+  "@expo/metro-config": "56.0.13"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"

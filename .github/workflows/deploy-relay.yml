@@ -17,6 +17,9 @@ concurrency:
 jobs:
   deploy_relay:
     name: Deploy production relay
+    # Upstream-only: the fork has neither the blacksmith runners nor the
+    # Cloudflare credentials, so the job would queue forever here.
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 15
     environment:
