@@ -2,14 +2,16 @@ name: Mobile EAS Preview
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
 
 jobs:
   preview:
     name: EAS Preview
-    # Upstream-only: the fork has neither the blacksmith runners nor the
-    # Expo credentials, so the job would queue forever here.
-    if: github.repository == 'pingdotgg/t3code'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Fork-only and label-gated. Keep this off upstream and avoid private
+    # upstream runners; the token check below skips the body when EAS is not
+    # configured for the fork.
+    if: github.repository == 'aaditagrawal/t3code' && contains(github.event.pull_request.labels.*.name, '🚀 Mobile Continuous Deployment')
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
