@@ -9,7 +9,7 @@ const mainJs = resolve(desktopDir, "dist-electron/main.cjs");
 
 console.log("\nLaunching Electron smoke test...");
 
-const electronCommand = resolveElectronLaunchCommand([mainJs]);
+const electronCommand = await resolveElectronLaunchCommand([mainJs]);
 const child = spawn(electronCommand.electronPath, electronCommand.args, {
   stdio: ["pipe", "pipe", "pipe"],
   env: {
