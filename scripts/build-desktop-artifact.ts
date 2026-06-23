@@ -1436,8 +1436,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   const bundledCopilotVersion = serverDependencies["@github/copilot"];
   if (typeof bundledCopilotVersion !== "string" || bundledCopilotVersion.trim().length === 0) {
-    return yield* new BuildScriptError({
-      message: "Could not resolve bundled @github/copilot version from apps/server/package.json.",
+    return yield* new MissingServerProductionDependenciesError({
+      manifestPath: "apps/server/package.json",
     });
   }
   const bundledCopilotPlatformDependencies = Object.fromEntries(

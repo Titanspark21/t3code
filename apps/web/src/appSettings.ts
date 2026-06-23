@@ -260,13 +260,13 @@ function withUnifiedCompatSettings(
     UnifiedSettings,
     | "confirmThreadDelete"
     | "defaultThreadEnvMode"
-    | "diffWordWrap"
     | "diffIgnoreWhitespace"
     | "enableAssistantStreaming"
     | "providers"
     | "sidebarProjectSortOrder"
     | "sidebarThreadSortOrder"
     | "timestampFormat"
+    | "wordWrap"
   >,
 ): AppSettings {
   return normalizeAppSettings({
@@ -278,7 +278,7 @@ function withUnifiedCompatSettings(
     copilotConfigDir: unifiedSettings.providers.copilot.configDir,
     defaultThreadEnvMode: unifiedSettings.defaultThreadEnvMode,
     confirmThreadDelete: unifiedSettings.confirmThreadDelete,
-    diffWordWrap: unifiedSettings.diffWordWrap,
+    diffWordWrap: unifiedSettings.wordWrap,
     diffIgnoreWhitespace: unifiedSettings.diffIgnoreWhitespace,
     enableAssistantStreaming: unifiedSettings.enableAssistantStreaming,
     sidebarProjectSortOrder: unifiedSettings.sidebarProjectSortOrder,
@@ -341,7 +341,7 @@ function toUnifiedPatch(patch: Partial<AppSettings>): Partial<UnifiedSettings> {
     ...(patch.confirmThreadDelete !== undefined
       ? { confirmThreadDelete: patch.confirmThreadDelete }
       : {}),
-    ...(patch.diffWordWrap !== undefined ? { diffWordWrap: patch.diffWordWrap } : {}),
+    ...(patch.diffWordWrap !== undefined ? { wordWrap: patch.diffWordWrap } : {}),
     ...(patch.diffIgnoreWhitespace !== undefined
       ? { diffIgnoreWhitespace: patch.diffIgnoreWhitespace }
       : {}),
@@ -398,7 +398,7 @@ export function useAppSettings() {
     () => ({
       confirmThreadDelete: unifiedSettings.confirmThreadDelete,
       defaultThreadEnvMode: unifiedSettings.defaultThreadEnvMode,
-      diffWordWrap: unifiedSettings.diffWordWrap,
+      wordWrap: unifiedSettings.wordWrap,
       diffIgnoreWhitespace: unifiedSettings.diffIgnoreWhitespace,
       enableAssistantStreaming: unifiedSettings.enableAssistantStreaming,
       providers: unifiedSettings.providers,
