@@ -10,37 +10,29 @@
  * store.
  */
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { ServerSettings, type ServerSettingsPatch } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { ProviderDriverKind, ServerSettings, type ServerSettingsPatch } from "@t3tools/contracts";
 import {
   type ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
-  DEFAULT_UNIFIED_SETTINGS,
-  SidebarProjectSortOrder,
-  SidebarThreadSortOrder,
-  ThreadEnvMode,
-  TimestampFormat,
   UnifiedSettings,
 } from "@t3tools/contracts/settings";
-import { ModelSelection } from "@t3tools/contracts";
 import { ensureLocalApi } from "~/localApi";
-import * as Predicate from "effect/Predicate";
-import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import type { DeepMutable } from "effect/Types";
+import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
+import { usePrimaryEnvironment } from "~/state/environments";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { normalizeCustomModelSlugs } from "~/modelSelection";
-import { ProviderDriverKind } from "@t3tools/contracts";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
-import { applySettingsUpdated, getServerConfig, useServerSettings } from "~/rpc/serverState";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
-const OLD_SETTINGS_KEY = "t3code:app-settings:v1";
 
 const clientSettingsListeners = new Set<() => void>();
 const clientSettingsHydrationListeners = new Set<() => void>();
 let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
 let clientSettingsHydrated = false;
 let clientSettingsHydrationPromise: Promise<void> | null = null;
+let clientSettingsHydrationGeneration = 0;
 
 function emitClientSettingsChange() {
   for (const listener of clientSettingsListeners) {
@@ -99,16 +91,22 @@ async function hydrateClientSettings(): Promise<void> {
     return clientSettingsHydrationPromise;
   }
 
+  const hydrationGeneration = clientSettingsHydrationGeneration;
   const nextHydration = (async () => {
     try {
       const persistedSettings = await ensureLocalApi().persistence.getClientSettings();
+      if (hydrationGeneration !== clientSettingsHydrationGeneration) {
+        return;
+      }
       if (persistedSettings) {
         replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
       }
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, error);
     } finally {
-      setClientSettingsHydrated(true);
+      if (hydrationGeneration === clientSettingsHydrationGeneration) {
+        setClientSettingsHydrated(true);
+      }
     }
   })();
 
@@ -154,6 +152,56 @@ function splitPatch(patch: Partial<UnifiedSettings>): {
   };
 }
 
+export function buildLegacyClientSettingsMigrationPatch(
+  legacySettings: Record<string, unknown>,
+): ClientSettingsPatch {
+  return {
+    ...(typeof legacySettings.confirmThreadArchive === "boolean"
+      ? { confirmThreadArchive: legacySettings.confirmThreadArchive }
+      : {}),
+    ...(typeof legacySettings.confirmThreadDelete === "boolean"
+      ? { confirmThreadDelete: legacySettings.confirmThreadDelete }
+      : {}),
+    ...(typeof legacySettings.diffWordWrap === "boolean"
+      ? { diffWordWrap: legacySettings.diffWordWrap }
+      : {}),
+    ...(typeof legacySettings.diffIgnoreWhitespace === "boolean"
+      ? { diffIgnoreWhitespace: legacySettings.diffIgnoreWhitespace }
+      : {}),
+  };
+}
+
+export function buildLegacyServerSettingsMigrationPatch(
+  legacySettings: Record<string, unknown>,
+): ServerSettingsPatch {
+  const customCopilotModels = Array.isArray(legacySettings.customCopilotModels)
+    ? normalizeCustomModelSlugs(
+        legacySettings.customCopilotModels.filter(
+          (model): model is string => typeof model === "string",
+        ),
+        new Set(),
+        ProviderDriverKind.make("copilot"),
+      )
+    : undefined;
+  const copilotPatch = {
+    ...(typeof legacySettings.copilotCliPath === "string"
+      ? { binaryPath: legacySettings.copilotCliPath }
+      : {}),
+    ...(typeof legacySettings.copilotConfigDir === "string"
+      ? { configDir: legacySettings.copilotConfigDir }
+      : {}),
+    ...(customCopilotModels !== undefined ? { customModels: customCopilotModels } : {}),
+  };
+
+  return Object.keys(copilotPatch).length > 0
+    ? {
+        providers: {
+          copilot: copilotPatch,
+        },
+      }
+    : {};
+}
+
 // ── Hooks ────────────────────────────────────────────────────────────
 
 /**
@@ -165,28 +213,9 @@ function splitPatch(patch: Partial<UnifiedSettings>): {
  * Non-hook accessor for the current merged client settings snapshot.
  * Used by non-React code paths (e.g. runtime services) that need the latest
  * settings without subscribing.
- *
- * Kicks off hydration on first access so subsequent reads observe the
- * persisted values instead of defaults. The initial call may still return
- * `DEFAULT_CLIENT_SETTINGS` because hydration is asynchronous — callers that
- * need hydrated values should await `ensureClientSettingsHydrated()`.
  */
 export function getClientSettings(): ClientSettings {
-  if (!clientSettingsHydrated) {
-    void hydrateClientSettings();
-  }
   return getClientSettingsSnapshot();
-}
-
-/**
- * Awaitable hydration trigger for non-React callers that need the persisted
- * client settings before proceeding.
- */
-export function ensureClientSettingsHydrated(): Promise<void> {
-  if (clientSettingsHydrated) {
-    return Promise.resolve();
-  }
-  return hydrateClientSettings();
 }
 
 export function useClientSettingsHydrated(): boolean {
@@ -198,7 +227,7 @@ export function useClientSettingsHydrated(): boolean {
 }
 
 export function useSettings<T = UnifiedSettings>(selector?: (s: UnifiedSettings) => T): T {
-  const serverSettings = useServerSettings();
+  const serverSettings = useAtomValue(primaryServerSettingsAtom);
   const clientSettings = useSyncExternalStore(
     subscribeClientSettings,
     getClientSettingsSnapshot,
@@ -223,37 +252,39 @@ export function useSettings<T = UnifiedSettings>(selector?: (s: UnifiedSettings)
  * persisted via RPC. Client keys go through client persistence.
  */
 export function useUpdateSettings() {
-  const updateSettings = useCallback((patch: Partial<UnifiedSettings>) => {
-    const { serverPatch, clientPatch } = splitPatch(patch);
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+  const primaryEnvironment = usePrimaryEnvironment();
+  const updateSettings = useCallback(
+    (patch: Partial<UnifiedSettings>) => {
+      const { serverPatch, clientPatch } = splitPatch(patch);
 
-    if (Object.keys(serverPatch).length > 0) {
-      const currentServerConfig = getServerConfig();
-      if (currentServerConfig) {
-        applySettingsUpdated(applyServerSettingsPatch(currentServerConfig.settings, serverPatch));
+      if (Object.keys(serverPatch).length > 0) {
+        if (primaryEnvironment) {
+          void persistServerSettings({
+            environmentId: primaryEnvironment.environmentId,
+            input: { patch: serverPatch },
+          });
+        }
       }
-      // Fire-and-forget RPC — push will reconcile on success
-      void ensureLocalApi().server.updateSettings(serverPatch);
-    }
 
-    if (Object.keys(clientPatch).length > 0) {
-      persistClientSettings({
-        ...getClientSettingsSnapshot(),
-        ...clientPatch,
-      });
-    }
-  }, []);
+      if (Object.keys(clientPatch).length > 0) {
+        persistClientSettings({
+          ...getClientSettingsSnapshot(),
+          ...clientPatch,
+        });
+      }
+    },
+    [persistServerSettings, primaryEnvironment],
+  );
 
-  const resetSettings = useCallback(() => {
-    updateSettings(DEFAULT_UNIFIED_SETTINGS);
-  }, [updateSettings]);
-
-  return {
-    updateSettings,
-    resetSettings,
-  };
+  return updateSettings;
 }
 
 export function __resetClientSettingsPersistenceForTests(): void {
+  clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
   clientSettingsHydrated = false;
   clientSettingsHydrationPromise = null;
@@ -261,158 +292,9 @@ export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationListeners.clear();
 }
 
-// ── One-time migration from localStorage ─────────────────────────────
-
-export function buildLegacyServerSettingsMigrationPatch(
-  legacySettings: Record<string, unknown>,
-): ServerSettingsPatch {
-  const patch: DeepMutable<ServerSettingsPatch> = {};
-
-  if (Predicate.isBoolean(legacySettings.enableAssistantStreaming)) {
-    patch.enableAssistantStreaming = legacySettings.enableAssistantStreaming;
-  }
-
-  if (Schema.is(ThreadEnvMode)(legacySettings.defaultThreadEnvMode)) {
-    patch.defaultThreadEnvMode = legacySettings.defaultThreadEnvMode;
-  }
-
-  if (Schema.is(ModelSelection)(legacySettings.textGenerationModelSelection)) {
-    const sel = legacySettings.textGenerationModelSelection;
-    const selPatch: NonNullable<DeepMutable<ServerSettingsPatch>["textGenerationModelSelection"]> =
-      {
-        instanceId: sel.instanceId,
-        model: sel.model,
-        ...(sel.options != null ? { options: [...sel.options] } : {}),
-      };
-    patch.textGenerationModelSelection = selPatch;
-  }
-
-  if (typeof legacySettings.codexBinaryPath === "string") {
-    patch.providers ??= {};
-    patch.providers.codex ??= {};
-    patch.providers.codex.binaryPath = legacySettings.codexBinaryPath;
-  }
-
-  if (typeof legacySettings.codexHomePath === "string") {
-    patch.providers ??= {};
-    patch.providers.codex ??= {};
-    patch.providers.codex.homePath = legacySettings.codexHomePath;
-  }
-
-  if (Array.isArray(legacySettings.customCodexModels)) {
-    patch.providers ??= {};
-    patch.providers.codex ??= {};
-    patch.providers.codex.customModels = normalizeCustomModelSlugs(
-      legacySettings.customCodexModels,
-      new Set(),
-      ProviderDriverKind.make("codex"),
-    );
-  }
-
-  if (Predicate.isString(legacySettings.claudeBinaryPath)) {
-    patch.providers ??= {};
-    patch.providers.claudeAgent ??= {};
-    patch.providers.claudeAgent.binaryPath = legacySettings.claudeBinaryPath;
-  }
-
-  if (Array.isArray(legacySettings.customClaudeModels)) {
-    patch.providers ??= {};
-    patch.providers.claudeAgent ??= {};
-    patch.providers.claudeAgent.customModels = normalizeCustomModelSlugs(
-      legacySettings.customClaudeModels,
-      new Set(),
-      ProviderDriverKind.make("claudeAgent"),
-    );
-  }
-
-  if (Predicate.isString(legacySettings.copilotCliPath)) {
-    patch.providers ??= {};
-    patch.providers.copilot ??= {};
-    patch.providers.copilot.binaryPath = legacySettings.copilotCliPath;
-  }
-
-  if (Predicate.isString(legacySettings.copilotConfigDir)) {
-    patch.providers ??= {};
-    patch.providers.copilot ??= {};
-    patch.providers.copilot.configDir = legacySettings.copilotConfigDir;
-  }
-
-  if (Array.isArray(legacySettings.customCopilotModels)) {
-    patch.providers ??= {};
-    patch.providers.copilot ??= {};
-    patch.providers.copilot.customModels = normalizeCustomModelSlugs(
-      legacySettings.customCopilotModels,
-      new Set(),
-      ProviderDriverKind.make("copilot"),
-    );
-  }
-
-  return patch;
-}
-
-export function buildLegacyClientSettingsMigrationPatch(
-  legacySettings: Record<string, unknown>,
-): Partial<DeepMutable<ClientSettings>> {
-  const patch: Partial<DeepMutable<ClientSettings>> = {};
-
-  if (Predicate.isBoolean(legacySettings.confirmThreadArchive)) {
-    patch.confirmThreadArchive = legacySettings.confirmThreadArchive;
-  }
-
-  if (Predicate.isBoolean(legacySettings.confirmThreadDelete)) {
-    patch.confirmThreadDelete = legacySettings.confirmThreadDelete;
-  }
-
-  if (Predicate.isBoolean(legacySettings.diffWordWrap)) {
-    patch.diffWordWrap = legacySettings.diffWordWrap;
-  }
-
-  if (Schema.is(SidebarProjectSortOrder)(legacySettings.sidebarProjectSortOrder)) {
-    patch.sidebarProjectSortOrder = legacySettings.sidebarProjectSortOrder;
-  }
-
-  if (Schema.is(SidebarThreadSortOrder)(legacySettings.sidebarThreadSortOrder)) {
-    patch.sidebarThreadSortOrder = legacySettings.sidebarThreadSortOrder;
-  }
-
-  if (Schema.is(TimestampFormat)(legacySettings.timestampFormat)) {
-    patch.timestampFormat = legacySettings.timestampFormat;
-  }
-
-  return patch;
-}
-
-/**
- * Call once on app startup.
- * If the legacy localStorage key exists, migrate its values to the new server
- * and client storage formats, then remove the legacy key so this only runs once.
- */
-export function migrateLocalSettingsToServer(): void {
-  if (typeof window === "undefined") return;
-
-  const raw = localStorage.getItem(OLD_SETTINGS_KEY);
-  if (!raw) return;
-
-  try {
-    const old = JSON.parse(raw);
-    if (!Predicate.isObject(old)) return;
-
-    const serverPatch = buildLegacyServerSettingsMigrationPatch(old);
-    if (Object.keys(serverPatch).length > 0) {
-      const api = ensureLocalApi();
-      void api.server.updateSettings(serverPatch);
-    }
-
-    const clientPatch = buildLegacyClientSettingsMigrationPatch(old);
-    if (Object.keys(clientPatch).length > 0) {
-      persistClientSettings({
-        ...getClientSettingsSnapshot(),
-        ...clientPatch,
-      });
-    }
-  } catch (error) {
-    console.error("[MIGRATION] Error migrating local settings:", error);
-  } finally {
-    localStorage.removeItem(OLD_SETTINGS_KEY);
-  }
+export function __setClientSettingsForTests(settings: ClientSettings): void {
+  clientSettingsHydrationGeneration += 1;
+  clientSettingsSnapshot = settings;
+  clientSettingsHydrated = true;
+  clientSettingsHydrationPromise = null;
 }

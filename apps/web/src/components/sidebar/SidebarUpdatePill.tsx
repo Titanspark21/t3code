@@ -1,11 +1,7 @@
 import { DownloadIcon, RotateCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { isElectron } from "../../env";
-import {
-  setDesktopUpdateStateQueryData,
-  useDesktopUpdateState,
-} from "../../lib/desktopUpdateReactQuery";
+import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
@@ -22,14 +18,12 @@ import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function SidebarUpdatePill() {
-  const queryClient = useQueryClient();
-  const state = useDesktopUpdateState().data ?? null;
+  const state = useDesktopUpdateState();
   const [dismissed, setDismissed] = useState(false);
-  const [requestInFlight, setRequestInFlight] = useState(false);
 
   const visible = isElectron && shouldShowDesktopUpdateButton(state) && !dismissed;
   const tooltip = state ? getDesktopUpdateButtonTooltip(state) : "Update available";
-  const disabled = requestInFlight || isDesktopUpdateButtonDisabled(state);
+  const disabled = isDesktopUpdateButtonDisabled(state);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
 
   const showArm64Warning = isElectron && shouldShowArm64IntelBuildWarning(state);
@@ -39,14 +33,12 @@ export function SidebarUpdatePill() {
   const handleAction = useCallback(() => {
     const bridge = window.desktopBridge;
     if (!bridge || !state) return;
-    if (requestInFlight || disabled || action === "none") return;
+    if (disabled || action === "none") return;
 
     if (action === "download") {
-      setRequestInFlight(true);
       void bridge
         .downloadUpdate()
         .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
           if (result.completed) {
             toastManager.add({
               type: "success",
@@ -73,9 +65,6 @@ export function SidebarUpdatePill() {
               description: error instanceof Error ? error.message : "An unexpected error occurred.",
             }),
           );
-        })
-        .finally(() => {
-          setRequestInFlight(false);
         });
       return;
     }
@@ -83,11 +72,9 @@ export function SidebarUpdatePill() {
     if (action === "install") {
       const confirmed = window.confirm(getDesktopUpdateInstallConfirmationMessage(state));
       if (!confirmed) return;
-      setRequestInFlight(true);
       void bridge
         .installUpdate()
         .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
           if (!actionError) return;
@@ -107,12 +94,9 @@ export function SidebarUpdatePill() {
               description: error instanceof Error ? error.message : "An unexpected error occurred.",
             }),
           );
-        })
-        .finally(() => {
-          setRequestInFlight(false);
         });
     }
-  }, [action, disabled, queryClient, requestInFlight, state]);
+  }, [action, disabled, state]);
 
   if (!visible && !showArm64Warning) return null;
 
