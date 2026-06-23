@@ -19,8 +19,6 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
 
-import { generateAssetCatalogForIcon } from "../../../scripts/lib/macos-icon-composer.ts";
-
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const desktopDir = resolve(__dirname, "..");
@@ -33,18 +31,11 @@ export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "com.t3tools.t3code";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 11;
+const LAUNCHER_VERSION = 12;
+const defaultIconPath = join(desktopDir, "resources", "icon.icns");
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
-
-function resolveDevelopmentProtocolCallbackPort() {
-  const configuredPort = Number.parseInt(process.env.T3CODE_PORT ?? "", 10);
-  if (Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort < 65535) {
-    return configuredPort + 1;
-  }
-  return 13774;
-}
 
 function setPlistString(plistPath, key, value) {
   const replaceResult = spawnSync("plutil", ["-replace", key, "-string", value, plistPath], {
@@ -101,7 +92,6 @@ function shellSingleQuote(value) {
 
 function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
   const mainEntryPath = join(desktopDir, "dist-electron", "main.cjs");
-  const protocolCallbackUrl = `http://127.0.0.1:${resolveDevelopmentProtocolCallbackPort()}/auth/callback`;
   const envEntries = [
     ["VITE_DEV_SERVER_URL", process.env.VITE_DEV_SERVER_URL],
     ["T3CODE_PORT", process.env.T3CODE_PORT],
@@ -110,23 +100,12 @@ function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
     ["T3CODE_OTLP_TRACES_URL", process.env.T3CODE_OTLP_TRACES_URL],
     ["T3CODE_OTLP_EXPORT_INTERVAL_MS", process.env.T3CODE_OTLP_EXPORT_INTERVAL_MS],
     ["T3CODE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
-    ["T3CODE_DESKTOP_PROTOCOL_REGISTRATION_MANAGED", "1"],
-    ["T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL", protocolCallbackUrl],
   ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
   writeFileSync(
     targetBinaryPath,
     [
       "#!/bin/sh",
       ...envEntries.map(([name, value]) => `export ${name}=${shellSingleQuote(value)}`),
-      'for arg in "$@"; do',
-      '  case "$arg" in',
-      "    t3code-dev://auth/callback*)",
-      '      if [ -n "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" ]; then',
-      '        /usr/bin/curl -fsS --max-time 2 -X POST --data-binary "$arg" "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" >/dev/null 2>&1 && exit 0',
-      "      fi",
-      "      ;;",
-      "  esac",
-      "done",
       `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopDir)} ${shellSingleQuote(mainEntryPath)} "$@"`,
       "",
     ].join("\n"),
@@ -160,12 +139,12 @@ function registerMacLauncherBundle(appBundlePath) {
   }
 }
 
-function ensureDevelopmentIconIcns(runtimeDir, fallbackIconPath) {
+function ensureDevelopmentIconIcns(runtimeDir) {
   const generatedIconPath = join(runtimeDir, "icon-dev.icns");
   mkdirSync(runtimeDir, { recursive: true });
 
   if (!existsSync(developmentMacIconPngPath)) {
-    return fallbackIconPath;
+    return defaultIconPath;
   }
 
   const sourceMtimeMs = statSync(developmentMacIconPngPath).mtimeMs;
@@ -206,13 +185,13 @@ function ensureDevelopmentIconIcns(runtimeDir, fallbackIconPath) {
       "[desktop-launcher] Failed to generate dev macOS icon, falling back to default icon.",
       error,
     );
-    return fallbackIconPath;
+    return defaultIconPath;
   } finally {
     rmSync(iconsetRoot, { recursive: true, force: true });
   }
 }
 
-function patchMainBundleInfoPlist(appBundlePath) {
+function patchMainBundleInfoPlist(appBundlePath, iconPath) {
   const infoPlistPath = join(appBundlePath, "Contents", "Info.plist");
   setPlistString(infoPlistPath, "CFBundleDisplayName", APP_DISPLAY_NAME);
   setPlistString(infoPlistPath, "CFBundleName", APP_DISPLAY_NAME);
@@ -224,6 +203,10 @@ function patchMainBundleInfoPlist(appBundlePath) {
       CFBundleURLSchemes: APP_PROTOCOL_SCHEMES,
     },
   ]);
+
+  const resourcesDir = join(appBundlePath, "Contents", "Resources");
+  copyFileSync(iconPath, join(resourcesDir, "icon.icns"));
+  copyFileSync(iconPath, join(resourcesDir, "electron.icns"));
 }
 
 function patchHelperBundleInfoPlists(appBundlePath) {
@@ -265,69 +248,23 @@ function readJson(path) {
   }
 }
 
-function resolveIconSourceMetadata(desktopResourcesDir, legacyIconOverride) {
-  const iconComposerPath = join(desktopResourcesDir, "icon.icon");
-  if (existsSync(iconComposerPath)) {
-    return {
-      iconAssetKind: "icon",
-      iconMtimeMs: statSync(iconComposerPath).mtimeMs,
-    };
-  }
-
-  const legacyIconPath = legacyIconOverride ?? join(desktopResourcesDir, "icon.icns");
-  return {
-    iconAssetKind: "icns",
-    iconMtimeMs: statSync(legacyIconPath).mtimeMs,
-  };
-}
-
-async function stageMainBundleIcons(appBundlePath, desktopResourcesDir, legacyIconOverride) {
-  const resourcesDir = join(appBundlePath, "Contents", "Resources");
-  const iconComposerPath = join(desktopResourcesDir, "icon.icon");
-  const legacyIconPath = legacyIconOverride ?? join(desktopResourcesDir, "icon.icns");
-
-  if (existsSync(iconComposerPath)) {
-    const compiled = await generateAssetCatalogForIcon(iconComposerPath);
-    const infoPlistPath = join(appBundlePath, "Contents", "Info.plist");
-
-    setPlistString(infoPlistPath, "CFBundleIconName", "Icon");
-    writeFileSync(join(resourcesDir, "Assets.car"), compiled.assetCatalog);
-    writeFileSync(join(resourcesDir, "icon.icns"), compiled.icnsFile);
-    writeFileSync(join(resourcesDir, "electron.icns"), compiled.icnsFile);
-    return;
-  }
-
-  copyFileSync(legacyIconPath, join(resourcesDir, "icon.icns"));
-  copyFileSync(legacyIconPath, join(resourcesDir, "electron.icns"));
-}
-
-async function buildMacLauncher(electronBinaryPath) {
+function buildMacLauncher(electronBinaryPath) {
   const sourceAppBundlePath = resolve(dirname(electronBinaryPath), "../..");
   const runtimeDir = join(desktopDir, ".electron-runtime");
   const targetAppBundlePath = join(runtimeDir, `${APP_DISPLAY_NAME}.app`);
   const targetBinaryPath = join(targetAppBundlePath, "Contents", "MacOS", "Electron");
-  const desktopResourcesDir = join(desktopDir, "resources");
-  const defaultLegacyIconPath = join(desktopResourcesDir, "icon.icns");
+  const iconPath = isDevelopment ? ensureDevelopmentIconIcns(runtimeDir) : defaultIconPath;
   const metadataPath = join(runtimeDir, "metadata.json");
 
   mkdirSync(runtimeDir, { recursive: true });
-
-  // In dev mode, fall back to a generated icon derived from the dev blueprint PNG so dev
-  // builds are visually distinct. If the modern icon.icon composer source is present, the
-  // staging step below takes precedence and this override is ignored.
-  const legacyIconOverride = isDevelopment
-    ? ensureDevelopmentIconIcns(runtimeDir, defaultLegacyIconPath)
-    : undefined;
-
-  const iconMetadata = resolveIconSourceMetadata(desktopResourcesDir, legacyIconOverride);
 
   const expectedMetadata = {
     launcherVersion: LAUNCHER_VERSION,
     sourceAppBundlePath,
     sourceAppMtimeMs: statSync(sourceAppBundlePath).mtimeMs,
+    iconMtimeMs: statSync(iconPath).mtimeMs,
     appBundleId: APP_BUNDLE_ID,
     appProtocolSchemes: APP_PROTOCOL_SCHEMES,
-    ...iconMetadata,
   };
 
   const currentMetadata = readJson(metadataPath);
@@ -346,8 +283,7 @@ async function buildMacLauncher(electronBinaryPath) {
   // rewrites them to absolute paths into node_modules, which escape the
   // bundle and crash sandboxed helper processes (icudtl.dat not found).
   cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true, verbatimSymlinks: true });
-  patchMainBundleInfoPlist(targetAppBundlePath);
-  await stageMainBundleIcons(targetAppBundlePath, desktopResourcesDir, legacyIconOverride);
+  patchMainBundleInfoPlist(targetAppBundlePath, iconPath);
   patchHelperBundleInfoPlists(targetAppBundlePath);
   if (isDevelopment) {
     writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath);
@@ -383,7 +319,7 @@ function resolveLinuxSandboxArgs(electronBinaryPath) {
   return ["--no-sandbox"];
 }
 
-export async function resolveElectronPath() {
+export function resolveElectronPath() {
   ensureElectronRuntime();
 
   const require = createRequire(import.meta.url);
@@ -393,25 +329,25 @@ export async function resolveElectronPath() {
     return electronBinaryPath;
   }
 
-  return await buildMacLauncher(electronBinaryPath);
+  return buildMacLauncher(electronBinaryPath);
 }
 
-export async function resolveElectronLaunchCommand(args = []) {
-  const electronPath = await resolveElectronPath();
+export function resolveElectronLaunchCommand(args = []) {
+  const electronPath = resolveElectronPath();
   return {
     electronPath,
     args: [...resolveLinuxSandboxArgs(electronPath), ...args],
   };
 }
 
-export async function resolveDevProtocolClient() {
+export function resolveDevProtocolClient() {
   if (hostPlatform !== "darwin" || !isDevelopment) {
     return null;
   }
 
   const require = createRequire(import.meta.url);
   const electronBinaryPath = require("electron");
-  const launcherBinaryPath = await buildMacLauncher(electronBinaryPath);
+  const launcherBinaryPath = buildMacLauncher(electronBinaryPath);
   return {
     appBundlePath: resolve(launcherBinaryPath, "..", "..", ".."),
     appBundleId: APP_BUNDLE_ID,

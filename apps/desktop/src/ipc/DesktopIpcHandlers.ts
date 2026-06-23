@@ -1,13 +1,6 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
-import {
-  clearCloudAuthToken,
-  createCloudAuthRequest,
-  fetchCloudAuth,
-  getCloudAuthToken,
-  setCloudAuthToken,
-} from "./methods/cloudAuth.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import {
   clearConnectionCatalog,
@@ -40,6 +33,7 @@ import {
 import {
   confirm,
   getAppBranding,
+  getLocalEnvironmentBearerToken,
   getLocalEnvironmentBootstrap,
   getLogDir,
   listLogFiles,
@@ -58,6 +52,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getLocalEnvironmentBootstrap);
+  yield* ipc.handle(getLocalEnvironmentBearerToken);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
@@ -88,11 +83,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(listLogFiles);
   yield* ipc.handle(readLogFile);
   yield* ipc.handle(openLogDir);
-  yield* ipc.handle(createCloudAuthRequest);
-  yield* ipc.handle(getCloudAuthToken);
-  yield* ipc.handle(setCloudAuthToken);
-  yield* ipc.handle(clearCloudAuthToken);
-  yield* ipc.handle(fetchCloudAuth);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);
