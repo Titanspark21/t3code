@@ -34,6 +34,7 @@
     "config:preview": "APP_VARIANT=preview expo config",
     "config:prod": "APP_VARIANT=production expo config",
     "profile:android:hermes": "mkdir -p profiles/review && react-native profile-hermes profiles/review",
+    "sync:pierre-icons": "node modules/t3-markdown-text/scripts/sync-pierre-file-icons.mjs",
     "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
@@ -54,6 +55,7 @@
     "@shikijs/themes": "4.2.0",
     "@t3tools/client-runtime": "workspace:*",
     "@t3tools/contracts": "workspace:*",
+    "@t3tools/mobile-markdown-text": "file:./modules/t3-markdown-text",
     "@t3tools/mobile-review-diff-native": "file:./modules/t3-review-diff",
     "@t3tools/mobile-terminal-native": "file:./modules/t3-terminal",
     "@t3tools/shared": "workspace:*",
