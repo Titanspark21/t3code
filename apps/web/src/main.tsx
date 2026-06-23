@@ -35,7 +35,6 @@ document.title = APP_DISPLAY_NAME;
 const initialSettings = getAppSettingsSnapshot();
 applyAccentColorToDocument(initialSettings.accentColor);
 applyThemeConfigToDocument(initialSettings);
-
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 const app = <AppRoot router={router} />;

@@ -1,9 +1,13 @@
-import { spawn, spawnSync } from "node:child_process";
-import { watch } from "node:fs";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
-import { join } from "node:path";
+import * as NodePath from "node:path";
 
-import { desktopDir, resolveDevProtocolClient, resolveElectronPath } from "./electron-launcher.mjs";
+import {
+  desktopDir,
+  resolveDevProtocolClient,
+  resolveElectronLaunchCommand,
+} from "./electron-launcher.mjs";
 import { waitForResources } from "./wait-for-resources.mjs";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
@@ -42,7 +46,7 @@ await waitForResources({
 
 const childEnv = { ...process.env };
 delete childEnv.ELECTRON_RUN_AS_NODE;
-const devProtocolClient = await resolveDevProtocolClient();
+const devProtocolClient = resolveDevProtocolClient();
 if (devProtocolClient) {
   childEnv.T3CODE_DESKTOP_APP_USER_MODEL_ID = devProtocolClient.appBundleId;
   childEnv.T3CODE_DESKTOP_PROTOCOL_REGISTRATION_MANAGED = "1";
@@ -51,7 +55,6 @@ if (devProtocolClient) {
 let shuttingDown = false;
 let restartTimer = null;
 let currentApp = null;
-let launchingApp = false;
 let restartQueue = Promise.resolve();
 const expectedExits = new WeakSet();
 const watchers = [];
@@ -61,7 +64,7 @@ function killChildTreeByPid(pid, signal) {
     return;
   }
 
-  spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
+  NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
 }
 
 function cleanupStaleDevApps() {
@@ -69,64 +72,51 @@ function cleanupStaleDevApps() {
     return;
   }
 
-  spawnSync("pkill", ["-f", "--", `--t3code-dev-root=${desktopDir}`], { stdio: "ignore" });
+  NodeChildProcess.spawnSync("pkill", ["-f", "--", `--t3code-dev-root=${desktopDir}`], {
+    stdio: "ignore",
+  });
 }
 
-async function startApp() {
-  if (shuttingDown || currentApp !== null || launchingApp) {
+function startApp() {
+  if (shuttingDown || currentApp !== null) {
     return;
   }
 
-  launchingApp = true;
+  const electronArgs = remoteDebuggingPort
+    ? [`--remote-debugging-port=${remoteDebuggingPort}`]
+    : [];
+  const launchArgs = devProtocolClient
+    ? electronArgs
+    : [...electronArgs, `--t3code-dev-root=${desktopDir}`, "dist-electron/main.cjs"];
+  const electronCommand = resolveElectronLaunchCommand(launchArgs);
+  const app = NodeChildProcess.spawn(electronCommand.electronPath, electronCommand.args, {
+    cwd: desktopDir,
+    env: childEnv,
+    stdio: "inherit",
+  });
 
-  try {
-    const electronPath = await resolveElectronPath();
-    if (shuttingDown || currentApp !== null) {
-      return;
+  currentApp = app;
+
+  app.once("error", () => {
+    if (currentApp === app) {
+      currentApp = null;
     }
 
-    const electronArgs = remoteDebuggingPort
-      ? [`--remote-debugging-port=${remoteDebuggingPort}`]
-      : [];
-    const launchArgs = devProtocolClient
-      ? electronArgs
-      : [...electronArgs, `--t3code-dev-root=${desktopDir}`, "dist-electron/main.cjs"];
-    const app = spawn(electronPath, launchArgs, {
-      cwd: desktopDir,
-      env: childEnv,
-      stdio: "inherit",
-    });
-
-    currentApp = app;
-
-    app.once("error", () => {
-      if (currentApp === app) {
-        currentApp = null;
-      }
-
-      if (!shuttingDown) {
-        scheduleRestart();
-      }
-    });
-
-    app.once("exit", (code, signal) => {
-      if (currentApp === app) {
-        currentApp = null;
-      }
-
-      const exitedAbnormally = signal !== null || code !== 0;
-      if (!shuttingDown && !expectedExits.has(app) && exitedAbnormally) {
-        scheduleRestart();
-      }
-    });
-  } catch (error) {
     if (!shuttingDown) {
-      console.error("[desktop-dev] Failed to launch Electron.", error);
       scheduleRestart();
     }
-  } finally {
-    launchingApp = false;
-  }
+  });
+
+  app.once("exit", (code, signal) => {
+    if (currentApp === app) {
+      currentApp = null;
+    }
+
+    const exitedAbnormally = signal !== null || code !== 0;
+    if (!shuttingDown && !expectedExits.has(app) && exitedAbnormally) {
+      scheduleRestart();
+    }
+  });
 }
 
 async function stopApp() {
@@ -184,7 +174,7 @@ function scheduleRestart() {
       .then(async () => {
         await stopApp();
         if (!shuttingDown) {
-          await startApp();
+          startApp();
         }
       });
   }, restartDebounceMs);
@@ -192,8 +182,8 @@ function scheduleRestart() {
 
 function startWatchers() {
   for (const { directory, files } of watchedDirectories) {
-    const watcher = watch(
-      join(desktopDir, directory),
+    const watcher = NodeFS.watch(
+      NodePath.join(desktopDir, directory),
       { persistent: true },
       (_eventType, filename) => {
         if (typeof filename !== "string" || !files.has(filename)) {
@@ -214,7 +204,9 @@ function killChildTree(signal) {
   }
 
   // Kill direct children as a final fallback in case normal shutdown leaves stragglers.
-  spawnSync("pkill", [`-${signal}`, "-P", String(process.pid)], { stdio: "ignore" });
+  NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(process.pid)], {
+    stdio: "ignore",
+  });
 }
 
 async function shutdown(exitCode) {
@@ -242,7 +234,7 @@ async function shutdown(exitCode) {
 
 startWatchers();
 cleanupStaleDevApps();
-await startApp();
+startApp();
 
 process.once("SIGINT", () => {
   void shutdown(130);
