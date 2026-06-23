@@ -20,6 +20,7 @@ import { getAppSettingsSnapshot } from "./appSettings";
 import { applyAccentColorToDocument } from "./accentColor";
 import { applyThemeConfigToDocument } from "./themeConfig";
 import { syncDocumentWindowControlsOverlayClass } from "./lib/windowControlsOverlay";
+import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
@@ -37,7 +38,12 @@ applyThemeConfigToDocument(initialSettings);
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
-const app = <RouterProvider router={router} />;
+const app = (
+  <>
+    <RouterProvider router={router} />
+    <ElectronBrowserHost />
+  </>
+);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
