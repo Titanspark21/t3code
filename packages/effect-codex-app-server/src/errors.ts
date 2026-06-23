@@ -5,6 +5,7 @@ export const CodexAppServerRequestOperation = Schema.Literals([
   "decode-payload",
   "encode-payload",
   "handle-request",
+  "receive-response",
 ]);
 export type CodexAppServerRequestOperation = typeof CodexAppServerRequestOperation.Type;
 
@@ -81,8 +82,14 @@ const payloadKind = (payload: unknown): CodexAppServerPayloadKind => {
   return typeof payload;
 };
 
+const protocolMessageFields = ["id", "method", "params", "result", "error"] as const;
+
+export const CodexAppServerProtocolMessageField = Schema.Literals(protocolMessageFields);
+export type CodexAppServerProtocolMessageField = typeof CodexAppServerProtocolMessageField.Type;
+
 export interface CodexAppServerRequestDiagnostics {
   readonly method?: string;
+  readonly requestId?: string;
   readonly operation?: CodexAppServerRequestOperation;
   readonly cause?: unknown;
   readonly issueCount?: number;
@@ -139,6 +146,7 @@ export class CodexAppServerProcessExitedError extends Schema.TaggedErrorClass<Co
   "CodexAppServerProcessExitedError",
   {
     code: Schema.optional(Schema.Number),
+    pid: Schema.optionalKey(Schema.Int),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -154,7 +162,9 @@ export class CodexAppServerProtocolParseError extends Schema.TaggedErrorClass<Co
   {
     operation: CodexAppServerProtocolParseOperation,
     method: Schema.optionalKey(Schema.String),
-    detail: Schema.optionalKey(Schema.String),
+    requestId: Schema.optionalKey(Schema.String),
+    payloadKind: Schema.optionalKey(CodexAppServerPayloadKind),
+    presentFields: Schema.optionalKey(Schema.Array(CodexAppServerProtocolMessageField)),
     issueCount: Schema.optionalKey(Schema.Number),
     issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
     maximumPathDepth: Schema.optionalKey(Schema.Number),
@@ -169,7 +179,7 @@ export class CodexAppServerProtocolParseError extends Schema.TaggedErrorClass<Co
   static fromSchemaError(
     operation: CodexAppServerProtocolParseOperation,
     cause: Schema.SchemaError,
-    context: { readonly method?: string } = {},
+    context: { readonly method?: string; readonly requestId?: string } = {},
   ) {
     return new CodexAppServerProtocolParseError({
       operation,
@@ -193,12 +203,38 @@ export class CodexAppServerProtocolParseError extends Schema.TaggedErrorClass<Co
       cause,
     });
   }
+
+  static fromUnroutableMessage(message: unknown) {
+    const diagnostics = { payloadKind: payloadKind(message) };
+    if (typeof message !== "object" || message === null || Array.isArray(message)) {
+      return new CodexAppServerProtocolParseError({
+        operation: "route-wire-message",
+        ...diagnostics,
+      });
+    }
+
+    const presentFields = protocolMessageFields.filter((field) => field in message);
+    const method =
+      "method" in message && typeof message.method === "string" ? message.method : undefined;
+    const requestId =
+      "id" in message && (typeof message.id === "string" || typeof message.id === "number")
+        ? String(message.id)
+        : undefined;
+    return new CodexAppServerProtocolParseError({
+      operation: "route-wire-message",
+      ...diagnostics,
+      presentFields,
+      ...(method === undefined ? {} : { method }),
+      ...(requestId === undefined ? {} : { requestId }),
+    });
+  }
 }
 
 export class CodexAppServerTransportError extends Schema.TaggedErrorClass<CodexAppServerTransportError>()(
   "CodexAppServerTransportError",
   {
     operation: CodexAppServerTransportOperation,
+    pid: Schema.optionalKey(Schema.Int),
     cause: Schema.Defect(),
   },
 ) {
@@ -235,6 +271,7 @@ export class CodexAppServerRequestError extends Schema.TaggedErrorClass<CodexApp
     errorMessage: Schema.String,
     data: Schema.optional(Schema.Unknown),
     method: Schema.optionalKey(Schema.String),
+    requestId: Schema.optionalKey(Schema.String),
     operation: Schema.optionalKey(CodexAppServerRequestOperation),
     issueCount: Schema.optionalKey(Schema.Number),
     issueKinds: Schema.optionalKey(Schema.Array(CodexAppServerSchemaIssueKind)),
@@ -247,11 +284,19 @@ export class CodexAppServerRequestError extends Schema.TaggedErrorClass<CodexApp
     return this.errorMessage;
   }
 
-  static fromProtocolError(error: CodexAppServerProtocolErrorShape) {
+  static fromProtocolError(
+    error: CodexAppServerProtocolErrorShape,
+    method: string,
+    requestId: string,
+  ) {
     return new CodexAppServerRequestError({
       code: error.code,
       errorMessage: error.message,
       ...(error.data !== undefined ? { data: error.data } : {}),
+      method,
+      requestId,
+      operation: "receive-response",
+      cause: error,
     });
   }
 
