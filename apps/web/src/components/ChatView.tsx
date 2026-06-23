@@ -1293,6 +1293,8 @@ function ChatViewContent(props: ChatViewProps) {
   const activeRightPanelSurface = useRightPanelStore((store) =>
     selectActiveRightPanelSurface(store.byThreadKey, activeThreadRef),
   );
+  const activeFileSurface =
+    activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const activePreviewState = usePreviewStateStore((state) =>
     selectThreadPreviewState(state.byThreadKey, activeThreadRef),
   );
@@ -4799,6 +4801,8 @@ function ChatViewContent(props: ChatViewProps) {
           relativePath={
             activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
           }
+          revealLine={activeFileSurface?.revealLine ?? null}
+          revealRequestId={activeFileSurface?.revealRequestId ?? 0}
           onOpenFile={openFileSurface}
           onPendingChange={handleFilePendingChange}
         />
