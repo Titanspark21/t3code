@@ -50,14 +50,7 @@ function cursorTextGenerationError(
   });
 }
 
-function isTextGenerationError(error: unknown): error is TextGenerationError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    error._tag === "TextGenerationError"
-  );
-}
+const isTextGenerationError = Schema.is(TextGenerationError);
 
 function resultText(
   result: CursorSdkRunResult,

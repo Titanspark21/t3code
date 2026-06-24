@@ -212,10 +212,11 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
       const bigintError = yield* transport.notify("x/test", 1n).pipe(Effect.flip);
       assert.instanceOf(bigintError, CodexError.CodexAppServerProtocolParseError);
       assert.equal(bigintError.operation, "encode-wire-message");
+      assert.equal(bigintError.method, "x/test");
       assert.exists(bigintError.cause);
       assert.equal(
         bigintError.message,
-        "Codex App Server protocol operation 'encode-wire-message' failed.",
+        "Codex App Server protocol operation 'encode-wire-message' failed for method 'x/test'.",
       );
 
       const circular: Record<string, unknown> = {};
@@ -223,7 +224,57 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
       const circularError = yield* transport.notify("x/test", circular).pipe(Effect.flip);
       assert.instanceOf(circularError, CodexError.CodexAppServerProtocolParseError);
       assert.equal(circularError.operation, "encode-wire-message");
+      assert.equal(circularError.method, "x/test");
       assert.exists(circularError.cause);
+
+      const requestError = yield* transport.request("x/request", 1n).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected request encoding to fail"),
+        }),
+      );
+      assert.instanceOf(requestError, CodexError.CodexAppServerProtocolParseError);
+      assert.deepInclude(requestError, {
+        operation: "encode-wire-message",
+        method: "x/request",
+        requestId: "1",
+      });
+    }),
+  );
+
+  it.effect("correlates response errors with the originating request", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio });
+
+      const response = yield* transport.request("thread/start", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+      yield* Queue.offer(
+        input,
+        encodeJsonl({
+          id: 1,
+          error: {
+            code: -32602,
+            message: "Invalid params",
+            data: { field: "cwd" },
+          },
+        }),
+      );
+
+      const error = yield* Fiber.join(response).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected Codex App Server request to fail"),
+        }),
+      );
+      assert.instanceOf(error, CodexError.CodexAppServerRequestError);
+      assert.deepInclude(error, {
+        code: -32602,
+        errorMessage: "Invalid params",
+        method: "thread/start",
+        requestId: "1",
+        operation: "receive-response",
+      });
     }),
   );
 
@@ -257,6 +308,36 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
       assert.equal("cause" in payload, false);
       assert.equal("detail" in payload, false);
       assert.notInclude(encodeUnknownJsonString(event), secret);
+    }),
+  );
+
+  it.effect("describes unroutable messages with safe structural diagnostics", () =>
+    Effect.gen(function* () {
+      const secret = "codex-unroutable-secret-sentinel";
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const termination = yield* Deferred.make<CodexError.CodexAppServerError>();
+      yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio,
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+
+      yield* Queue.offer(
+        input,
+        encodeJsonl({ id: true, method: "thread/start", params: { token: secret } }),
+      );
+
+      const error = yield* Deferred.await(termination);
+      assert.instanceOf(error, CodexError.CodexAppServerProtocolParseError);
+      assert.deepInclude(error, {
+        operation: "route-wire-message",
+        method: "thread/start",
+        payloadKind: "object",
+        presentFields: ["id", "method", "params"],
+      });
+      assert.isUndefined(error.requestId);
+      assert.notProperty(error, "detail");
+      assert.notProperty(error, "cause");
+      assert.notInclude(error.message, secret);
     }),
   );
 

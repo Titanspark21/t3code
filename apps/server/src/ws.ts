@@ -46,7 +46,8 @@ import {
   OrchestrationReplayEventsError,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
-  AssetAccessError,
+  AssetWorkspaceContextNotFoundError,
+  AssetWorkspaceContextResolutionError,
   EnvironmentAuthorizationError,
   ThreadId,
   type TerminalAttachStreamEvent,
@@ -148,6 +149,12 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
       return {
         failure: "workspace_root_create_failed",
         normalizedCwd: error.normalizedWorkspaceRoot,
+      };
+    case "WorkspaceRootStatFailedError":
+      return {
+        failure: "workspace_root_stat_failed",
+        normalizedCwd: error.normalizedWorkspaceRoot,
+        detail: error.phase,
       };
     case "WorkspaceRootNotDirectoryError":
       return {
@@ -1407,15 +1414,15 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
                 .pipe(
                   Effect.mapError(
                     (cause) =>
-                      new AssetAccessError({
-                        message: "Failed to resolve workspace context.",
+                      new AssetWorkspaceContextResolutionError({
+                        resource: input.resource,
                         cause,
                       }),
                   ),
                 );
               if (Option.isNone(thread)) {
-                return yield* new AssetAccessError({
-                  message: "Workspace context was not found.",
+                return yield* new AssetWorkspaceContextNotFoundError({
+                  resource: input.resource,
                 });
               }
               const project = yield* projectionSnapshotQuery
@@ -1423,15 +1430,15 @@ const makeWsRpcLayer = (currentSession: EnvironmentAuth.AuthenticatedSession) =>
                 .pipe(
                   Effect.mapError(
                     (cause) =>
-                      new AssetAccessError({
-                        message: "Failed to resolve workspace context.",
+                      new AssetWorkspaceContextResolutionError({
+                        resource: input.resource,
                         cause,
                       }),
                   ),
                 );
               if (Option.isNone(project)) {
-                return yield* new AssetAccessError({
-                  message: "Workspace context was not found.",
+                return yield* new AssetWorkspaceContextNotFoundError({
+                  resource: input.resource,
                 });
               }
               return yield* issueAssetUrl({
