@@ -1,11 +1,30 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ProviderRuntimeEvent } from "./providerRuntime.ts";
+import { ProviderRuntimeEvent, RuntimeEventRaw } from "./providerRuntime.ts";
 
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
+const decodeRuntimeEventRaw = Schema.decodeUnknownSync(RuntimeEventRaw);
 
 describe("ProviderRuntimeEvent", () => {
+  it("keeps fork provider raw runtime sources decodable", () => {
+    for (const source of [
+      "copilot.sdk.session-event",
+      "copilot.sdk.synthetic",
+      "droid.sdk.message",
+      "droid.sdk.permission",
+      "cursor.sdk.message",
+      "cursor.acp.notification",
+      "opencode.server.event",
+      "kilo.server.event",
+      "amp.cli.result",
+      "gemini.cli.event",
+    ]) {
+      const parsed = decodeRuntimeEventRaw({ source, payload: {} });
+      expect(parsed.source).toBe(source);
+    }
+  });
+
   it("accepts fork-provided driver kinds as branded slugs", () => {
     const parsed = decodeRuntimeEvent({
       type: "session.started",

@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 
 import {
   ProviderEvent,
+  ProviderGetUsageInput,
+  ProviderListModelsInput,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -12,6 +14,8 @@ const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSession
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
 const decodeProviderSession = Schema.decodeUnknownSync(ProviderSession);
 const decodeProviderEvent = Schema.decodeUnknownSync(ProviderEvent);
+const decodeProviderListModelsInput = Schema.decodeUnknownSync(ProviderListModelsInput);
+const decodeProviderGetUsageInput = Schema.decodeUnknownSync(ProviderGetUsageInput);
 
 function getOptionValue(
   options: ReadonlyArray<{ id: string; value: unknown }> | undefined,
@@ -150,6 +154,18 @@ describe("ProviderSendTurnInput", () => {
     expect(parsed.modelSelection?.instanceId).toBe("claudeAgent");
     expect(getOptionValue(parsed.modelSelection?.options, "effort")).toBe("ultrathink");
     expect(getOptionValue(parsed.modelSelection?.options, "fastMode")).toBe(true);
+  });
+});
+
+describe("provider model and usage contracts", () => {
+  it("keeps model discovery keyed by open provider driver slugs", () => {
+    const parsed = decodeProviderListModelsInput({ provider: "cursor" });
+    expect(parsed.provider).toBe("cursor");
+  });
+
+  it("keeps usage lookup keyed by open provider driver slugs", () => {
+    const parsed = decodeProviderGetUsageInput({ provider: "codex" });
+    expect(parsed.provider).toBe("codex");
   });
 });
 
