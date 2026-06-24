@@ -16,12 +16,15 @@ import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
-import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import { ProviderSessionRuntimeRepositoryLive } from "../../persistence/Layers/ProviderSessionRuntime.ts";
+import { ProviderSessionRuntimeRepository } from "../../persistence/Services/ProviderSessionRuntime.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 
 function makeDirectoryLayer<E, R>(persistenceLayer: Layer.Layer<SqlClient.SqlClient, E, R>) {
-  const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(Layer.provide(persistenceLayer));
+  const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+    Layer.provide(persistenceLayer),
+  );
   return Layer.mergeAll(
     runtimeRepositoryLayer,
     ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer)),
@@ -33,7 +36,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
   it("upserts and reads thread bindings", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       const initialThreadId = ThreadId.make("thread-1");
 
@@ -80,7 +83,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
   it("persists runtime fields and merges payload updates", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       const threadId = ThreadId.make("thread-runtime");
 
@@ -125,7 +128,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
   it("lists persisted bindings with metadata in oldest-first order", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       const olderThreadId = ThreadId.make("thread-runtime-older");
       const newerThreadId = ThreadId.make("thread-runtime-newer");
@@ -199,7 +202,7 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
   it("resets adapterKey to the new provider when provider changes without an explicit adapter key", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
       const threadId = ThreadId.make("thread-provider-change");
 
       yield* runtimeRepository.upsert({
