@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDateInEffect:off preferSchemaOverJson:off - Persistence tests assert raw stored JSON and timestamp behavior.
 import { CommandId, EventId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";

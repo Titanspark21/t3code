@@ -1,4 +1,5 @@
-import assert from "node:assert/strict";
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Tests build timestamped provider events.
+import * as NodeAssert from "node:assert/strict";
 
 import {
   ApprovalRequestId,
@@ -132,8 +133,8 @@ it.effect("delegates session startup to the manager", () =>
       runtimeMode: "full-access",
     });
 
-    assert.equal(session.provider, "geminiCli");
-    assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
+    NodeAssert.equal(session.provider, "geminiCli");
+    NodeAssert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
   }).pipe(Effect.scoped),
 );
 
@@ -148,9 +149,9 @@ it.effect("returns validation error when the provider is disabled", () =>
       })
       .pipe(Effect.result);
 
-    assert.equal(result._tag, "Failure");
+    NodeAssert.equal(result._tag, "Failure");
     if (result._tag !== "Failure") return;
-    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
   }).pipe(
     Effect.provide(makeAdapterLayer(new FakeGeminiCliManager(), disabledConfig)),
     Effect.scoped,
@@ -168,11 +169,11 @@ it.effect("rejects attachments until Gemini CLI attachment wiring exists", () =>
       })
       .pipe(Effect.result);
 
-    assert.equal(result._tag, "Failure");
+    NodeAssert.equal(result._tag, "Failure");
     if (result._tag !== "Failure") {
       return;
     }
-    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
   }).pipe(Effect.provide(makeAdapterLayer(new FakeGeminiCliManager())), Effect.scoped),
 );
 
@@ -202,14 +203,14 @@ it.effect("forwards manager runtime events through the adapter stream", () =>
 
     const received = yield* Stream.runHead(adapter.streamEvents);
 
-    assert.equal(received._tag, "Some");
+    NodeAssert.equal(received._tag, "Some");
     if (received._tag !== "Some") {
       return;
     }
-    assert.equal(received.value.type, "content.delta");
+    NodeAssert.equal(received.value.type, "content.delta");
     if (received.value.type !== "content.delta") {
       return;
     }
-    assert.equal(received.value.payload.delta, "hello");
+    NodeAssert.equal(received.value.payload.delta, "hello");
   }).pipe(Effect.scoped),
 );

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalTimers:off - Tests build timestamped Kilo events and wait for async lifecycle behavior.
 import { ApprovalRequestId, ThreadId, TurnId, type ProviderRuntimeEvent } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
