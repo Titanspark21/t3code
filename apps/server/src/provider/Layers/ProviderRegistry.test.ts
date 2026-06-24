@@ -1256,6 +1256,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
                 }
                 yield* TestClock.adjust("50 millis");
                 yield* Effect.yieldNow;
+                // @effect-diagnostics-next-line globalTimers:off - This integration test waits for the real settings watcher fiber to observe the PubSub event.
+                yield* Effect.promise(
+                  () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 5)),
+                );
               }
               return yield* registry.getProviders;
             });
