@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import { DroidMessageType, type DroidMessage } from "@factory/droid-sdk";
 import {
   EventId,
@@ -37,7 +37,7 @@ export function makeDroidEventBase(instanceId: ProviderInstanceId) {
       raw?: unknown;
     },
   ) => ({
-    eventId: EventId.make(randomUUID()),
+    eventId: EventId.make(NodeCrypto.randomUUID()),
     provider: DROID_PROVIDER,
     providerInstanceId: instanceId,
     threadId: context.session.threadId,
