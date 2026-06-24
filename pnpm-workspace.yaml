@@ -1,9 +1,9 @@
 packages:
-  - "apps/*"
-  - "infra/*"
-  - "oxlint-plugin-t3code"
-  - "packages/*"
-  - "scripts"
+  - apps/*
+  - infra/*
+  - oxlint-plugin-t3code
+  - packages/*
+  - scripts
 
 onlyBuiltDependencies:
   - electron

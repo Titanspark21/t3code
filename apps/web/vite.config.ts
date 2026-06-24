@@ -127,6 +127,7 @@ export default defineConfig(() => {
     },
     resolve: {
       tsconfigPaths: true,
+      dedupe: ["react", "react-dom"],
     },
     server: {
       host,

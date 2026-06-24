@@ -267,14 +267,23 @@ export function hasUncapturedCursorModels(_snapshot: Pick<ServerProvider, "model
 }
 
 export const enrichCursorSnapshot = (input: {
+  readonly settings: CursorSettings;
   readonly snapshot: ServerProvider;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
+  readonly enableProviderUpdateChecks?: boolean;
   readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
 }) =>
   Effect.gen(function* () {
+    if (!input.settings.enabled || input.snapshot.auth.status === "unauthenticated") {
+      return;
+    }
+
     const enriched = yield* enrichProviderSnapshotWithVersionAdvisory(
       input.snapshot,
       input.maintenanceCapabilities,
+      {
+        enableProviderUpdateChecks: input.enableProviderUpdateChecks,
+      },
     );
 
     if (enriched !== input.snapshot) {
