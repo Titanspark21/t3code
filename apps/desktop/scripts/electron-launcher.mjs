@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
+import * as NodeOS from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
@@ -34,6 +35,8 @@ export const APP_BUNDLE_ID = isDevelopment
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
 const LAUNCHER_VERSION = 11;
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
+const hostPlatform = NodeOS.platform();
 
 function resolveDevelopmentProtocolCallbackPort() {
   const configuredPort = Number.parseInt(process.env.T3CODE_PORT ?? "", 10);
@@ -355,21 +358,54 @@ async function buildMacLauncher(electronBinaryPath) {
   return targetBinaryPath;
 }
 
+function isLinuxSetuidSandboxConfigured(electronBinaryPath) {
+  if (hostPlatform !== "linux") {
+    return true;
+  }
+
+  const sandboxPath = join(dirname(electronBinaryPath), "chrome-sandbox");
+  try {
+    const sandboxStat = statSync(sandboxPath);
+    return sandboxStat.uid === 0 && (sandboxStat.mode & 0o4777) === 0o4755;
+  } catch {
+    return false;
+  }
+}
+
+function resolveLinuxSandboxArgs(electronBinaryPath) {
+  if (isLinuxSetuidSandboxConfigured(electronBinaryPath)) {
+    return [];
+  }
+
+  console.warn(
+    "[desktop-launcher] Electron chrome-sandbox is not root-owned with mode 4755; launching local Electron with --no-sandbox.",
+  );
+  return ["--no-sandbox"];
+}
+
 export async function resolveElectronPath() {
   ensureElectronRuntime();
 
   const require = createRequire(import.meta.url);
   const electronBinaryPath = require("electron");
 
-  if (process.platform !== "darwin") {
+  if (hostPlatform !== "darwin") {
     return electronBinaryPath;
   }
 
   return await buildMacLauncher(electronBinaryPath);
 }
 
+export async function resolveElectronLaunchCommand(args = []) {
+  const electronPath = await resolveElectronPath();
+  return {
+    electronPath,
+    args: [...resolveLinuxSandboxArgs(electronPath), ...args],
+  };
+}
+
 export async function resolveDevProtocolClient() {
-  if (process.platform !== "darwin" || !isDevelopment) {
+  if (hostPlatform !== "darwin" || !isDevelopment) {
     return null;
   }
 

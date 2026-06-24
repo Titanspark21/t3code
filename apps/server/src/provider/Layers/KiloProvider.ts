@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Provider snapshot DTOs use ISO timestamps.
 /**
  * KiloProvider — snapshot probe for the Kilo Code provider.
  *
@@ -113,6 +114,7 @@ const runKiloCommand = Effect.fn("runKiloCommand")(function* (
   const binaryPath = kiloSettings.binaryPath.trim() || "kilo";
   const command = ChildProcess.make(binaryPath, [...args], {
     env: environment,
+    // oxlint-disable-next-line t3code/no-global-process-runtime -- Provider snapshot probes are pure process spawns outside the Effect runtime service graph.
     shell: process.platform === "win32",
   });
   return yield* spawnAndCollect(binaryPath, command);

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Adapter emits provider protocol timestamps.
 /**
  * CopilotAdapter — `ProviderAdapterShape` for the GitHub Copilot SDK runtime.
  *
@@ -24,7 +25,7 @@
  *     etc.) is owned per `ActiveCopilotSession`, which itself lives inside
  *     the per-driver-instance `sessions` map.
  */
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import {
   EventId,
@@ -184,7 +185,7 @@ interface CopilotClientHandle {
 }
 
 function makeEventId(prefix: string) {
-  return EventId.make(`${prefix}-${randomUUID()}`);
+  return EventId.make(`${prefix}-${NodeCrypto.randomUUID()}`);
 }
 
 function toTurnId(value: string | undefined): TurnId | undefined {
@@ -1055,7 +1056,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
       getRuntimeMode() === "full-access"
         ? Promise.resolve<PermissionRequestResult>({ kind: "approved" })
         : new Promise<PermissionRequestResult>((resolve) => {
-            const requestId = `copilot-approval-${randomUUID()}`;
+            const requestId = `copilot-approval-${NodeCrypto.randomUUID()}`;
             const turnId = getCurrentTurnId();
             pendingApprovalResolvers.set(requestId, {
               requestType: requestTypeFromPermissionRequest(request),
@@ -1080,7 +1081,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
 
     const onUserInputRequest = (request: CopilotUserInputRequest) =>
       new Promise<CopilotUserInputResponse>((resolve) => {
-        const requestId = `copilot-user-input-${randomUUID()}`;
+        const requestId = `copilot-user-input-${NodeCrypto.randomUUID()}`;
         const turnId = getCurrentTurnId();
         pendingUserInputResolvers.set(requestId, {
           request,
@@ -1530,7 +1531,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
       const interactionMode = input.interactionMode ?? record.interactionMode ?? "default";
       yield* syncInteractionMode(record, interactionMode);
 
-      const turnId = TurnId.make(`copilot-turn-${randomUUID()}`);
+      const turnId = TurnId.make(`copilot-turn-${NodeCrypto.randomUUID()}`);
       record.pendingTurnIds.push(turnId);
       record.currentTurnId = turnId;
       record.currentProviderTurnId = undefined;

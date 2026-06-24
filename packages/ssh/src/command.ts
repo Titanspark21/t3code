@@ -1,6 +1,7 @@
 import * as Crypto from "node:crypto";
 
 import type { DesktopSshEnvironmentTarget, DesktopUpdateChannel } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -16,7 +17,16 @@ import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 const PUBLISHABLE_T3_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
-export const SSH_COMMAND = process.platform === "win32" ? "ssh.exe" : "ssh";
+
+/**
+ * ssh is a real executable everywhere (`ssh.exe` on Windows), so it is always
+ * spawned directly — cmd.exe shell mode would re-tokenize arguments such as
+ * identity-file paths containing spaces.
+ */
+const sshCommandForPlatform = (platform: NodeJS.Platform): string =>
+  platform === "win32" ? "ssh.exe" : "ssh";
+
+export const resolveSshCommand = Effect.map(HostProcessPlatform, sshCommandForPlatform);
 
 const encoder = new TextEncoder();
 
@@ -166,6 +176,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const sshCommand = yield* resolveSshCommand;
   const hostSpec = yield* buildSshHostSpecEffect(target);
   const environment = yield* buildSshChildEnvironment({
     ...(input.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -174,7 +185,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     Effect.mapError(
       (cause) =>
         new SshCommandError({
-          command: [SSH_COMMAND],
+          command: [sshCommand],
           exitCode: null,
           stderr: "",
           message: "Failed to prepare SSH authentication helpers.",
@@ -193,14 +204,15 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   yield* Effect.logDebug("ssh.command.start", {
     ...sshTargetLogFields(target),
-    command: [SSH_COMMAND, ...args],
+    command: [sshCommand, ...args],
     hasStdin: input.stdin !== undefined,
     timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
   });
   const child = yield* spawner
     .spawn(
-      ChildProcess.make(SSH_COMMAND, args, {
+      ChildProcess.make(sshCommand, args, {
         env: environment,
+        extendEnv: true,
         stdin: {
           stream: stdinStream(input.stdin),
           endOnDone: true,
@@ -212,7 +224,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       Effect.mapError(
         (cause) =>
           new SshCommandError({
-            command: [SSH_COMMAND, ...args],
+            command: [sshCommand, ...args],
             exitCode: null,
             stderr: "",
             message:
@@ -235,7 +247,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     Effect.mapError(
       (cause) =>
         new SshCommandError({
-          command: [SSH_COMMAND, ...args],
+          command: [sshCommand, ...args],
           exitCode: null,
           stderr: "",
           message:
@@ -249,13 +261,13 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     const diagnosticStdout = redactSshErrorOutput(stdout);
     yield* Effect.logWarning("ssh.command.failed", {
       ...sshTargetLogFields(target),
-      command: [SSH_COMMAND, ...args],
+      command: [sshCommand, ...args],
       exitCode,
       stdout: diagnosticStdout,
       stderr,
     });
     return yield* new SshCommandError({
-      command: [SSH_COMMAND, ...args],
+      command: [sshCommand, ...args],
       exitCode,
       stdout: diagnosticStdout,
       stderr,
@@ -269,7 +281,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
 
   yield* Effect.logDebug("ssh.command.succeeded", {
     ...sshTargetLogFields(target),
-    command: [SSH_COMMAND, ...args],
+    command: [sshCommand, ...args],
   });
   return { stdout, stderr };
 });
@@ -282,6 +294,7 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const sshCommand = yield* resolveSshCommand;
   return yield* Effect.scopedWith((commandScope) =>
     runSshCommandInScope(target, input, commandScope),
   ).pipe(
@@ -299,7 +312,7 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
               hasStdin: input.stdin !== undefined,
             });
             return yield* new SshCommandError({
-              command: [SSH_COMMAND],
+              command: [sshCommand],
               exitCode: null,
               stderr: "",
               message: `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,

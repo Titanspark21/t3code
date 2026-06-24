@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+// @effect-diagnostics nodeBuiltinImport:off - Checkpoint utility probes filesystem paths directly.
+import * as NodeFS from "node:fs";
 
 import * as Encoding from "effect/Encoding";
 import { CheckpointRef, ProjectId, type ThreadId } from "@t3tools/contracts";
@@ -43,5 +44,5 @@ export function resolveExistingThreadWorkspaceCwd(input: {
   if (!resolvedCwd) {
     return undefined;
   }
-  return existsSync(resolvedCwd) ? resolvedCwd : undefined;
+  return NodeFS.existsSync(resolvedCwd) ? resolvedCwd : undefined;
 }
