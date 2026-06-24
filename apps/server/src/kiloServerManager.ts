@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
+import * as NodeCrypto from "node:crypto";
+import * as NodeEvents from "node:events";
 
 import {
   ApprovalRequestId,
@@ -50,7 +50,7 @@ import { createClient, ensureServer } from "./kilo/serverLifecycle.ts";
 
 export { type KiloDiscoveredModel, type KiloModelDiscoveryOptions } from "./kilo/types.ts";
 
-export class KiloServerManager extends EventEmitter<KiloManagerEvents> {
+export class KiloServerManager extends NodeEvents.EventEmitter<KiloManagerEvents> {
   private readonly sessions = new Map<ThreadId, KiloSessionContext>();
   private serverPromise: Promise<SharedServerState> | undefined;
   private server: SharedServerState | undefined;
@@ -436,7 +436,7 @@ export class KiloServerManager extends EventEmitter<KiloManagerEvents> {
 
     const turns = (Array.isArray(messages) ? messages : []).map((entry) => {
       const info = asRecord(asRecord(entry)?.info);
-      const messageId = asString(info?.id) ?? randomUUID();
+      const messageId = asString(info?.id) ?? NodeCrypto.randomUUID();
       return {
         id: TurnId.make(messageId),
         items: [entry],
