@@ -3126,10 +3126,11 @@ export default function Sidebar() {
   );
   const sidebarThreadsWithActivitiesAtom = useMemo(
     () =>
-      Atom.make((get): ReadonlyArray<Pick<OrchestrationThread, "activities">> =>
-        sidebarThreadRefs.map((threadRef) => ({
-          activities: get(environmentThreadDetails.activitiesAtom(threadRef)),
-        })),
+      Atom.make(
+        (get): ReadonlyArray<Pick<OrchestrationThread, "activities">> =>
+          sidebarThreadRefs.map((threadRef) => ({
+            activities: get(environmentThreadDetails.activitiesAtom(threadRef)),
+          })),
       ),
     [sidebarThreadRefs],
   );
