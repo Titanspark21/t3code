@@ -5,6 +5,7 @@ import type {
   ServerProviderModel,
 } from "@t3tools/contracts";
 import { ProviderDriverKind } from "@t3tools/contracts";
+import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
@@ -247,7 +248,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   } else if (Exit.isFailure(modelProbe)) {
     warning = modelDiscoveryWarning(Cause.squash(modelProbe.cause));
     yield* Effect.logWarning("Cursor SDK model discovery failed", {
-      cause: Cause.squash(modelProbe.cause),
+      errorTag: causeErrorTag(modelProbe.cause),
     });
   }
 
@@ -284,6 +285,12 @@ export const enrichCursorSnapshot = (input: {
       {
         enableProviderUpdateChecks: input.enableProviderUpdateChecks,
       },
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Cursor version advisory enrichment failed", {
+          errorTag: causeErrorTag(cause),
+        }).pipe(Effect.as(input.snapshot)),
+      ),
     );
 
     if (enriched !== input.snapshot) {
