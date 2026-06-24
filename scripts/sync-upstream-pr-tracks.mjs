@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-import path from "node:path";
-import { execFileSync } from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeChildProcess from "node:child_process";
 
-const repoRoot = path.resolve(import.meta.dirname, "..");
-const configPath = path.join(repoRoot, "config", "upstream-pr-tracks.json");
+const repoRoot = NodePath.resolve(import.meta.dirname, "..");
+const configPath = NodePath.join(repoRoot, "config", "upstream-pr-tracks.json");
 
 function runGit(args, options = {}) {
-  const output = execFileSync("git", args, {
+  const output = NodeChildProcess.execFileSync("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -48,7 +48,7 @@ function deriveRepoUrl(remoteName) {
 }
 
 function loadConfig() {
-  const raw = fs.readFileSync(configPath, "utf8");
+  const raw = NodeFS.readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Invalid upstream PR tracking config.");

@@ -1,10 +1,11 @@
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
+// @effect-diagnostics nodeBuiltinImport:off - Pure Copilot CLI path resolver inspects packaged Node resources.
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
+import * as NodePath from "node:path";
+import * as NodeModule from "node:module";
 
-const require = createRequire(import.meta.url);
-const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const require = NodeModule.createRequire(import.meta.url);
+const CURRENT_DIR = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const GITHUB_SCOPE_DIR = "@github";
 const COPILOT_PATHLESS_COMMAND_PATTERN = /^copilot(?:\.(?:exe|cmd|bat))?$/i;
 const COPILOT_DESKTOP_ENV_BLOCKLIST = [
@@ -102,7 +103,7 @@ function resolveGithubScopeDirFromSdkEntrypoint(
   sdkEntrypoint: string | undefined,
 ): string | undefined {
   if (!sdkEntrypoint) return undefined;
-  return join(dirname(dirname(sdkEntrypoint)), "..");
+  return NodePath.join(NodePath.dirname(NodePath.dirname(sdkEntrypoint)), "..");
 }
 
 function resolveNodeModulesRoots(input: {
@@ -112,13 +113,15 @@ function resolveNodeModulesRoots(input: {
 }): string[] {
   const githubScopeDir = resolveGithubScopeDirFromSdkEntrypoint(input.sdkEntrypoint);
   return dedupePaths([
-    input.resourcesPath ? join(input.resourcesPath, "app.asar.unpacked/node_modules") : undefined,
-    input.resourcesPath ? join(input.resourcesPath, "node_modules") : undefined,
-    join(input.currentDir, "../../../../../app.asar.unpacked/node_modules"),
-    join(input.currentDir, "../../../../../../app.asar.unpacked/node_modules"),
-    join(input.currentDir, "../../../node_modules"),
-    join(input.currentDir, "../../../../../node_modules"),
-    githubScopeDir ? join(githubScopeDir, "..") : undefined,
+    input.resourcesPath
+      ? NodePath.join(input.resourcesPath, "app.asar.unpacked/node_modules")
+      : undefined,
+    input.resourcesPath ? NodePath.join(input.resourcesPath, "node_modules") : undefined,
+    NodePath.join(input.currentDir, "../../../../../app.asar.unpacked/node_modules"),
+    NodePath.join(input.currentDir, "../../../../../../app.asar.unpacked/node_modules"),
+    NodePath.join(input.currentDir, "../../../node_modules"),
+    NodePath.join(input.currentDir, "../../../../../node_modules"),
+    githubScopeDir ? NodePath.join(githubScopeDir, "..") : undefined,
   ]);
 }
 
@@ -127,7 +130,9 @@ function getCopilotPlatformBinaryName(platform: string): string {
 }
 
 export function getBundledCopilotPlatformPackages(
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure resolver keeps platform injectable for tests and non-Effect callers.
   platform: string = process.platform,
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure resolver keeps architecture injectable for tests and non-Effect callers.
   arch: string = process.arch,
 ): ReadonlyArray<string> {
   if (platform === "darwin" && arch === "arm64") {
@@ -160,9 +165,11 @@ export function resolveBundledCopilotCliPathFrom(input: {
   arch?: string;
   exists?: (path: string) => boolean;
 }): string | undefined {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure resolver keeps platform injectable for tests and non-Effect callers.
   const platform = input.platform ?? process.platform;
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure resolver keeps architecture injectable for tests and non-Effect callers.
   const arch = input.arch ?? process.arch;
-  const exists = input.exists ?? existsSync;
+  const exists = input.exists ?? NodeFS.existsSync;
   const sdkEntrypoint = input.sdkEntrypoint;
   const nodeModulesRoots = resolveNodeModulesRoots({
     currentDir: input.currentDir,
@@ -173,7 +180,9 @@ export function resolveBundledCopilotCliPathFrom(input: {
   const platformPackages = getBundledCopilotPlatformPackages(platform, arch);
 
   const binaryCandidates = nodeModulesRoots.flatMap((root) =>
-    platformPackages.map((packageName) => join(root, GITHUB_SCOPE_DIR, packageName, binaryName)),
+    platformPackages.map((packageName) =>
+      NodePath.join(root, GITHUB_SCOPE_DIR, packageName, binaryName),
+    ),
   );
   for (const candidate of dedupePaths(binaryCandidates)) {
     if (exists(candidate)) {
@@ -187,7 +196,7 @@ export function resolveBundledCopilotCliPathFrom(input: {
   }
 
   const sdkSiblingBinaryCandidates = platformPackages.map((packageName) =>
-    join(githubScopeDir, packageName, binaryName),
+    NodePath.join(githubScopeDir, packageName, binaryName),
   );
   for (const candidate of dedupePaths(sdkSiblingBinaryCandidates)) {
     if (exists(candidate)) {
