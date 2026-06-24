@@ -1,4 +1,5 @@
-import assert from "node:assert/strict";
+// @effect-diagnostics globalDate:off - Tests build timestamped Droid events.
+import * as NodeAssert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import {
@@ -170,11 +171,11 @@ it.effect("maps Droid SDK stream messages into canonical runtime events", () =>
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
       const events = yield* joinIterableFiber(eventsFiber);
-      assert.equal(createOptions?.modelId, "claude-sonnet");
-      assert.equal(createOptions?.autonomyLevel, AutonomyLevel.High);
-      assert.equal(createOptions?.interactionMode, DroidInteractionMode.Auto);
-      assert.equal(createOptions?.reasoningEffort, ReasoningEffort.High);
-      assert.deepEqual(
+      NodeAssert.equal(createOptions?.modelId, "claude-sonnet");
+      NodeAssert.equal(createOptions?.autonomyLevel, AutonomyLevel.High);
+      NodeAssert.equal(createOptions?.interactionMode, DroidInteractionMode.Auto);
+      NodeAssert.equal(createOptions?.reasoningEffort, ReasoningEffort.High);
+      NodeAssert.deepEqual(
         events.map((event) => event.type),
         [
           "session.started",
@@ -202,11 +203,11 @@ it.effect("maps Droid SDK stream messages into canonical runtime events", () =>
         lastOutputTokens: 5,
         lastReasoningOutputTokens: 1,
       };
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         events.find((event) => event.type === "thread.token-usage.updated")?.payload,
         { usage: expectedUsage },
       );
-      assert.deepEqual(events.find((event) => event.type === "turn.completed")?.payload, {
+      NodeAssert.deepEqual(events.find((event) => event.type === "turn.completed")?.payload, {
         state: "completed",
         usage: expectedUsage,
       });
@@ -279,7 +280,7 @@ it.effect("keeps Droid token usage cumulative across turns", () =>
       const usageEvents = events.filter((event) => event.type === "thread.token-usage.updated");
       const completedTurns = events.filter((event) => event.type === "turn.completed");
 
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         usageEvents.map((event) =>
           event.type === "thread.token-usage.updated" ? event.payload.usage : undefined,
         ),
@@ -310,7 +311,7 @@ it.effect("keeps Droid token usage cumulative across turns", () =>
           },
         ],
       );
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         completedTurns.map((event) =>
           event.type === "turn.completed"
             ? (event.payload as { usage?: { usedTokens?: number } }).usage?.usedTokens
@@ -343,7 +344,7 @@ it.effect("maps Droid medium access to medium autonomy", () =>
         runtimeMode: "medium-access",
       });
 
-      assert.equal(createOptions?.autonomyLevel, AutonomyLevel.Medium);
+      NodeAssert.equal(createOptions?.autonomyLevel, AutonomyLevel.Medium);
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -378,8 +379,8 @@ it.effect("applies runtime autonomy when resuming Droid sessions and sending tur
       yield* adapter.sendTurn({ threadId, input: "hello" });
 
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
-      assert.equal(completed._tag, "Some");
-      assert.deepEqual(updateSettingsCalls, [
+      NodeAssert.equal(completed._tag, "Some");
+      NodeAssert.deepEqual(updateSettingsCalls, [
         { autonomyLevel: AutonomyLevel.Off },
         { autonomyLevel: AutonomyLevel.Off },
       ]);
@@ -419,11 +420,11 @@ it.effect("closes an existing Droid session before replacing the same thread", (
         runtimeMode: "full-access",
       });
 
-      assert.deepEqual(closedSessionIds, ["droid-session-1"]);
-      assert.equal(secondSession.resumeCursor, "droid-session-2");
+      NodeAssert.deepEqual(closedSessionIds, ["droid-session-1"]);
+      NodeAssert.equal(secondSession.resumeCursor, "droid-session-2");
       const sessions = yield* adapter.listSessions();
-      assert.equal(sessions.length, 1);
-      assert.equal(sessions[0]?.resumeCursor, "droid-session-2");
+      NodeAssert.equal(sessions.length, 1);
+      NodeAssert.equal(sessions[0]?.resumeCursor, "droid-session-2");
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -467,7 +468,7 @@ it.effect("uses final Droid create_message content when deltas are absent", () =
 
       const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload : undefined)),
         [
           { streamKind: "reasoning_text", delta: "final thought" },
@@ -475,10 +476,10 @@ it.effect("uses final Droid create_message content when deltas are absent", () =
         ],
       );
       const completed = events.find((event) => event.type === "item.completed");
-      assert.equal(completed?.type, "item.completed");
+      NodeAssert.equal(completed?.type, "item.completed");
       if (completed?.type === "item.completed") {
-        assert.equal(completed.payload.itemType, "assistant_message");
-        assert.equal(completed.payload.detail, "final text");
+        NodeAssert.equal(completed.payload.itemType, "assistant_message");
+        NodeAssert.equal(completed.payload.detail, "final text");
       }
     }),
   ).pipe(Effect.provide(testLayer)),
@@ -532,16 +533,16 @@ it.effect("does not duplicate Droid final create_message text after streaming de
 
       const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload.delta : undefined)),
         ["stre", "am"],
       );
       const completed = events.find((event) => event.type === "item.completed");
-      assert.equal(completed?.type, "item.completed");
+      NodeAssert.equal(completed?.type, "item.completed");
       if (completed?.type === "item.completed") {
-        assert.equal(completed.payload.detail, "stream");
+        NodeAssert.equal(completed.payload.detail, "stream");
       }
-      assert.equal(
+      NodeAssert.equal(
         events.filter(
           (event) =>
             event.type === "item.completed" && event.payload.itemType === "assistant_message",
@@ -586,9 +587,9 @@ it.effect("rejects concurrent Droid turns for the same thread", () =>
       yield* adapter.sendTurn({ threadId, input: "first" });
 
       const secondTurn = yield* adapter.sendTurn({ threadId, input: "second" }).pipe(Effect.exit);
-      assert.equal(secondTurn._tag, "Failure");
+      NodeAssert.equal(secondTurn._tag, "Failure");
       if (secondTurn._tag === "Failure") {
-        assert.match(String(secondTurn.cause), /already has an active turn/);
+        NodeAssert.match(String(secondTurn.cause), /already has an active turn/);
       }
 
       finishTurn?.();
@@ -653,7 +654,7 @@ it.effect("does not duplicate Droid final thinking content after streaming delta
 
       const events = yield* joinIterableFiber(eventsFiber);
       const deltas = events.filter((event) => event.type === "content.delta");
-      assert.deepEqual(
+      NodeAssert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload : undefined)),
         [
           { streamKind: "reasoning_text", delta: "thi" },
@@ -690,8 +691,8 @@ it.effect("ignores Droid interrupt failures after aborting the active turn", () 
       });
 
       const exit = yield* adapter.interruptTurn(threadId).pipe(Effect.exit);
-      assert.equal(exit._tag, "Success");
-      assert.equal(interruptAttempts, 1);
+      NodeAssert.equal(exit._tag, "Success");
+      NodeAssert.equal(interruptAttempts, 1);
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -739,12 +740,12 @@ it.effect("passes custom model reasoning into Droid spec mode", () =>
       });
 
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
-      assert.equal(completed._tag, "Some");
-      assert.deepEqual(enterSpecModeParams, {
+      NodeAssert.equal(completed._tag, "Some");
+      NodeAssert.deepEqual(enterSpecModeParams, {
         specModeModelId: "custom:Direct-GPT-5.5-xhigh-27",
         specModeReasoningEffort: ReasoningEffort.ExtraHigh,
       });
-      assert.deepEqual(updateSettingsParams, {
+      NodeAssert.deepEqual(updateSettingsParams, {
         autonomyLevel: AutonomyLevel.High,
         modelId: "custom:Direct-GPT-5.5-xhigh-27",
         reasoningEffort: ReasoningEffort.ExtraHigh,
@@ -807,17 +808,17 @@ it.effect("routes Droid permission requests through adapter approvals", () =>
       });
       yield* adapter.sendTurn({ threadId, input: "run lint" });
       const opened = yield* Fiber.join(openedFiber).pipe(Effect.timeout("2 seconds"));
-      assert.equal(opened._tag, "Some");
+      NodeAssert.equal(opened._tag, "Some");
       const requestId = opened.value.requestId;
-      assert.ok(requestId);
+      NodeAssert.ok(requestId);
       yield* adapter.respondToRequest(
         threadId,
         ApprovalRequestId.make(requestId),
         "acceptForSession",
       );
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
-      assert.equal(completed._tag, "Some");
-      assert.equal(permissionResult, ToolConfirmationOutcome.ProceedAlways);
+      NodeAssert.equal(completed._tag, "Some");
+      NodeAssert.equal(permissionResult, ToolConfirmationOutcome.ProceedAlways);
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -901,32 +902,32 @@ it.effect("settles pending Droid permission and user-input waits when stopped", 
       });
       yield* adapter.sendTurn({ threadId, input: "run lint" });
       const openedEvents = yield* joinIterableFiber(openedEventsFiber);
-      assert.deepEqual(openedEvents.map((event) => event.type).toSorted(), [
+      NodeAssert.deepEqual(openedEvents.map((event) => event.type).toSorted(), [
         "request.opened",
         "user-input.requested",
       ]);
       yield* adapter.stopSession(threadId);
       const resolvedEvents = yield* joinIterableFiber(resolvedEventsFiber);
-      assert.deepEqual(resolvedEvents.map((event) => event.type).toSorted(), [
+      NodeAssert.deepEqual(resolvedEvents.map((event) => event.type).toSorted(), [
         "request.resolved",
         "user-input.resolved",
       ]);
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("2 seconds"));
 
-      assert.equal(completed._tag, "Some");
-      assert.equal(permissionResult, ToolConfirmationOutcome.Cancel);
-      assert.deepEqual(userInputResult, { cancelled: true, answers: [] });
+      NodeAssert.equal(completed._tag, "Some");
+      NodeAssert.equal(permissionResult, ToolConfirmationOutcome.Cancel);
+      NodeAssert.deepEqual(userInputResult, { cancelled: true, answers: [] });
       const resolvedApproval = resolvedEvents.find((event) => event.type === "request.resolved");
-      assert.equal(resolvedApproval?.type, "request.resolved");
+      NodeAssert.equal(resolvedApproval?.type, "request.resolved");
       if (resolvedApproval?.type === "request.resolved") {
-        assert.equal(resolvedApproval.payload.decision, "cancel");
+        NodeAssert.equal(resolvedApproval.payload.decision, "cancel");
       }
       const resolvedUserInput = resolvedEvents.find(
         (event) => event.type === "user-input.resolved",
       );
-      assert.equal(resolvedUserInput?.type, "user-input.resolved");
+      NodeAssert.equal(resolvedUserInput?.type, "user-input.resolved");
       if (resolvedUserInput?.type === "user-input.resolved") {
-        assert.deepEqual(resolvedUserInput.payload.answers, {});
+        NodeAssert.deepEqual(resolvedUserInput.payload.answers, {});
       }
     }),
   ).pipe(Effect.provide(testLayer)),
@@ -969,12 +970,12 @@ it.effect("continues stopping Droid sessions when one close fails", () =>
 
       yield* adapter.stopAll();
 
-      assert.deepEqual(closedSessionIds.toSorted(), [
+      NodeAssert.deepEqual(closedSessionIds.toSorted(), [
         "droid-session-closes",
         "droid-session-fails-close",
       ]);
       const sessions = yield* adapter.listSessions();
-      assert.deepEqual(sessions, []);
+      NodeAssert.deepEqual(sessions, []);
     }),
   ).pipe(Effect.provide(testLayer)),
 );
@@ -1016,8 +1017,8 @@ it.effect("marks Droid stream errors as failed turns", () =>
       const runtimeError = events.find((event) => event.type === "runtime.error");
       const turnCompleted = events.find((event) => event.type === "turn.completed");
 
-      assert.equal(runtimeError?.type, "runtime.error");
-      assert.deepEqual(turnCompleted?.payload, {
+      NodeAssert.equal(runtimeError?.type, "runtime.error");
+      NodeAssert.deepEqual(turnCompleted?.payload, {
         state: "failed",
         errorMessage: "Droid stream failed",
       });
@@ -1073,11 +1074,11 @@ it.effect("marks aborted Droid turns as interrupted without runtime error", () =
       yield* adapter.interruptTurn(threadId);
 
       const events = yield* joinIterableFiber(eventsFiber);
-      assert.equal(
+      NodeAssert.equal(
         events.some((event) => event.type === "runtime.error"),
         false,
       );
-      assert.deepEqual(events.find((event) => event.type === "turn.completed")?.payload, {
+      NodeAssert.deepEqual(events.find((event) => event.type === "turn.completed")?.payload, {
         state: "interrupted",
       });
     }),
@@ -1100,7 +1101,7 @@ it.effect("reads Droid thread snapshots and rejects unsupported rollback", () =>
       const missing = yield* adapter
         .readThread(ThreadId.make("missing-droid-thread"))
         .pipe(Effect.exit);
-      assert.equal(missing._tag, "Failure");
+      NodeAssert.equal(missing._tag, "Failure");
 
       yield* adapter.startSession({
         threadId,
@@ -1122,17 +1123,17 @@ it.effect("reads Droid thread snapshots and rejects unsupported rollback", () =>
       yield* Fiber.join(secondCompleted).pipe(Effect.timeout("2 seconds"));
 
       const before = yield* adapter.readThread(threadId);
-      assert.equal(before.turns.length, 2);
+      NodeAssert.equal(before.turns.length, 2);
       const rollback = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.exit);
-      assert.equal(rollback._tag, "Failure");
+      NodeAssert.equal(rollback._tag, "Failure");
       if (rollback._tag === "Failure") {
-        assert.match(String(rollback.cause), /provider-native rewind\/fork support/);
+        NodeAssert.match(String(rollback.cause), /provider-native rewind\/fork support/);
       }
       const after = yield* adapter.readThread(threadId);
-      assert.equal(after.turns.length, 2);
+      NodeAssert.equal(after.turns.length, 2);
 
       const invalid = yield* adapter.rollbackThread(threadId, 0).pipe(Effect.exit);
-      assert.equal(invalid._tag, "Failure");
+      NodeAssert.equal(invalid._tag, "Failure");
     }),
   ).pipe(Effect.provide(testLayer)),
 );

@@ -1,5 +1,6 @@
-import { accessSync, constants, statSync } from "node:fs";
-import { extname, join } from "node:path";
+// @effect-diagnostics nodeBuiltinImport:off - Pure command path resolver intentionally mirrors host PATH lookup.
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 interface CommandPathOptions {
   readonly platform?: NodeJS.Platform;
@@ -41,7 +42,7 @@ function resolveCommandCandidates(
   windowsPathExtensions: ReadonlyArray<string>,
 ): ReadonlyArray<string> {
   if (platform !== "win32") return [command];
-  const extension = extname(command);
+  const extension = NodePath.extname(command);
   const normalizedExtension = extension.toUpperCase();
 
   if (extension.length > 0) {
@@ -80,16 +81,16 @@ function isExecutableFile(
   windowsPathExtensions: ReadonlyArray<string>,
 ): boolean {
   try {
-    const stat = statSync(filePath);
+    const stat = NodeFS.statSync(filePath);
     if (!stat.isFile()) return false;
     if (platform === "win32") {
-      const extension = extname(filePath);
+      const extension = NodePath.extname(filePath);
       if (extension.length === 0) return false;
       return new Set([...DEFAULT_WINDOWS_PATH_EXTENSIONS, ...windowsPathExtensions]).has(
         extension.toUpperCase(),
       );
     }
-    accessSync(filePath, constants.X_OK);
+    NodeFS.accessSync(filePath, NodeFS.constants.X_OK);
     return true;
   } catch {
     return false;
@@ -100,6 +101,7 @@ export function resolveCommandPath(
   command: string,
   options: CommandPathOptions = {},
 ): string | undefined {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure utility keeps an optional injectable platform for tests and non-Effect call sites.
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
   const windowsPathExtensions = platform === "win32" ? resolveWindowsPathExtensions(env) : [];
@@ -121,7 +123,7 @@ export function resolveCommandPath(
 
   for (const pathEntry of pathEntries) {
     for (const candidate of commandCandidates) {
-      const resolvedPath = join(pathEntry, candidate);
+      const resolvedPath = NodePath.join(pathEntry, candidate);
       if (isExecutableFile(resolvedPath, platform, windowsPathExtensions)) {
         return resolvedPath;
       }

@@ -6,7 +6,7 @@ import {
   ModelProvider,
   ReasoningEffort,
 } from "@factory/droid-sdk";
-import { tmpdir } from "node:os";
+import * as NodeOS from "node:os";
 import {
   type DroidSettings,
   ProviderDriverKind,
@@ -193,7 +193,7 @@ export const discoverDroidModels = (
     void (async () => {
       try {
         session = await (options?.sdk ?? defaultSdk).createSession({
-          cwd: tmpdir(),
+          cwd: NodeOS.tmpdir(),
           execPath: settings.binaryPath,
           env: compactEnvironment(environment),
           abortSignal: abort.signal,
@@ -280,6 +280,7 @@ export function checkDroidProviderStatus(
 
     const command = ChildProcess.make(settings.binaryPath, ["--version"], {
       env: environment,
+      // oxlint-disable-next-line t3code/no-global-process-runtime -- Provider snapshot probe is a pure process spawn outside the Effect runtime service graph.
       shell: process.platform === "win32",
     });
     const result = yield* spawnAndCollect(settings.binaryPath, command).pipe(
