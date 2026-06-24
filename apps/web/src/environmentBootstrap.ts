@@ -1,7 +1,4 @@
-import {
-  createKnownEnvironment,
-  type KnownEnvironment,
-} from "@t3tools/client-runtime/environment";
+import { createKnownEnvironment, type KnownEnvironment } from "@t3tools/client-runtime/environment";
 import type { DesktopEnvironmentBootstrap } from "@t3tools/contracts";
 
 function normalizeBaseUrl(rawValue: string): string {
