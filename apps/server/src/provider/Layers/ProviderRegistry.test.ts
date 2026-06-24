@@ -1256,6 +1256,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
                 }
                 yield* TestClock.adjust("50 millis");
                 yield* Effect.yieldNow;
+                yield* Effect.promise(
+                  () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 5)),
+                );
               }
               return yield* registry.getProviders;
             });
