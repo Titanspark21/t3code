@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 
 import * as Schema from "effect/Schema";
 import { describe, it } from "vite-plus/test";
@@ -20,11 +20,11 @@ describe("GeminiCliProvider capabilities", () => {
 
     const builtIn = draft.models.find((model) => !model.isCustom);
     if (!builtIn) {
-      assert.fail("expected a built-in gemini model");
+      NodeAssert.fail("expected a built-in gemini model");
     }
 
     const descriptors = builtIn.capabilities?.optionDescriptors ?? [];
-    assert.ok(
+    NodeAssert.ok(
       !descriptors.some((descriptor) => descriptor.id === "thinkingBudget"),
       "thinkingBudget was inert; keep it removed until wired to the Gemini CLI",
     );
