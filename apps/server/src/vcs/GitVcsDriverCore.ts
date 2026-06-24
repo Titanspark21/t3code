@@ -1132,15 +1132,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         continue;
       }
 
-      if (yield* branchExists(cwd, normalizedCandidate)) {
-        return normalizedCandidate;
-      }
-
       if (
         primaryRemoteName &&
         (yield* remoteBranchExists(cwd, primaryRemoteName, normalizedCandidate))
       ) {
         return `${primaryRemoteName}/${normalizedCandidate}`;
+      }
+
+      if (yield* branchExists(cwd, normalizedCandidate)) {
+        return normalizedCandidate;
       }
     }
 
@@ -2179,6 +2179,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     yield* executeGit("GitVcsDriver.createWorktree", input.cwd, args, {
       fallbackErrorMessage: "git worktree add failed",
     });
+
+    if (input.newRefName && input.baseRefName) {
+      const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));
+      const parsedBaseRef = parseRemoteRefWithRemoteNames(
+        input.baseRefName,
+        remoteNames.toSorted((left, right) => right.length - left.length),
+      );
+      const baseBranch = parsedBaseRef?.branchName ?? input.baseRefName;
+      yield* runGit("GitVcsDriver.createWorktree.configureBaseRef", input.cwd, [
+        "config",
+        `branch.${input.newRefName}.gh-merge-base`,
+        baseBranch,
+      ]);
+    }
 
     return {
       worktree: {
