@@ -24,6 +24,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
+import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { ensureLocalApi } from "~/localApi";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
@@ -108,7 +109,10 @@ async function hydrateClientSettings(): Promise<void> {
         replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
       }
     } catch (error) {
-      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, error);
+      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, {
+        operation: "hydrate",
+        ...safeErrorLogAttributes(error),
+      });
     } finally {
       if (hydrationGeneration === clientSettingsHydrationGeneration) {
         setClientSettingsHydrated(true);
@@ -131,7 +135,10 @@ function persistClientSettings(settings: ClientSettings): void {
   void ensureLocalApi()
     .persistence.setClientSettings(settings)
     .catch((error) => {
-      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, error);
+      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
+        operation: "persist",
+        ...safeErrorLogAttributes(error),
+      });
     });
 }
 
