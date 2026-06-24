@@ -3,7 +3,6 @@ import type {
   EnvironmentId,
   ModelSelection,
   PreviewAnnotationPayload,
-  ProjectEntry,
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
@@ -79,6 +78,7 @@ import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
+  getComposerPromptInjectionState,
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
@@ -119,8 +119,6 @@ import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
-const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
-const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -769,18 +767,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
 
+  const composerPromptInjectionState = useMemo(
+    () => getComposerPromptInjectionState(prompt),
+    [prompt],
+  );
   const composerProviderState = useMemo(
     () =>
       getComposerProviderState({
         provider: selectedProvider,
         model: selectedModel,
         models: selectedProviderModels,
-        prompt,
+        promptInjectionState: composerPromptInjectionState,
         modelOptions: composerModelOptions?.[selectedInstanceId],
       }),
     [
       composerModelOptions,
-      prompt,
+      composerPromptInjectionState,
       selectedInstanceId,
       selectedModel,
       selectedProvider,

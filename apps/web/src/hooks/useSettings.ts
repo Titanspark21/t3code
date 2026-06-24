@@ -176,7 +176,7 @@ export function buildLegacyClientSettingsMigrationPatch(
       ? { confirmThreadDelete: legacySettings.confirmThreadDelete }
       : {}),
     ...(typeof legacySettings.diffWordWrap === "boolean"
-      ? { diffWordWrap: legacySettings.diffWordWrap }
+      ? { wordWrap: legacySettings.diffWordWrap }
       : {}),
     ...(typeof legacySettings.diffIgnoreWhitespace === "boolean"
       ? { diffIgnoreWhitespace: legacySettings.diffIgnoreWhitespace }
