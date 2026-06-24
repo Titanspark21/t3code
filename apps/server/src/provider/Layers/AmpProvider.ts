@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Provider snapshot DTOs use ISO timestamps.
 /**
  * AmpProvider — snapshot probe for the Amp CLI provider.
  *
@@ -80,6 +81,7 @@ const runAmpCommand = Effect.fn("runAmpCommand")(function* (
   const binaryPath = defaultBinaryPath(ampSettings);
   const command = ChildProcess.make(binaryPath, [...args], {
     env: environment,
+    // oxlint-disable-next-line t3code/no-global-process-runtime -- Provider snapshot probes are pure process spawns outside the Effect runtime service graph.
     shell: process.platform === "win32",
   });
   return yield* spawnAndCollect(binaryPath, command);

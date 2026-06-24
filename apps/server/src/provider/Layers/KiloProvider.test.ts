@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 
 import { describe, it } from "vite-plus/test";
 
@@ -19,21 +19,21 @@ describe("KiloProvider model discovery mapping", () => {
       { slug: "anthropic/claude", name: "Anthropic / Claude", connected: false },
     ]);
 
-    assert.equal(result.length, 2);
+    NodeAssert.equal(result.length, 2);
     const [first, second] = result;
     if (!first || !second) {
-      assert.fail("expected two mapped models");
+      NodeAssert.fail("expected two mapped models");
     }
 
-    assert.equal(first.slug, "openai/gpt-5");
-    assert.equal(first.name, "OpenAI / GPT-5");
-    assert.equal(first.isCustom, false);
-    assert.ok(first.capabilities, "discovered models carry default capabilities");
-    assert.equal(second.slug, "anthropic/claude");
-    assert.equal(second.isCustom, false);
+    NodeAssert.equal(first.slug, "openai/gpt-5");
+    NodeAssert.equal(first.name, "OpenAI / GPT-5");
+    NodeAssert.equal(first.isCustom, false);
+    NodeAssert.ok(first.capabilities, "discovered models carry default capabilities");
+    NodeAssert.equal(second.slug, "anthropic/claude");
+    NodeAssert.equal(second.isCustom, false);
   });
 
   it("returns an empty list when nothing is discovered", () => {
-    assert.deepEqual(kiloDiscoveredToServerModels([]), []);
+    NodeAssert.deepEqual(kiloDiscoveredToServerModels([]), []);
   });
 });
