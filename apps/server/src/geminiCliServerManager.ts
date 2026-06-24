@@ -1,14 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
-import { extname, win32 as win32Path } from "node:path";
-import {
-  spawn,
-  spawnSync,
-  type ChildProcess,
-  type ChildProcessWithoutNullStreams,
-} from "node:child_process";
-import readline from "node:readline";
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - Provider process manager owns child process lifecycle and timestamped runtime events.
+import * as NodeCrypto from "node:crypto";
+import * as NodeEvents from "node:events";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeReadline from "node:readline";
 
 import {
   ApprovalRequestId,
@@ -137,7 +133,7 @@ interface GeminiCliSession {
   /** Gemini-native session ID for --resume. */
   geminiSessionId: string | undefined;
   activeTurnId: TurnId | undefined;
-  activeProcess: ChildProcess | undefined;
+  activeProcess: NodeChildProcess.ChildProcess | undefined;
   interruptedTurnId: TurnId | undefined;
   /** Stable itemId for the current turn's assistant message (reused across content.delta events). */
   activeAssistantItemId: RuntimeItemId | undefined;
@@ -179,19 +175,19 @@ interface GeminiSpawnPlan {
 
 interface GeminiSpawnPlanDependencies {
   readonly resolveCommandPath?: typeof resolveCommandPath;
-  readonly existsSync?: typeof existsSync;
+  readonly existsSync?: typeof NodeFS.existsSync;
 }
 
 function resolveGeminiShimEntryPoint(
   binaryPath: string,
-  fileExists: typeof existsSync = existsSync,
+  fileExists: typeof NodeFS.existsSync = NodeFS.existsSync,
 ): string | undefined {
-  if (![".cmd", ".bat"].includes(extname(binaryPath).toLowerCase())) {
+  if (![".cmd", ".bat"].includes(NodePath.extname(binaryPath).toLowerCase())) {
     return undefined;
   }
 
-  const shimDirectory = win32Path.dirname(binaryPath);
-  const shimEntryPoint = win32Path.join(
+  const shimDirectory = NodePath.win32.dirname(binaryPath);
+  const shimEntryPoint = NodePath.win32.join(
     shimDirectory,
     "node_modules",
     "@google",
@@ -205,6 +201,7 @@ function resolveGeminiShimEntryPoint(
 
 function resolveNodeCommand(
   env: NodeJS.ProcessEnv,
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure helper keeps platform injectable for tests and non-Effect callers.
   platform: NodeJS.Platform = process.platform,
   commandPathResolver: typeof resolveCommandPath = resolveCommandPath,
 ): string {
@@ -221,11 +218,12 @@ export function resolveGeminiSpawnPlan(
     readonly cwd: string;
     readonly env: NodeJS.ProcessEnv;
   },
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure spawn planner keeps platform injectable for tests and class callers.
   platform: NodeJS.Platform = process.platform,
   dependencies: GeminiSpawnPlanDependencies = {},
 ): GeminiSpawnPlan {
   const commandPathResolver = dependencies.resolveCommandPath ?? resolveCommandPath;
-  const fileExists = dependencies.existsSync ?? existsSync;
+  const fileExists = dependencies.existsSync ?? NodeFS.existsSync;
   const options = buildGeminiSpawnOptions({
     cwd: input.cwd,
     env: input.env,
@@ -245,7 +243,7 @@ export function resolveGeminiSpawnPlan(
       env: input.env,
     }) ?? input.binaryPath;
 
-  if (extname(resolvedBinaryPath).toLowerCase() === ".js") {
+  if (NodePath.extname(resolvedBinaryPath).toLowerCase() === ".js") {
     return {
       command: resolveNodeCommand(input.env, platform, commandPathResolver),
       args: [resolvedBinaryPath, ...input.args],
@@ -269,10 +267,17 @@ export function resolveGeminiSpawnPlan(
   };
 }
 
-function killGeminiChildProcess(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
-  if (process.platform === "win32" && child.pid !== undefined) {
+function killGeminiChildProcess(
+  child: NodeChildProcess.ChildProcess,
+  signal: NodeJS.Signals = "SIGTERM",
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Manager is a non-Effect process owner; tests can pass a platform explicitly.
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === "win32" && child.pid !== undefined) {
     try {
-      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      NodeChildProcess.spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
       return;
     } catch {
       // Fall back to direct kill when taskkill is unavailable.
@@ -324,7 +329,7 @@ function resolveApprovalMode(runtimeMode: string): string {
   }
 }
 
-export class GeminiCliServerManager extends EventEmitter<{
+export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
   event: [ProviderRuntimeEvent];
 }> {
   private readonly sessions = new Map<ThreadId, GeminiCliSession>();
@@ -435,7 +440,7 @@ export class GeminiCliServerManager extends EventEmitter<{
       throw new Error("Gemini CLI does not support attachments");
     }
 
-    const turnId = TurnId.make(randomUUID());
+    const turnId = TurnId.make(NodeCrypto.randomUUID());
     session.activeTurnId = turnId;
     session.status = "running";
     session.updatedAt = new Date().toISOString();
@@ -474,7 +479,7 @@ export class GeminiCliServerManager extends EventEmitter<{
       env: { ...process.env },
     });
 
-    const child: ChildProcessWithoutNullStreams = spawn(
+    const child: NodeChildProcess.ChildProcessWithoutNullStreams = NodeChildProcess.spawn(
       spawnPlan.command,
       [...spawnPlan.args],
       spawnPlan.options,
@@ -491,7 +496,7 @@ export class GeminiCliServerManager extends EventEmitter<{
     });
 
     let stderrSummary = "";
-    const rl = readline.createInterface({ input: child.stdout });
+    const rl = NodeReadline.createInterface({ input: child.stdout });
 
     rl.on("line", (line) => {
       this.handleJsonLine(input.threadId, turnId, line);
@@ -695,7 +700,7 @@ export class GeminiCliServerManager extends EventEmitter<{
         if (event.role === "assistant" && event.content) {
           // Reuse a stable itemId so all deltas aggregate into one assistant message.
           if (!session.activeAssistantItemId) {
-            session.activeAssistantItemId = RuntimeItemId.make(randomUUID());
+            session.activeAssistantItemId = RuntimeItemId.make(NodeCrypto.randomUUID());
           }
           this.emitEvent(threadId, turnId, {
             type: "content.delta",
@@ -724,7 +729,7 @@ export class GeminiCliServerManager extends EventEmitter<{
           session.activeAssistantItemId = undefined;
         }
 
-        const itemId = RuntimeItemId.make(randomUUID());
+        const itemId = RuntimeItemId.make(NodeCrypto.randomUUID());
         const toolTitle = summarizeToolCall(event.tool_name, event.parameters);
         const paramSummary =
           typeof event.parameters === "object" ? JSON.stringify(event.parameters) : undefined;
@@ -862,7 +867,7 @@ export class GeminiCliServerManager extends EventEmitter<{
   ): void {
     const event = {
       type: partial.type,
-      eventId: EventId.make(randomUUID()),
+      eventId: EventId.make(NodeCrypto.randomUUID()),
       provider: PROVIDER,
       createdAt: new Date().toISOString(),
       threadId,

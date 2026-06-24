@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import readline from "node:readline";
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - Provider process manager owns child process lifecycle and timestamped runtime events.
+import * as NodeCrypto from "node:crypto";
+import * as NodeEvents from "node:events";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeReadline from "node:readline";
 
 import {
   ApprovalRequestId,
@@ -44,8 +45,8 @@ type AmpProviderOptions = {
 
 interface AmpSession {
   readonly threadId: ThreadId;
-  readonly process: ChildProcessWithoutNullStreams;
-  readonly rl: readline.Interface;
+  readonly process: NodeChildProcess.ChildProcessWithoutNullStreams;
+  readonly rl: NodeReadline.Interface;
   model: string | undefined;
   cwd: string;
   runtimeMode: string;
@@ -144,7 +145,7 @@ interface AmpJsonlMessage {
 
 // ── Manager ─────────────────────────────────────────────────────────
 
-export class AmpServerManager extends EventEmitter<{
+export class AmpServerManager extends NodeEvents.EventEmitter<{
   event: [ProviderRuntimeEvent];
 }> {
   private readonly sessions = new Map<ThreadId, AmpSession>();
@@ -209,13 +210,13 @@ export class AmpServerManager extends EventEmitter<{
       args.push("--dangerously-allow-all");
     }
 
-    const child = spawn(binaryPath, args, {
+    const child = NodeChildProcess.spawn(binaryPath, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
     });
 
-    const rl = readline.createInterface({ input: child.stdout });
+    const rl = NodeReadline.createInterface({ input: child.stdout });
 
     const session: AmpSession = {
       threadId,
@@ -343,7 +344,7 @@ export class AmpServerManager extends EventEmitter<{
       throw new Error("Attachments are not supported by AMP");
     }
 
-    const turnId = TurnId.make(randomUUID());
+    const turnId = TurnId.make(NodeCrypto.randomUUID());
     const prompt = input.input ?? "";
 
     // Write a JSONL user message to stdin for the persistent AMP process.
@@ -611,7 +612,7 @@ export class AmpServerManager extends EventEmitter<{
     switch (block.type) {
       case "text": {
         if (!session.activeAssistantItemId) {
-          session.activeAssistantItemId = RuntimeItemId.make(randomUUID());
+          session.activeAssistantItemId = RuntimeItemId.make(NodeCrypto.randomUUID());
         }
         this.emitEvent(
           threadId,
@@ -630,7 +631,7 @@ export class AmpServerManager extends EventEmitter<{
 
       case "thinking": {
         if (!session.activeAssistantItemId) {
-          session.activeAssistantItemId = RuntimeItemId.make(randomUUID());
+          session.activeAssistantItemId = RuntimeItemId.make(NodeCrypto.randomUUID());
         }
         this.emitEvent(
           threadId,
@@ -687,7 +688,7 @@ export class AmpServerManager extends EventEmitter<{
     const existing = session.subagentTasks.get(parentToolUseId);
     if (!existing) {
       // First occurrence — emit task.started.
-      const taskId = RuntimeTaskId.make(randomUUID());
+      const taskId = RuntimeTaskId.make(NodeCrypto.randomUUID());
       session.subagentTasks.set(parentToolUseId, taskId);
       this.emitEvent(threadId, session.activeTurnId, {
         type: "task.started",
@@ -831,7 +832,7 @@ export class AmpServerManager extends EventEmitter<{
   ): void {
     const event = {
       type: partial.type,
-      eventId: EventId.make(randomUUID()),
+      eventId: EventId.make(NodeCrypto.randomUUID()),
       provider: PROVIDER,
       createdAt: new Date().toISOString(),
       threadId,
@@ -839,7 +840,7 @@ export class AmpServerManager extends EventEmitter<{
       ...(itemId
         ? { itemId }
         : partial.type === "content.delta"
-          ? { itemId: RuntimeItemId.make(randomUUID()) }
+          ? { itemId: RuntimeItemId.make(NodeCrypto.randomUUID()) }
           : {}),
       payload: partial.payload,
     } as unknown as ProviderRuntimeEvent;

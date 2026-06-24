@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import * as NodeModule from "node:module";
 
 import "vite-plus/test/config";
 import { defineConfig, mergeConfig } from "vite-plus";
@@ -17,7 +17,7 @@ const bundledPackagePrefixes = [
   "@opencode-ai/",
 ];
 
-const require = createRequire(import.meta.url);
+const require = NodeModule.createRequire(import.meta.url);
 
 // @github/copilot-sdk ships an ESM build that imports "vscode-jsonrpc/node"
 // without the `.js` extension. Under Node's nodenext resolver this throws

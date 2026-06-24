@@ -1,4 +1,5 @@
-import assert from "node:assert/strict";
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Tests build timestamped provider events.
+import * as NodeAssert from "node:assert/strict";
 
 import {
   ApprovalRequestId,
@@ -130,8 +131,8 @@ it.effect("AmpAdapter delegates session startup to the manager", () =>
       runtimeMode: "full-access",
     });
 
-    assert.equal(session.provider, "amp");
-    assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
+    NodeAssert.equal(session.provider, "amp");
+    NodeAssert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
   }).pipe(Effect.scoped),
 );
 
@@ -147,11 +148,11 @@ it.effect("AmpAdapter rejects startSession when provider is disabled", () =>
       })
       .pipe(Effect.result);
 
-    assert.equal(result._tag, "Failure");
+    NodeAssert.equal(result._tag, "Failure");
     if (result._tag !== "Failure") {
       return;
     }
-    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
   }).pipe(Effect.scoped),
 );
 
@@ -168,11 +169,11 @@ it.effect("AmpAdapter rejects attachments until AMP attachment wiring exists", (
       })
       .pipe(Effect.result);
 
-    assert.equal(result._tag, "Failure");
+    NodeAssert.equal(result._tag, "Failure");
     if (result._tag !== "Failure") {
       return;
     }
-    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
   }).pipe(Effect.scoped),
 );
 
@@ -185,11 +186,11 @@ it.effect("AmpAdapter rejects rollbackThread with non-positive numTurns", () =>
       .rollbackThread(asThreadId("thread-rollback"), 0)
       .pipe(Effect.result);
 
-    assert.equal(result._tag, "Failure");
+    NodeAssert.equal(result._tag, "Failure");
     if (result._tag !== "Failure") {
       return;
     }
-    assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+    NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
   }).pipe(Effect.scoped),
 );
 
@@ -200,7 +201,7 @@ it.effect("AmpAdapter forwards interruptTurn calls to the manager", () =>
 
     yield* adapter.interruptTurn(asThreadId("thread-interrupt"));
 
-    assert.equal(manager.interruptTurnImpl.mock.calls.length, 1);
+    NodeAssert.equal(manager.interruptTurnImpl.mock.calls.length, 1);
   }).pipe(Effect.scoped),
 );
 
@@ -231,14 +232,14 @@ it.effect("AmpAdapter forwards manager runtime events through the adapter stream
     // resolves immediately without a race condition.
     const received = yield* Stream.runHead(adapter.streamEvents);
 
-    assert.equal(received._tag, "Some");
+    NodeAssert.equal(received._tag, "Some");
     if (received._tag !== "Some") {
       return;
     }
-    assert.equal(received.value.type, "content.delta");
+    NodeAssert.equal(received.value.type, "content.delta");
     if (received.value.type !== "content.delta") {
       return;
     }
-    assert.equal(received.value.payload.delta, "hello");
+    NodeAssert.equal(received.value.payload.delta, "hello");
   }).pipe(Effect.scoped),
 );

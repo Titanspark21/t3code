@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import {
   type AskUserRequestParams,
   type AskUserResult,
@@ -148,7 +148,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
               resolve(ToolConfirmationOutcome.Cancel);
               return;
             }
-            const requestId = ApprovalRequestId.make(`droid-${randomUUID()}`);
+            const requestId = ApprovalRequestId.make(`droid-${NodeCrypto.randomUUID()}`);
             const requestType = toRequestType(params);
             context.pendingPermissions.set(requestId, { requestType, resolve });
             void emitNow({
@@ -169,7 +169,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
               resolve({ cancelled: true, answers: [] });
               return;
             }
-            const requestId = ApprovalRequestId.make(`droid-question-${randomUUID()}`);
+            const requestId = ApprovalRequestId.make(`droid-question-${NodeCrypto.randomUUID()}`);
             const questions = normalizeAskUserQuestions(params);
             context.pendingUserInputs.set(requestId, {
               questions,
@@ -291,7 +291,7 @@ export function makeDroidAdapter(settings: DroidSettings, options?: DroidAdapter
         });
       }
 
-      const turnId = TurnId.make(`droid-turn-${randomUUID()}`);
+      const turnId = TurnId.make(`droid-turn-${NodeCrypto.randomUUID()}`);
       const abort = new AbortController();
       context.activeAbort = abort;
       context.activeAssistantItems = new Map();
