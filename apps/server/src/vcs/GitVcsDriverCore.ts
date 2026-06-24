@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - VCS driver uses Node path helpers at the process boundary.
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
@@ -18,7 +19,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import nodePath from "node:path";
+import * as NodePath from "node:path";
 
 import {
   GitCommandError,
@@ -789,7 +790,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         kind: "client",
         attributes: {
           "git.operation": input.operation,
-          "git.repo": nodePath.basename(input.cwd),
+          "git.repo": NodePath.basename(input.cwd),
           "git.args_count": input.args.length,
         },
       }),

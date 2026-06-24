@@ -1,5 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - Tests exercise Node path-like inputs and timestamped provider events.
 import { describe, expect, it, vi, beforeEach } from "vite-plus/test";
-import type { PathLike } from "node:fs";
+import * as NodeFS from "node:fs";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -65,7 +66,7 @@ describe("GeminiCliServerManager", () => {
             }
             return undefined;
           },
-          existsSync: (path: PathLike) =>
+          existsSync: (path: NodeFS.PathLike) =>
             String(path).replace(/\\/g, "/") ===
             "C:/Users/user/AppData/Roaming/npm/node_modules/@google/gemini-cli/dist/index.js",
         },
