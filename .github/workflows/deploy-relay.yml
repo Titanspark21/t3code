@@ -17,10 +17,10 @@ concurrency:
 jobs:
   deploy_relay:
     name: Deploy production relay
-    # Upstream-only: the fork has neither the blacksmith runners nor the
-    # Cloudflare credentials, so the job would queue forever here.
-    if: github.repository == 'pingdotgg/t3code'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Fork-only and explicitly opt-in. This prevents accidental upstream deploys
+    # and keeps the fork from queueing private upstream runners by default.
+    if: github.repository == 'aaditagrawal/t3code' && vars.RELAY_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: production
