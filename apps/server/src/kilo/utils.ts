@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+// @effect-diagnostics globalDate:off - Kilo protocol payloads require ISO timestamps.
+import * as NodeCrypto from "node:crypto";
 
 import {
   EventId,
@@ -36,7 +37,7 @@ export function asString(value: unknown): string | undefined {
 }
 
 export function eventId(prefix: string): EventId {
-  return EventId.make(`${prefix}:${randomUUID()}`);
+  return EventId.make(`${prefix}:${NodeCrypto.randomUUID()}`);
 }
 
 export function nowIso(): string {
@@ -44,7 +45,7 @@ export function nowIso(): string {
 }
 
 export function createTurnId(): TurnId {
-  return TurnId.make(`turn:${randomUUID()}`);
+  return TurnId.make(`turn:${NodeCrypto.randomUUID()}`);
 }
 
 export function textPart(text: string) {

@@ -1,4 +1,5 @@
-import assert from "node:assert/strict";
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Tests build timestamped provider events.
+import * as NodeAssert from "node:assert/strict";
 
 import {
   EventId,
@@ -91,8 +92,8 @@ it.effect("makeKiloAdapter delegates session startup to the manager", () =>
         runtimeMode: "full-access",
       });
 
-      assert.equal(session.provider, "kilo");
-      assert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
+      NodeAssert.equal(session.provider, "kilo");
+      NodeAssert.equal(manager.startSessionImpl.mock.calls[0]?.[0], asThreadId("thread-1"));
     }),
   ),
 );
@@ -110,11 +111,11 @@ it.effect("makeKiloAdapter rejects attachments until Kilo wiring exists", () =>
         })
         .pipe(Effect.result);
 
-      assert.equal(result._tag, "Failure");
+      NodeAssert.equal(result._tag, "Failure");
       if (result._tag !== "Failure") {
         return;
       }
-      assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
     }),
   ),
 );
@@ -143,15 +144,15 @@ it.effect("makeKiloAdapter forwards manager runtime events through the stream", 
 
       const received = yield* Stream.runHead(adapter.streamEvents);
 
-      assert.equal(received._tag, "Some");
+      NodeAssert.equal(received._tag, "Some");
       if (received._tag !== "Some") {
         return;
       }
-      assert.equal(received.value.type, "content.delta");
+      NodeAssert.equal(received.value.type, "content.delta");
       if (received.value.type !== "content.delta") {
         return;
       }
-      assert.equal(received.value.payload.delta, "hello");
+      NodeAssert.equal(received.value.payload.delta, "hello");
     }),
   ),
 );
@@ -169,11 +170,11 @@ it.effect("makeKiloAdapter rejects startSession when disabled", () =>
         .startSession({ threadId: asThreadId("thread-disabled"), runtimeMode: "full-access" })
         .pipe(Effect.result);
 
-      assert.equal(result._tag, "Failure");
+      NodeAssert.equal(result._tag, "Failure");
       if (result._tag !== "Failure") {
         return;
       }
-      assert.equal(result.failure._tag, "ProviderAdapterValidationError");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterValidationError");
     }),
   ),
 );

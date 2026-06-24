@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off globalDateInEffect:off - Provider snapshot DTOs use ISO timestamps.
 /**
  * CopilotProvider — snapshot probe for the GitHub Copilot driver.
  *
@@ -90,6 +91,7 @@ const runCopilotVersionCommand = Effect.fn("runCopilotVersionCommand")(function*
 ) {
   const command = ChildProcess.make(binaryPath, ["--version"], {
     env: environment,
+    // oxlint-disable-next-line t3code/no-global-process-runtime -- Provider snapshot probes are pure process spawns outside the Effect runtime service graph.
     shell: process.platform === "win32",
   });
   return yield* spawnAndCollect(binaryPath, command);

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import { ApprovalRequestId, RuntimeItemId, RuntimeRequestId } from "@t3tools/contracts";
 
@@ -838,7 +838,7 @@ function handleCommandExecutedEvent(
   if (sessionID !== context.providerSessionId) {
     return;
   }
-  const itemId = RuntimeItemId.make(`cmd:${command}:${randomUUID()}`);
+  const itemId = RuntimeItemId.make(`cmd:${command}:${NodeCrypto.randomUUID()}`);
   const title = `Command: ${command}`;
   emitter.emitRuntimeEvent({
     type: "item.started",

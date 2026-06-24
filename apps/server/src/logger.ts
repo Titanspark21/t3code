@@ -1,4 +1,5 @@
-import util from "node:util";
+// @effect-diagnostics globalDate:off globalConsole:off - Minimal process logger intentionally writes timestamped console output.
+import * as NodeUtil from "node:util";
 
 type LogLevel = "info" | "warn" | "error" | "event";
 
@@ -51,7 +52,7 @@ function formatValue(value: unknown) {
   ) {
     return String(value);
   }
-  return util.inspect(value, {
+  return NodeUtil.inspect(value, {
     depth: 4,
     breakLength: Infinity,
     compact: true,

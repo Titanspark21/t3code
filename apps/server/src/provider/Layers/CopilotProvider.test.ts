@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 
 import * as Schema from "effect/Schema";
 import { describe, it } from "vite-plus/test";
@@ -22,15 +22,15 @@ describe("CopilotProvider reasoning effort", () => {
     const draft = makePendingCopilotProvider(settings);
 
     const model = draft.models[0];
-    assert.ok(model, "expected at least one copilot model");
+    NodeAssert.ok(model, "expected at least one copilot model");
 
     const descriptors = model.capabilities?.optionDescriptors ?? [];
     const effort = descriptors.find((descriptor) => descriptor.id === "reasoningEffort");
     if (!effort || effort.type !== "select") {
-      assert.fail("reasoningEffort select descriptor must be present");
+      NodeAssert.fail("reasoningEffort select descriptor must be present");
     }
 
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       effort.options.map((option) => option.id),
       ["low", "medium", "high", "xhigh"],
     );
@@ -39,8 +39,8 @@ describe("CopilotProvider reasoning effort", () => {
     // selector dispatches nothing and the adapter's per-model validation is
     // skipped — preserving the prior "no effort" behavior on models that do
     // not advertise the picked effort in supportedReasoningEfforts.
-    assert.equal(effort.currentValue, undefined);
-    assert.ok(
+    NodeAssert.equal(effort.currentValue, undefined);
+    NodeAssert.ok(
       effort.options.every((option) => option.isDefault !== true),
       "no reasoningEffort option may be marked isDefault (opt-in)",
     );
