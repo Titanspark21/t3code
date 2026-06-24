@@ -1,7 +1,8 @@
-import { spawnSync } from "node:child_process";
-import { cp, mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+// @effect-diagnostics nodeBuiltinImport:off - Standalone icon asset compiler shells out to actool and reads generated files.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 export interface CompiledMacIconAsset {
   readonly assetCatalog: Buffer;
@@ -14,7 +15,7 @@ function parseActoolVersion(rawOutput: string): string | null {
 }
 
 function assertSupportedActoolVersion(): void {
-  const result = spawnSync("actool", ["--version"], {
+  const result = NodeChildProcess.spawnSync("actool", ["--version"], {
     encoding: "utf8",
   });
   const version = parseActoolVersion(`${result.stdout ?? ""}${result.stderr ?? ""}`);
@@ -38,15 +39,17 @@ export async function generateAssetCatalogForIcon(
 ): Promise<CompiledMacIconAsset> {
   assertSupportedActoolVersion();
 
-  const tempRoot = await mkdtemp(resolve(tmpdir(), "t3code-icon-composer-"));
-  const iconPath = resolve(tempRoot, "Icon.icon");
-  const outputPath = resolve(tempRoot, "out");
+  const tempRoot = await NodeFSP.mkdtemp(
+    NodePath.resolve(NodeOS.tmpdir(), "t3code-icon-composer-"),
+  );
+  const iconPath = NodePath.resolve(tempRoot, "Icon.icon");
+  const outputPath = NodePath.resolve(tempRoot, "out");
 
   try {
-    await cp(inputPath, iconPath, { recursive: true });
-    await mkdir(outputPath, { recursive: true });
+    await NodeFSP.cp(inputPath, iconPath, { recursive: true });
+    await NodeFSP.mkdir(outputPath, { recursive: true });
 
-    const result = spawnSync(
+    const result = NodeChildProcess.spawnSync(
       "actool",
       [
         iconPath,
@@ -57,7 +60,7 @@ export async function generateAssetCatalogForIcon(
         "--notices",
         "--warnings",
         "--output-partial-info-plist",
-        resolve(outputPath, "assetcatalog_generated_info.plist"),
+        NodePath.resolve(outputPath, "assetcatalog_generated_info.plist"),
         "--app-icon",
         "Icon",
         "--include-all-app-icons",
@@ -86,10 +89,10 @@ export async function generateAssetCatalogForIcon(
     }
 
     return {
-      assetCatalog: await readFile(resolve(outputPath, "Assets.car")),
-      icnsFile: await readFile(resolve(outputPath, "Icon.icns")),
+      assetCatalog: await NodeFSP.readFile(NodePath.resolve(outputPath, "Assets.car")),
+      icnsFile: await NodeFSP.readFile(NodePath.resolve(outputPath, "Icon.icns")),
     };
   } finally {
-    await rm(tempRoot, { recursive: true, force: true });
+    await NodeFSP.rm(tempRoot, { recursive: true, force: true });
   }
 }

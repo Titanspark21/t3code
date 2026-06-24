@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off - Kilo lifecycle helper owns raw process, HTTP readiness polling, and timeout boundaries.
+import * as NodeChildProcess from "node:child_process";
 
 import {
   DEFAULT_HOSTNAME,
@@ -84,14 +85,18 @@ async function spawnOrConnect(options?: KiloProviderOptions): Promise<SharedServ
   }
 
   const binaryPath = options?.binaryPath ?? "kilo";
-  const child = spawn(binaryPath, ["serve", `--hostname=${hostname}`, `--port=${port}`], {
-    env: {
-      ...process.env,
-      ...(options?.username ? { KILO_SERVER_USERNAME: options.username } : {}),
-      ...(options?.password ? { KILO_SERVER_PASSWORD: options.password } : {}),
+  const child = NodeChildProcess.spawn(
+    binaryPath,
+    ["serve", `--hostname=${hostname}`, `--port=${port}`],
+    {
+      env: {
+        ...process.env,
+        ...(options?.username ? { KILO_SERVER_USERNAME: options.username } : {}),
+        ...(options?.password ? { KILO_SERVER_PASSWORD: options.password } : {}),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
 
   const startedBaseUrl = await new Promise<string>((resolve, reject) => {
     let output = "";

@@ -1,4 +1,5 @@
-import assert from "node:assert/strict";
+// @effect-diagnostics globalDateInEffect:off - Tests build timestamped provider events.
+import * as NodeAssert from "node:assert/strict";
 
 import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import { type SessionEvent } from "@github/copilot-sdk";
@@ -163,12 +164,12 @@ modeLayer("CopilotAdapterLive interaction mode", (it) => {
         attachments: [],
       });
 
-      assert.deepStrictEqual(modeSession.modeSetImpl.mock.calls, [
+      NodeAssert.deepStrictEqual(modeSession.modeSetImpl.mock.calls, [
         [{ mode: "plan" }],
         [{ mode: "interactive" }],
       ]);
-      assert.equal(modeSession.sendImpl.mock.calls[0]?.[0]?.mode, "immediate");
-      assert.equal(modeSession.sendImpl.mock.calls[1]?.[0]?.mode, "immediate");
+      NodeAssert.equal(modeSession.sendImpl.mock.calls[0]?.[0]?.mode, "immediate");
+      NodeAssert.equal(modeSession.sendImpl.mock.calls[1]?.[0]?.mode, "immediate");
     }),
   );
 });
@@ -229,16 +230,16 @@ planLayer("CopilotAdapterLive proposed plan events", (it) => {
       } satisfies SessionEvent);
 
       const events = Array.from(yield* Fiber.join(eventsFiber));
-      assert.equal(events[0]?.type, "turn.plan.updated");
+      NodeAssert.equal(events[0]?.type, "turn.plan.updated");
       if (events[0]?.type === "turn.plan.updated") {
-        assert.equal(events[0].turnId, turn.turnId);
-        assert.equal(events[0].payload.explanation, "Plan updated");
+        NodeAssert.equal(events[0].turnId, turn.turnId);
+        NodeAssert.equal(events[0].payload.explanation, "Plan updated");
       }
 
-      assert.equal(events[1]?.type, "turn.proposed.completed");
+      NodeAssert.equal(events[1]?.type, "turn.proposed.completed");
       if (events[1]?.type === "turn.proposed.completed") {
-        assert.equal(events[1].turnId, turn.turnId);
-        assert.equal(events[1].payload.planMarkdown, "# Ship it\n\n- first\n- second");
+        NodeAssert.equal(events[1].turnId, turn.turnId);
+        NodeAssert.equal(events[1].payload.planMarkdown, "# Ship it\n\n- first\n- second");
       }
     }),
   );
