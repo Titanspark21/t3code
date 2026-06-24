@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
@@ -36,6 +37,10 @@ function getSlowRpcAckRequestsValue(): ReadonlyArray<SlowRpcAckRequest> {
 }
 
 function shouldTrackRpcAck(tag: string): boolean {
+  if (tag === WS_METHODS.previewAutomationConnect) {
+    return false;
+  }
+
   // Skip subscribe RPCs (they are long-lived streams and the ack arrives much
   // later than the user-visible payload). Match `subscribe` at the start of
   // the tag or after a path-segment delimiter so `thread/unsubscribe` and
