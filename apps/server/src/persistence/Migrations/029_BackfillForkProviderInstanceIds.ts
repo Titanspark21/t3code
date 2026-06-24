@@ -8,7 +8,7 @@
  * the upstream PR couldn't safely guess which configured instance owned
  * each historical session for the four upstream drivers.
  *
- * For the fork's additional drivers (`amp`, `copilot`, `geminiCli`, `kilo`),
+ * For the fork's additional drivers (`amp`, `copilot`, `droid`, `geminiCli`, `kilo`),
  * the situation is simpler: every fork install runs at most one configured
  * instance per driver kind, so we can safely backfill
  * `provider_instance_id = '<driver_kind>'` (the default instance id used
@@ -22,7 +22,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-const FORK_DRIVER_KINDS = ["amp", "copilot", "geminiCli", "kilo"] as const;
+const FORK_DRIVER_KINDS = ["amp", "copilot", "droid", "geminiCli", "kilo"] as const;
 
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

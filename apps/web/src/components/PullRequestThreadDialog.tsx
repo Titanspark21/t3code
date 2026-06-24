@@ -1,4 +1,5 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,10 +8,11 @@ import {
   usePreparePullRequestThreadAction,
   usePullRequestResolution,
 } from "~/lib/sourceControlActions";
-import { useVcsStatus } from "~/lib/vcsStatusState";
 import { cn } from "~/lib/utils";
 import { parsePullRequestReference } from "~/pullRequestReference";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
+import { useEnvironmentQuery } from "~/state/query";
+import { vcsEnvironment } from "~/state/vcs";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -47,27 +49,25 @@ export function PullRequestThreadDialog({
   const [reference, setReference] = useState(initialReference ?? "");
   const [referenceDirty, setReferenceDirty] = useState(false);
   const [preparingMode, setPreparingMode] = useState<"local" | "worktree" | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [debouncedReference, referenceDebouncer] = useDebouncedValue(
     reference,
     { wait: 450 },
     (debouncerState) => ({ isPending: debouncerState.isPending }),
   );
-  const { data: gitStatus } = useVcsStatus({ environmentId, cwd });
+  const { data: gitStatus } = useEnvironmentQuery(
+    cwd === null
+      ? null
+      : vcsEnvironment.status({
+          environmentId,
+          input: { cwd },
+        }),
+  );
   const sourceControlPresentation = useMemo(
     () => getSourceControlPresentation(gitStatus?.sourceControlProvider),
     [gitStatus?.sourceControlProvider],
   );
   const terminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
-
-  useEffect(() => {
-    if (!open) return;
-    setReference(initialReference ?? "");
-    setReferenceDirty(false);
-    setPreparingMode(null);
-    setSubmitError(null);
-  }, [initialReference, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -138,26 +138,24 @@ export function PullRequestThreadDialog({
       if (!parsedReference || !resolvedPullRequest || !cwd) {
         return;
       }
-      setSubmitError(null);
       setPreparingMode(mode);
-      try {
-        const result = await preparePullRequestThreadAction.run({
-          reference: parsedReference,
-          mode,
-          ...(mode === "worktree" ? { threadId } : {}),
-        });
-        await onPrepared({
-          branch: result.branch,
-          worktreePath: result.worktreePath,
-        });
-        onOpenChange(false);
-      } catch (error) {
-        setSubmitError(
-          error instanceof Error ? error.message : "Failed to prepare pull request thread.",
-        );
-      } finally {
-        setPreparingMode(null);
+      const result = await preparePullRequestThreadAction.run({
+        reference: parsedReference,
+        mode,
+        ...(mode === "worktree" ? { threadId } : {}),
+      });
+      setPreparingMode(null);
+      if (result._tag === "Failure") {
+        if (isAtomCommandInterrupted(result)) {
+          preparePullRequestThreadAction.resetError();
+        }
+        return;
       }
+      await onPrepared({
+        branch: result.value.branch,
+        worktreePath: result.value.worktreePath,
+      });
+      onOpenChange(false);
     },
     [
       cwd,
@@ -179,11 +177,8 @@ export function PullRequestThreadDialog({
         : null;
   const errorMessage =
     validationMessage ??
-    submitError ??
     (resolvedPullRequest === null && pullRequestResolution.error
-      ? pullRequestResolution.error instanceof Error
-        ? pullRequestResolution.error.message
-        : `Failed to resolve ${terminology.singular}.`
+      ? pullRequestResolution.error
       : preparePullRequestThreadAction.error instanceof Error
         ? preparePullRequestThreadAction.error.message
         : preparePullRequestThreadAction.error

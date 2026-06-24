@@ -408,8 +408,7 @@ export function useAppSettings() {
     }),
     [unifiedSettings],
   );
-  const { updateSettings: updateUnifiedSettings, resetSettings: resetUnifiedSettings } =
-    useUpdateSettings();
+  const updateUnifiedSettings = useUpdateSettings();
   const settings = useMemo(
     () => withUnifiedCompatSettings(localSettings, compatUnifiedSettings),
     [compatUnifiedSettings, localSettings],
@@ -462,9 +461,12 @@ export function useAppSettings() {
   );
 
   const resetSettings = useCallback(() => {
-    resetUnifiedSettings();
+    updateUnifiedSettings({
+      ...DEFAULT_SERVER_SETTINGS,
+      ...DEFAULT_CLIENT_SETTINGS,
+    });
     setLocalSettings(AppSettingsSchema.make(stripMirroredKeys(DEFAULT_APP_SETTINGS)));
-  }, [resetUnifiedSettings, setLocalSettings]);
+  }, [setLocalSettings, updateUnifiedSettings]);
 
   return {
     settings: migratedSettings,
