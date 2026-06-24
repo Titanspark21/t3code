@@ -613,6 +613,40 @@ describe("resolveShortcutCommand", () => {
       "script.setup.run",
     );
   });
+
+  it("matches bracket shortcuts using the physical key code", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "{", code: "BracketLeft", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+        },
+      ),
+      "thread.previous",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+        },
+      ),
+      "thread.next",
+    );
+  });
+
+  it("matches Option-modified letters using the physical key code on macOS", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "∫", code: "KeyB", metaKey: true, altKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "rightPanel.toggle",
+    );
+  });
 });
 
 describe("formatShortcutLabel", () => {

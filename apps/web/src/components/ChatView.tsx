@@ -4589,24 +4589,28 @@ function ChatViewContent(props: ChatViewProps) {
     return <NoActiveThreadState />;
   }
 
+  const panelLayoutControls = (
+    <PanelLayoutControls
+      terminalAvailable={Boolean(activeProject)}
+      terminalOpen={Boolean(terminalUiState.terminalOpen)}
+      terminalShortcutLabel={terminalToggleShortcutLabel}
+      rightPanelAvailable={Boolean(activeProject)}
+      rightPanelOpen={rightPanelOpen}
+      rightPanelShortcutLabel={rightPanelToggleShortcutLabel}
+      rightPanelMaximized={rightPanelMaximized}
+      canMaximizeRightPanel={canMaximizeRightPanel}
+      onToggleTerminal={toggleTerminalVisibility}
+      onToggleRightPanel={toggleRightPanel}
+      onToggleRightPanelMaximized={toggleRightPanelMaximized}
+    />
+  );
+
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
       {isElectron && activeThreadRef ? (
         <PreviewAutomationOwner threadRef={activeThreadRef} visible={previewPanelOpen} />
       ) : null}
-      <PanelLayoutControls
-        terminalAvailable={Boolean(activeProject)}
-        terminalOpen={Boolean(terminalUiState.terminalOpen)}
-        terminalShortcutLabel={terminalToggleShortcutLabel}
-        rightPanelAvailable={Boolean(activeProject)}
-        rightPanelOpen={rightPanelOpen}
-        rightPanelShortcutLabel={rightPanelToggleShortcutLabel}
-        rightPanelMaximized={rightPanelMaximized}
-        canMaximizeRightPanel={canMaximizeRightPanel}
-        onToggleTerminal={toggleTerminalVisibility}
-        onToggleRightPanel={toggleRightPanel}
-        onToggleRightPanelMaximized={toggleRightPanelMaximized}
-      />
+      {rightPanelOpen ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-hidden",
@@ -4621,7 +4625,7 @@ function ChatViewContent(props: ChatViewProps) {
             "border-b border-border",
             isElectron
               ? cn(
-                  "workspace-topbar drag-region px-3 sm:px-5",
+                  "workspace-topbar drag-region relative px-3 sm:px-5",
                   reserveTitleBarControlInset &&
                     !inlineRightPanelOwnsTitleBar &&
                     "wco:pr-[var(--workspace-native-controls-inset)]",
@@ -4629,6 +4633,7 @@ function ChatViewContent(props: ChatViewProps) {
               : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
           )}
         >
+          {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
@@ -4904,12 +4909,13 @@ function ChatViewContent(props: ChatViewProps) {
             </Suspense>
           ) : (activeRightPanelSurface?.kind === "files" ||
               activeRightPanelSurface?.kind === "file") &&
-            activeProject ? (
+            activeProject &&
+            activeWorkspaceRoot ? (
             <Suspense fallback={null}>
               <FilePreviewPanel
-                key={`${activeProject.environmentId}:${activeProject.cwd}`}
+                key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
                 environmentId={activeProject.environmentId}
-                cwd={activeProject.cwd}
+                cwd={activeWorkspaceRoot}
                 projectName={activeProject.name}
                 relativePath={
                   activeRightPanelSurface.kind === "file"
@@ -4990,12 +4996,13 @@ function ChatViewContent(props: ChatViewProps) {
               />
             ) : (activeRightPanelSurface?.kind === "files" ||
                 activeRightPanelSurface?.kind === "file") &&
-              activeProject ? (
+              activeProject &&
+              activeWorkspaceRoot ? (
               <Suspense fallback={null}>
                 <FilePreviewPanel
-                  key={`${activeProject.environmentId}:${activeProject.cwd}`}
+                  key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
                   environmentId={activeProject.environmentId}
-                  cwd={activeProject.cwd}
+                  cwd={activeWorkspaceRoot}
                   projectName={activeProject.name}
                   relativePath={
                     activeRightPanelSurface.kind === "file"
