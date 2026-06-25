@@ -2,7 +2,7 @@
 import * as NodeAssert from "node:assert/strict";
 
 import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
-import { type SessionEvent } from "@github/copilot-sdk";
+import type { SessionEvent } from "@github/copilot-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterAll, it, vi } from "@effect/vitest";
 
