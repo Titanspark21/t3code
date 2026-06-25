@@ -41,9 +41,8 @@ catalog:
   "@typescript/native-preview": 7.0.0-dev.20260604.1
   jose: 6.2.2
   typescript: ~6.0.3
-  vitest: npm:@voidzero-dev/vite-plus-test@0.1.24
-  vite: npm:@voidzero-dev/vite-plus-core@0.1.24
-  vite-plus: 0.1.24
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.1
+  vite-plus: 0.2.1
   yaml: ^2.9.0
 overrides:
   # Keep every Clerk consumer on the same snapshot train. Clerk publishes wallet
@@ -74,20 +73,19 @@ overrides:
   "@effect/sql-sqlite-bun": "catalog:"
   "@effect/vitest": "catalog:"
   "@effect/vitest>@vitest/runner": "-"
+  # @effect/vitest is patched to use vite-plus/test; do not auto-install its
+  # upstream Vitest peer and create a second Vite/Vitest toolchain.
   "@effect/vitest>vitest": "-"
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
   "@types/node": "catalog:"
   effect: "catalog:"
   vite: "catalog:"
-  vitest: "catalog:"
   yaml: "catalog:"
 peerDependencyRules:
   allowAny:
     - vite
-    - vitest
   allowedVersions:
     vite: "*"
-    vitest: "*"
 packageExtensions:
   "@effect/vitest@*":
     dependencies:
