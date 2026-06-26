@@ -359,10 +359,12 @@ export const make = (
     yield* acp.handleSessionUpdate((notification) =>
       Effect.gen(function* () {
         const gate = yield* Ref.get(sessionLoadGateRef);
+        const notificationSessionId =
+          typeof notification.sessionId === "string" ? notification.sessionId : undefined;
         if (
           Option.isSome(gate) &&
           gate.value.active &&
-          notification.sessionId === gate.value.sessionId
+          (notificationSessionId === undefined || notificationSessionId === gate.value.sessionId)
         ) {
           const lastActivityAtMillis = yield* Clock.currentTimeMillis;
           yield* Ref.set(
