@@ -131,6 +131,7 @@ const config: ExpoConfig = {
     favicon: "./assets/favicon.png",
   },
   plugins: [
+    "expo-asset",
     [
       "expo-font",
       {
