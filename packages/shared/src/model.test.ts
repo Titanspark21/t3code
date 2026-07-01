@@ -126,9 +126,7 @@ describe("resolveSelectableModel", () => {
     );
     expect(
       resolveSelectableModel(ProviderDriverKind.make("claudeAgent"), "sonnet-4.6", options),
-    ).toBe(
-      "claude-sonnet-4-6",
-    );
+    ).toBe("claude-sonnet-4-6");
   });
 });
 
