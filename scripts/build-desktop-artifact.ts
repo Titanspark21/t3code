@@ -1386,7 +1386,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // binaries in DESKTOP_ASAR_UNPACK). The Windows primary keeps reading the same
     // files through the asar (transparently redirected to the unpacked copy), so
     // there's no duplication.
-    asarUnpack: ["node_modules/@github/copilot*/**/*", ...DESKTOP_ASAR_UNPACK, "apps/server/dist/**", "**/node_modules/**"],
+    asarUnpack: [
+      "node_modules/@github/copilot*/**/*",
+      ...DESKTOP_ASAR_UNPACK,
+      "apps/server/dist/**",
+      "**/node_modules/**",
+    ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
