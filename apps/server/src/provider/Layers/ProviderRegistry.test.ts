@@ -31,7 +31,11 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import {
+  checkClaudeProviderStatus,
+  getClaudeModelCapabilities,
+  normalizeClaudeCliEffort,
+} from "./ClaudeProvider.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
@@ -1531,6 +1535,70 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           ),
         ),
       );
+
+      it.effect("includes Claude Sonnet 5 with reasoning and context options", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          const sonnet5 = status.models.find((model) => model.slug === "claude-sonnet-5");
+          assert.strictEqual(sonnet5?.name, "Claude Sonnet 5");
+          const effortDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
+            (descriptor) => descriptor.type === "select" && descriptor.id === "effort",
+          );
+          assert.deepStrictEqual(
+            effortDescriptor?.type === "select"
+              ? effortDescriptor.options.find((option) => option.isDefault)
+              : undefined,
+            { id: "high", label: "High", isDefault: true },
+          );
+          assert.ok(
+            effortDescriptor?.type === "select" &&
+              effortDescriptor.options.some((option) => option.id === "xhigh"),
+          );
+          const contextDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
+            (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
+          );
+          assert.deepStrictEqual(
+            contextDescriptor?.type === "select"
+              ? contextDescriptor.options.find((option) => option.isDefault)
+              : undefined,
+            { id: "200k", label: "200k", isDefault: true },
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return {
+                  stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                  stderr: "",
+                  code: 0,
+                };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5", () => {
+        assert.strictEqual(
+          normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"),
+          "xhigh",
+        );
+        assert.strictEqual(
+          normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"),
+          "max",
+        );
+        assert.strictEqual(
+          getClaudeModelCapabilities("claude-sonnet-5").optionDescriptors?.some(
+            (descriptor) => descriptor.id === "contextWindow",
+          ),
+          true,
+        );
+      });
 
       it.effect("hides Claude Fable 5 on older Claude Code versions", () =>
         Effect.gen(function* () {
