@@ -53,7 +53,7 @@ function createKnownEnvironmentFromDesktopBootstrap(
 
 export function getPrimaryKnownEnvironment(): KnownEnvironment | null {
   const desktopEnvironment = createKnownEnvironmentFromDesktopBootstrap(
-    window.desktopBridge?.getLocalEnvironmentBootstrap(),
+    window.desktopBridge?.getLocalEnvironmentBootstraps()?.[0],
   );
   if (desktopEnvironment) {
     return desktopEnvironment;
