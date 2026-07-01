@@ -42,6 +42,7 @@ import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import { seedCodexQuotaFromTranscripts } from "./quota/CodexTranscriptQuota.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
+import * as ScheduledTaskService from "./scheduledTasks/ScheduledTaskService.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -616,6 +617,7 @@ export const make = (options?: StartupOptions) =>
     const crypto = yield* Crypto.Crypto;
     const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
     const quota = yield* Effect.serviceOption(QuotaService.QuotaService);
+    const scheduledTasks = yield* Effect.serviceOption(ScheduledTaskService.ScheduledTaskService);
 
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
@@ -675,6 +677,12 @@ export const make = (options?: StartupOptions) =>
       );
 
       yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);
+      if (Option.isSome(scheduledTasks)) {
+        yield* runStartupPhase(
+          "scheduled-tasks.start",
+          scheduledTasks.value.start.pipe(Scope.provide(reactorScope)),
+        );
+      }
 
       const welcomeBase = yield* resolveWelcomeBase;
       const environment = yield* serverEnvironment.getDescriptor;

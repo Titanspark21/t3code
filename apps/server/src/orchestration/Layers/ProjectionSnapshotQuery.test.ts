@@ -577,6 +577,44 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '2026-04-06T00:00:05.000Z',
             '2026-04-06T00:00:06.000Z',
             NULL
+          ),
+          (
+            'scheduler-thread:test-active',
+            'project-archive-test',
+            'Scheduled Active Thread',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            '2026-04-06T00:00:01.500Z',
+            '2026-04-06T00:00:01.500Z',
+            NULL,
+            NULL
+          ),
+          (
+            'scheduler-thread:test-archived',
+            'project-archive-test',
+            'Scheduled Archived Thread',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            '2026-04-06T00:00:03.500Z',
+            '2026-04-06T00:00:03.500Z',
+            '2026-04-06T00:00:06.500Z',
+            NULL
           )
       `;
 
@@ -604,6 +642,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [ThreadId.make("thread-archived")],
       );
       assert.equal(archivedShellSnapshot.threads[0]?.archivedAt, "2026-04-06T00:00:06.000Z");
+
+      const firstThreadId = yield* snapshotQuery.getFirstActiveThreadIdByProjectId(
+        asProjectId("project-archive-test"),
+      );
+      assert.equal(firstThreadId._tag, "Some");
+      if (firstThreadId._tag === "Some") {
+        assert.equal(firstThreadId.value, ThreadId.make("thread-active"));
+      }
     }),
   );
 
@@ -1680,6 +1726,25 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             NULL
           ),
           (
+            'scheduler-thread:search-run',
+            'project-search',
+            'Scheduled search',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            '2026-05-01T00:00:05.500Z',
+            '2026-05-01T00:00:05.500Z',
+            NULL,
+            NULL
+          ),
+          (
             'thread-hidden',
             'project-search',
             'Archived search',
@@ -1773,6 +1838,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '2026-05-01T00:00:15.000Z'
           ),
           (
+            'message-scheduled',
+            'scheduler-thread:search-run',
+            NULL,
+            'user',
+            'Scheduler needle must stay out of regular search.',
+            0,
+            '2026-05-01T00:00:15.500Z',
+            '2026-05-01T00:00:15.500Z'
+          ),
+          (
             'message-hidden',
             'thread-hidden',
             NULL,
@@ -1838,6 +1913,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "hidden needle" })).matches,
+        [],
+      );
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({ query: "scheduler needle" })).matches,
         [],
       );
       yield* sql`

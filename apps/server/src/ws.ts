@@ -65,6 +65,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type ProviderRuntimeEvent,
+  ScheduledTaskError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -126,6 +127,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
+import * as ScheduledTaskService from "./scheduledTasks/ScheduledTaskService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -555,6 +557,11 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const quota = yield* QuotaService.QuotaService;
+      const scheduledTasks = yield* Effect.serviceOption(ScheduledTaskService.ScheduledTaskService);
+      const scheduledTaskUnavailable = () =>
+        new ScheduledTaskError({
+          message: "Scheduled task service is unavailable in this runtime.",
+        });
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1619,6 +1626,60 @@ const makeWsRpcLayer = (
               );
             }),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.scheduledTasksList]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledTasksList,
+            Option.match(scheduledTasks, {
+              onNone: () => Effect.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.list(),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
+          ),
+        [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.scheduledTasksSubscribe,
+            Option.match(scheduledTasks, {
+              onNone: () => Stream.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.subscribeList(),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
+          ),
+        [WS_METHODS.scheduledTasksUpsert]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledTasksUpsert,
+            Option.match(scheduledTasks, {
+              onNone: () => Effect.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.upsert(input),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
+          ),
+        [WS_METHODS.scheduledTasksSetEnabled]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledTasksSetEnabled,
+            Option.match(scheduledTasks, {
+              onNone: () => Effect.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.setEnabled(input),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
+          ),
+        [WS_METHODS.scheduledTasksDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledTasksDelete,
+            Option.match(scheduledTasks, {
+              onNone: () => Effect.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.delete(input),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
+          ),
+        [WS_METHODS.scheduledTasksRunNow]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledTasksRunNow,
+            Option.match(scheduledTasks, {
+              onNone: () => Effect.fail(scheduledTaskUnavailable()),
+              onSome: (service) => service.runNow(input),
+            }),
+            { "rpc.aggregate": "scheduled-tasks" },
           ),
         [WS_METHODS.serverProbe]: (_input) =>
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {

@@ -1,5 +1,16 @@
 import * as Arr from "effect/Array";
-import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
+import {
+  isScheduledTaskThreadId,
+  type OrchestrationShellSnapshot,
+  type OrchestrationShellStreamEvent,
+} from "@t3tools/contracts";
+
+export function withoutScheduledTaskThreads(
+  snapshot: OrchestrationShellSnapshot,
+): OrchestrationShellSnapshot {
+  const threads = snapshot.threads.filter((thread) => !isScheduledTaskThreadId(thread.id));
+  return threads.length === snapshot.threads.length ? snapshot : { ...snapshot, threads };
+}
 
 /**
  * Reduce a single shell stream event into an existing snapshot, returning a new
@@ -29,6 +40,13 @@ export function applyShellStreamEvent(
         snapshotSequence: event.sequence,
       };
     case "thread-upserted": {
+      if (isScheduledTaskThreadId(event.thread.id)) {
+        return {
+          ...snapshot,
+          threads: snapshot.threads.filter((thread) => thread.id !== event.thread.id),
+          snapshotSequence: event.sequence,
+        };
+      }
       const threads = snapshot.threads.some((t) => t.id === event.thread.id)
         ? Arr.map(snapshot.threads, (t) => (t.id === event.thread.id ? event.thread : t))
         : Arr.append(snapshot.threads, event.thread);

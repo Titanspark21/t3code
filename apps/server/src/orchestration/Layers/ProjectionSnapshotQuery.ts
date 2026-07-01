@@ -24,8 +24,10 @@ import {
   type OrchestrationThreadShell,
   ModelSelection,
   ProjectId,
+  SCHEDULED_TASK_THREAD_PREFIX,
   ThreadLinkedPullRequest,
   ThreadId,
+  isScheduledTaskThreadId,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -908,6 +910,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE project_id = ${projectId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
+          AND thread_id NOT LIKE ${`${SCHEDULED_TASK_THREAD_PREFIX}%`}
         ORDER BY created_at ASC, thread_id ASC
         LIMIT 1
       `,
@@ -2045,7 +2048,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   : Result.failVoid,
               ),
               threads: Arr.filterMap(threadRows, (row) =>
-                row.deletedAt === null
+                row.deletedAt === null && !isScheduledTaskThreadId(row.threadId)
                   ? Result.succeed({
                       id: row.threadId,
                       projectId: row.projectId,
@@ -2174,7 +2177,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               updatedAt = maxIso(updatedAt, row.updatedAt);
             }
 
-            const activeProjectIds = new Set(threadRows.map((row) => row.projectId));
+            const visibleThreadRows = threadRows.filter(
+              (row) => !isScheduledTaskThreadId(row.threadId),
+            );
+            const activeProjectIds = new Set(visibleThreadRows.map((row) => row.projectId));
             const repositoryIdentities = yield* resolveRepositoryIdentitiesForProjects(
               projectRows.filter((row) => activeProjectIds.has(row.projectId)),
             );
@@ -2194,7 +2200,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     )
                   : Result.failVoid,
               ),
-              threads: threadRows.map(
+              threads: visibleThreadRows.map(
                 (row): OrchestrationThreadShell => ({
                   id: row.threadId,
                   projectId: row.projectId,
@@ -2297,13 +2303,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       ),
     );
     return {
-      matches: rows.map((row) => ({
-        threadId: row.threadId,
-        projectId: row.projectId,
-        source: row.source,
-        snippet: buildSearchSnippet(row.matchText, input.query),
-        messageCreatedAt: row.messageCreatedAt,
-      })),
+      matches: rows
+        .filter((row) => !isScheduledTaskThreadId(row.threadId))
+        .map((row) => ({
+          threadId: row.threadId,
+          projectId: row.projectId,
+          source: row.source,
+          snippet: buildSearchSnippet(row.matchText, input.query),
+          messageCreatedAt: row.messageCreatedAt,
+        })),
     };
   });
 

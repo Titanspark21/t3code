@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  ProjectId,
+  ProviderInstanceId,
+  SCHEDULED_TASK_THREAD_PREFIX,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
 
-import { applyShellStreamEvent } from "./shellReducer.ts";
+import { applyShellStreamEvent, withoutScheduledTaskThreads } from "./shellReducer.ts";
 
 const baseSnapshot: OrchestrationShellSnapshot = {
   snapshotSequence: 0,
@@ -137,6 +142,23 @@ describe("applyShellStreamEvent", () => {
       expect(next.snapshotSequence).toBe(4);
     });
 
+    it("keeps scheduler-owned threads out of the regular shell", () => {
+      const schedulerThread = {
+        ...stubThread,
+        id: ThreadId.make(`${SCHEDULED_TASK_THREAD_PREFIX}run-1:1`),
+      };
+      const event: OrchestrationShellStreamEvent = {
+        kind: "thread-upserted",
+        sequence: 5,
+        thread: schedulerThread,
+      };
+
+      const next = applyShellStreamEvent({ ...baseSnapshot, threads: [schedulerThread] }, event);
+
+      expect(next.threads).toHaveLength(0);
+      expect(next.snapshotSequence).toBe(5);
+    });
+
     it("updates an existing thread", () => {
       const snapshotWithThread: OrchestrationShellSnapshot = {
         ...baseSnapshot,
@@ -175,6 +197,19 @@ describe("applyShellStreamEvent", () => {
       expect(next.threads).toHaveLength(0);
       expect(next.snapshotSequence).toBe(6);
     });
+  });
+
+  it("filters scheduler-owned threads from complete snapshots", () => {
+    const schedulerThread = {
+      ...stubThread,
+      id: ThreadId.make(`${SCHEDULED_TASK_THREAD_PREFIX}run-2:1`),
+    };
+    const filtered = withoutScheduledTaskThreads({
+      ...baseSnapshot,
+      threads: [stubThread, schedulerThread],
+    });
+
+    expect(filtered.threads.map((thread) => thread.id)).toEqual(["thread-1"]);
   });
 
   it("returns original snapshot for unrecognized event kinds", () => {
