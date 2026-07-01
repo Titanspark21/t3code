@@ -1584,14 +1584,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       );
 
       it("keeps xhigh as a supported Claude CLI effort for Sonnet 5", () => {
-        assert.strictEqual(
-          normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"),
-          "xhigh",
-        );
-        assert.strictEqual(
-          normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"),
-          "max",
-        );
+        assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"), "xhigh");
+        assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"), "max");
         assert.strictEqual(
           getClaudeModelCapabilities("claude-sonnet-5").optionDescriptors?.some(
             (descriptor) => descriptor.id === "contextWindow",
