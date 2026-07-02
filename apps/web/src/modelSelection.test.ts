@@ -245,6 +245,44 @@ describe("instance-scoped model selection", () => {
     ).toBe("claude-sonnet-4-6");
   });
 
+  it("prefers the live provider default when the selected model is unavailable", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-fable-5", "claude-sonnet-5", "claude-sonnet-4-6"],
+      }),
+    ];
+
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("claudeAgent"),
+        settingsWithProviderInstances(),
+        providers,
+        "claude-opus-4-6",
+      ),
+    ).toBe("claude-sonnet-5");
+  });
+
+  it("falls back to the live model list when the provider default is not available", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-fable-5", "claude-sonnet-4-6"],
+      }),
+    ];
+
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("claudeAgent"),
+        settingsWithProviderInstances(),
+        providers,
+        "claude-opus-4-6",
+      ),
+    ).toBe("claude-fable-5");
+  });
+
   it("preserves custom provider instances in settings model selection", () => {
     const providers = [
       provider({

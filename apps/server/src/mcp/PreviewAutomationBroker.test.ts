@@ -208,6 +208,40 @@ it.effect("does not replace the default tab with a globally stopped recording ta
   ),
 );
 
+it.effect("does not clear the default tab after an explicit missing-tab status check", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-session-b");
+      const missingTabId = PreviewTabId.make("tab-missing");
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result:
+            request.operation === "open"
+              ? { available: true, tabId: browsingTabId }
+              : request.tabId === missingTabId
+                ? { available: true, tabId: null }
+                : { url: "http://localhost:3200" },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      yield* broker.invoke({ scope, operation: "status", input: {}, tabId: missingTabId });
+      yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBe(browsingTabId);
+    }),
+  ),
+);
+
 it.effect("does not let a no-tab response suppress an earlier tab decision", () =>
   Effect.scoped(
     Effect.gen(function* () {
