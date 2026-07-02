@@ -9,6 +9,7 @@ import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { cn } from "~/lib/utils";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
+import { reconcileLockedAspectRatio } from "./browserDeviceToolbarState";
 import { browserViewportSettingKey } from "./browserViewportLayout";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
@@ -45,7 +46,7 @@ export function HostedBrowserWebview(props: {
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<ElectronWebview | null>(null);
-  const [aspectRatioLocked, setAspectRatioLocked] = useState(false);
+  const [lockedAspectRatio, setLockedAspectRatio] = useState<number | null>(null);
   const presentation = useBrowserSurfaceStore(
     useShallow((state) => {
       const current = state.byTabId[tabId];
@@ -112,11 +113,9 @@ export function HostedBrowserWebview(props: {
   const viewportHeight = viewport._tag === "fill" ? null : viewport.height;
   const viewportAspectRatio =
     viewportWidth === null || viewportHeight === null ? null : viewportWidth / viewportHeight;
-  const lockedAspectRatio =
-    aspectRatioLocked && viewportAspectRatio !== null ? viewportAspectRatio : null;
-  const handleAspectRatioChange = useCallback((aspectRatio: number | null) => {
-    setAspectRatioLocked(aspectRatio !== null);
-  }, []);
+  useEffect(() => {
+    setLockedAspectRatio((current) => reconcileLockedAspectRatio(current, viewportAspectRatio));
+  }, [viewportAspectRatio]);
   const hiddenSize =
     viewport._tag !== "fill"
       ? {
@@ -189,7 +188,7 @@ export function HostedBrowserWebview(props: {
             setting={effectiveViewport}
             width={Math.max(1, Math.round(containerSize.width))}
             aspectRatio={lockedAspectRatio}
-            onAspectRatioChange={handleAspectRatioChange}
+            onAspectRatioChange={setLockedAspectRatio}
             onChange={commitViewportChange}
           />
         ) : null}
