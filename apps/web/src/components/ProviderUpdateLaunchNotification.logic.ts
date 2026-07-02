@@ -741,6 +741,18 @@ export function buildLocalEnvironmentUpdateGroups(
   return { groups, isAnySettling };
 }
 
+export function shouldUseLocalEnvironmentUpdateFlow(input: {
+  readonly hasDesktopLocalSecondary: boolean;
+  readonly isDesktopWslStatePending: boolean;
+  readonly isDesktopWslBackendExpected: boolean;
+}): boolean {
+  return (
+    input.hasDesktopLocalSecondary ||
+    input.isDesktopWslStatePending ||
+    input.isDesktopWslBackendExpected
+  );
+}
+
 /** Groups that actually have a one-click update available, in display order (primary first). */
 export function environmentGroupsWithUpdates(
   groups: ReadonlyArray<LocalEnvironmentUpdateGroup>,

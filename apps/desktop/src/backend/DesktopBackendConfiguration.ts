@@ -635,7 +635,7 @@ export const make = Effect.gen(function* () {
       ...shared,
       port: backendExposure.port,
       distro: persistedSettings.wslDistro,
-      tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
+      tailscaleServeEnabled: false,
       tailscaleServePort: backendExposure.tailscaleServePort,
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
