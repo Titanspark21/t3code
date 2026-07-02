@@ -699,17 +699,22 @@ const canListenOnPortImpl = (
   runWslShell(
     distro,
     `
-T3CODE_PORT_PROBE=${port} node <<'NODE'
-const net = require("node:net");
-const port = Number(process.env.T3CODE_PORT_PROBE);
-const server = net.createServer();
-server.once("error", () => process.exit(1));
-server.listen({ host: "0.0.0.0", port }, () => {
-  server.close(() => {
-    console.log("ok");
-  });
-});
-NODE
+T3CODE_PORT_PROBE_HEX=$(printf '%04X' ${port})
+if awk -v probe_port="$T3CODE_PORT_PROBE_HEX" '
+  NR > 1 {
+    split($2, local_address, ":")
+    if (toupper(local_address[2]) == probe_port && $4 == "0A") {
+      found = 1
+    }
+  }
+  END {
+    exit found ? 0 : 1
+  }
+' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+  echo occupied
+else
+  echo ok
+fi
 `,
     PROBE_TIMEOUT,
   ).pipe(Effect.map((result) => result.exitCode === 0 && result.stdout.trim() === "ok"));
