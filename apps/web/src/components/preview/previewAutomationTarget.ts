@@ -28,10 +28,10 @@ export function resolvePreviewAutomationOpenTab(
   state: PreviewAutomationSessionIndex,
   requestedTabId: string | undefined,
   reuseExistingTab: boolean,
-): string | null {
+): string | null | undefined {
   if (!reuseExistingTab) return null;
   if (requestedTabId !== undefined) {
-    return state.sessions[requestedTabId]?.tabId ?? null;
+    return state.sessions[requestedTabId]?.tabId;
   }
   return state.snapshot?.tabId ?? null;
 }
