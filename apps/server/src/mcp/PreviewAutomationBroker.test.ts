@@ -315,6 +315,42 @@ it.effect("does not clear the default tab after an explicit missing-tab status c
   ),
 );
 
+it.effect("clears the default tab after an explicit status check finds it missing", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-session-b");
+      const fallbackTabId = PreviewTabId.make("tab-current-fallback");
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result:
+            request.operation === "open"
+              ? { available: true, tabId: browsingTabId }
+              : request.operation === "status" && request.tabId === browsingTabId
+                ? { available: true, tabId: null }
+                : request.operation === "status"
+                  ? { available: true, tabId: fallbackTabId }
+                  : { url: "http://localhost:3200" },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      yield* broker.invoke({ scope, operation: "status", input: {}, tabId: browsingTabId });
+      yield* broker.invoke({ scope, operation: "status", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBeUndefined();
+    }),
+  ),
+);
+
 it.effect("does not let a no-tab response suppress an earlier tab decision", () =>
   Effect.scoped(
     Effect.gen(function* () {
