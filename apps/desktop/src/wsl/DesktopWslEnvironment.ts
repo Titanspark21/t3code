@@ -220,6 +220,19 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
 
 const NODE_PTY_PREBUILD_MISSING_EXIT_CODE = 4;
 
+const NODE_PTY_PROBE_ENV_NAMES = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "CURSOR_API_KEY",
+  "XAI_API_KEY",
+  "GROK_OAUTH2_REFERRER",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+] as const;
+const NODE_PTY_PROBE_ENV_NAME_SET = new Set<string>(NODE_PTY_PROBE_ENV_NAMES);
+
 export const formatNodePtyProbeFailureReason = (exitCode: number): string | null =>
   exitCode === NODE_PTY_PREBUILD_MISSING_EXIT_CODE
     ? "WSL support is missing from this T3 Code build: the packaged Linux node-pty binary was not included. Rebuild the Windows artifact with `--wsl-prebuild <path-to-linux-pty.node>` or install a build that includes WSL support."
@@ -232,17 +245,7 @@ printf 'nodePath:%s\\n' "$node_path"
 printf 'resolvedPath:%s\\n' "$PATH"
 if [ -n "$node_path" ]; then
   "$node_path" <<'NODE'
-const names = [
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "OPENROUTER_API_KEY",
-  "CURSOR_API_KEY",
-  "XAI_API_KEY",
-  "GROK_OAUTH2_REFERRER",
-  "GEMINI_API_KEY",
-  "GOOGLE_API_KEY",
-  "GOOGLE_GENERATIVE_AI_API_KEY",
-];
+const names = ${JSON.stringify(NODE_PTY_PROBE_ENV_NAMES)};
 for (const name of names) {
   const value = process.env[name];
   if (typeof value === "string" && value.length > 0) {
@@ -366,6 +369,7 @@ export const parseResolvedEnv = (stdout: string): Readonly<Record<string, string
     const name = line.slice("resolvedEnv:".length, separator);
     const encoded = line.slice(separator + 1).trim();
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || encoded.length === 0) continue;
+    if (!NODE_PTY_PROBE_ENV_NAME_SET.has(name)) continue;
     try {
       resolved[name] = Buffer.from(encoded, "base64").toString("utf8");
     } catch {

@@ -467,22 +467,11 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 }
 
 export function secondaryRegistrationsToRetainForPendingBootstraps(
-  previous: ReadonlyMap<string, CachedPlatformRegistration>,
-  bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>,
-  nowEpochMs: number,
+  _previous: ReadonlyMap<string, CachedPlatformRegistration>,
+  _bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>,
+  _nowEpochMs: number,
 ): ReadonlyMap<string, CachedPlatformRegistration> {
-  return new Map(
-    bootstraps
-      .filter((bootstrap) => bootstrap.httpBaseUrl === null || bootstrap.wsBaseUrl === null)
-      .flatMap((bootstrap) => {
-        const cached = previous.get(bootstrap.id);
-        return cached !== undefined &&
-          cached.expiresAtEpochMs !== undefined &&
-          nowEpochMs < cached.expiresAtEpochMs
-          ? ([[bootstrap.id, cached]] as const)
-          : [];
-      }),
-  );
+  return new Map();
 }
 
 const platformConnectionSourceLayer = Layer.effect(

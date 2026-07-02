@@ -235,6 +235,20 @@ describe("parseResolvedEnv", () => {
       ),
     ).toEqual({});
   });
+
+  it("ignores valid-looking env lines outside the forwarded allowlist", () => {
+    expect(
+      parseResolvedEnv(
+        [
+          "resolvedEnv:PATH=L3RtcC9ub2lzZS1iaW4=",
+          "resolvedEnv:NODE_OPTIONS=LS1yZXF1aXJlIC90bXAvbm9pc2UuanM=",
+          "resolvedEnv:OPENAI_API_KEY=b3BlbmFpLWtleQ==",
+        ].join("\n"),
+      ),
+    ).toEqual({
+      OPENAI_API_KEY: "openai-key",
+    });
+  });
 });
 
 describe("formatMissingToolsReason", () => {
