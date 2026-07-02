@@ -34,6 +34,7 @@ import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from ".
 import {
   checkClaudeProviderStatus,
   getClaudeModelCapabilities,
+  makePendingClaudeProvider,
   normalizeClaudeCliEffort,
 } from "./ClaudeProvider.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
@@ -1485,6 +1486,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it.effect("does not expose Sonnet 5 while Claude Code version is still pending", () =>
+        Effect.gen(function* () {
+          const provider = yield* makePendingClaudeProvider(defaultClaudeSettings);
+
+          assert.strictEqual(
+            provider.models.some((model) => model.slug === "claude-sonnet-5"),
+            false,
+          );
+        }),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
