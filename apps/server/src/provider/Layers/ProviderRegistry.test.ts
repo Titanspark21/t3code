@@ -1536,42 +1536,44 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ),
       );
 
-      it.effect("includes Claude Sonnet 5 with reasoning options on supported Claude Code versions", () =>
-        Effect.gen(function* () {
-          const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
-            claudeCapabilities(),
-          );
-          const sonnet5 = status.models.find((model) => model.slug === "claude-sonnet-5");
-          assert.strictEqual(sonnet5?.name, "Claude Sonnet 5");
-          const effortDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
-            (descriptor) => descriptor.type === "select" && descriptor.id === "effort",
-          );
-          assert.deepStrictEqual(
-            effortDescriptor?.type === "select"
-              ? effortDescriptor.options.find((option) => option.isDefault)
-              : undefined,
-            { id: "high", label: "High", isDefault: true },
-          );
-          assert.ok(
-            effortDescriptor?.type === "select" &&
-              effortDescriptor.options.some((option) => option.id === "xhigh"),
-          );
-        }).pipe(
-          Effect.provide(
-            mockSpawnerLayer((args) => {
-              const joined = args.join(" ");
-              if (joined === "--version") return { stdout: "2.1.197\n", stderr: "", code: 0 };
-              if (joined === "auth status")
-                return {
-                  stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
-                  stderr: "",
-                  code: 0,
-                };
-              throw new Error(`Unexpected args: ${joined}`);
-            }),
+      it.effect(
+        "includes Claude Sonnet 5 with reasoning options on supported Claude Code versions",
+        () =>
+          Effect.gen(function* () {
+            const status = yield* checkClaudeProviderStatus(
+              defaultClaudeSettings,
+              claudeCapabilities(),
+            );
+            const sonnet5 = status.models.find((model) => model.slug === "claude-sonnet-5");
+            assert.strictEqual(sonnet5?.name, "Claude Sonnet 5");
+            const effortDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
+              (descriptor) => descriptor.type === "select" && descriptor.id === "effort",
+            );
+            assert.deepStrictEqual(
+              effortDescriptor?.type === "select"
+                ? effortDescriptor.options.find((option) => option.isDefault)
+                : undefined,
+              { id: "high", label: "High", isDefault: true },
+            );
+            assert.ok(
+              effortDescriptor?.type === "select" &&
+                effortDescriptor.options.some((option) => option.id === "xhigh"),
+            );
+          }).pipe(
+            Effect.provide(
+              mockSpawnerLayer((args) => {
+                const joined = args.join(" ");
+                if (joined === "--version") return { stdout: "2.1.197\n", stderr: "", code: 0 };
+                if (joined === "auth status")
+                  return {
+                    stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                    stderr: "",
+                    code: 0,
+                  };
+                throw new Error(`Unexpected args: ${joined}`);
+              }),
+            ),
           ),
-        ),
       );
 
       it("keeps xhigh as a supported Claude CLI effort for Sonnet 5 without a context selector", () => {
