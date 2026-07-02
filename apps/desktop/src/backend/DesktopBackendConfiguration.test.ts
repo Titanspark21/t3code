@@ -227,8 +227,8 @@ describe("DesktopBackendConfiguration", () => {
       );
 
       assert.equal(config.runningDistro, "Ubuntu");
-      assert.equal(config.bootstrap.tailscaleServeEnabled, true);
-      assert.equal(config.bootstrap.tailscaleServePort, 8443);
+      assert.equal(config.bootstrap.tailscaleServeEnabled, false);
+      assert.equal(config.bootstrap.tailscaleServePort, 443);
       assert.deepEqual(config.args.slice(0, 2), ["-d", "Ubuntu"]);
       assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu", "Ubuntu"]);
       assert.isTrue(Option.isNone(config.preflightFailure));
@@ -482,8 +482,8 @@ describe("DesktopBackendConfiguration", () => {
           // Binds to 0.0.0.0 inside WSL so the backend is reachable via
           // both wslhost-forwarded localhost and the distro's eth0 IP.
           assert.equal(config.bootstrap.host, "0.0.0.0");
-          assert.equal(config.bootstrap.tailscaleServeEnabled, true);
-          assert.equal(config.bootstrap.tailscaleServePort, 8443);
+          assert.equal(config.bootstrap.tailscaleServeEnabled, false);
+          assert.equal(config.bootstrap.tailscaleServePort, 443);
           // httpBaseUrl uses the resolved distro IP from the test stub,
           // not localhost — the renderer reaches the backend directly to
           // avoid relying on wslhost forwarding.
@@ -576,6 +576,8 @@ describe("DesktopBackendConfiguration", () => {
           const failure = Option.getOrThrow(config.preflightFailure);
 
           assert.equal(config.executablePath, "wsl.exe");
+          assert.equal(config.bootstrap.tailscaleServeEnabled, true);
+          assert.equal(config.bootstrap.tailscaleServePort, 8443);
           assert.isTrue(failure.fatal);
           assert.include(failure.reason, "Removed-Distro");
         }).pipe(

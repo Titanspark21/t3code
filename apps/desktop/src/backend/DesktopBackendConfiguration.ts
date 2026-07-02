@@ -375,19 +375,18 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   input: SharedBootstrapInput & {
     readonly port: number;
     readonly distro: string | null;
+    readonly tailscaleServeEnabled?: boolean;
+    readonly tailscaleServePort?: number;
   },
 ): Effect.fn.Return<
   DesktopBackendManager.DesktopBackendStartConfig,
   never,
   | DesktopEnvironment.DesktopEnvironment
   | DesktopWslEnvironment.DesktopWslEnvironment
-  | DesktopServerExposure.DesktopServerExposure
   | FileSystem.FileSystem
 > {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
-  const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-  const backendExposure = yield* serverExposure.backendConfig;
 
   // Bind to 0.0.0.0 inside WSL so the backend is reachable both via
   // WSL2's automatic localhost forwarding (wslhost: Windows 127.0.0.1
@@ -415,8 +414,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     // need a valid number in this slot. The backend reads tailscaleServePort
     // only when tailscaleServeEnabled is true, so the actual value here is
     // inert.
-    tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
-    tailscaleServePort: backendExposure.tailscaleServePort,
+    tailscaleServeEnabled: input.tailscaleServeEnabled ?? false,
+    tailscaleServePort: input.tailscaleServePort ?? 443,
     ...buildObservabilityFragment(input.observabilitySettings),
   };
 
@@ -621,10 +620,11 @@ export const make = Effect.gen(function* () {
       ...shared,
       port: backendExposure.port,
       distro: persistedSettings.wslDistro,
+      tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
+      tailscaleServePort: backendExposure.tailscaleServePort,
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
-      Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
     );
   });
@@ -683,7 +683,6 @@ export const make = Effect.gen(function* () {
         return yield* resolveWslStartConfig({ ...shared, ...input }).pipe(
           Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
           Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
-          Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
         );
       }).pipe(
