@@ -1762,6 +1762,63 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("seeds Claude Sonnet 5 sessions with the native 1M context window", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-sonnet-5",
+        ),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-sonnet-5-usage",
+        uuid: "stream-sonnet-5-usage",
+        parent_tool_use_id: null,
+        event: {
+          type: "message_delta",
+          delta: {},
+          usage: {
+            total_tokens: 1_250_000,
+          },
+        },
+      } as unknown as SDKMessage);
+
+      const usageEvent = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "thread.token-usage.updated",
+      ).pipe(Stream.runHead);
+      assert.equal(usageEvent._tag, "Some");
+      if (usageEvent._tag === "Some") {
+        assert.deepEqual(usageEvent.value.payload, {
+          usage: {
+            usedTokens: 1_000_000,
+            lastUsedTokens: 1_000_000,
+            maxTokens: 1_000_000,
+          },
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("emits Claude context window on result completion usage snapshots", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

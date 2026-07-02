@@ -22,9 +22,18 @@ describe("parseWslUncPath", () => {
     });
   });
 
+  it("accepts distro names with spaces", () => {
+    expect(parseWslUncPath("\\\\wsl.localhost\\Ubuntu Preview\\home\\josh\\repo")).toEqual({
+      distro: "Ubuntu Preview",
+      linuxPath: "/home/josh/repo",
+    });
+  });
+
   it("rejects non-WSL paths and invalid distro names", () => {
     expect(parseWslUncPath("C:\\Users\\Josh\\repo")).toBeNull();
     expect(parseWslUncPath("\\\\wsl.localhost\\bad!name\\home")).toBeNull();
+    expect(parseWslUncPath("\\\\wsl.localhost\\ bad\\home")).toBeNull();
+    expect(parseWslUncPath("\\\\wsl.localhost\\bad \\home")).toBeNull();
   });
 });
 
@@ -32,8 +41,16 @@ describe("resolveWslProjectSelection", () => {
   it("routes a UNC path to the matching WSL backend", () => {
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo", [
-        { environmentId: "env-debian", backendId: "wsl:Debian", runningDistro: null },
-        { environmentId: "env-ubuntu", backendId: "wsl:Ubuntu", runningDistro: null },
+        {
+          environmentId: "env-debian",
+          backendId: "wsl:Debian",
+          runningDistro: null,
+        },
+        {
+          environmentId: "env-ubuntu",
+          backendId: "wsl:Ubuntu",
+          runningDistro: null,
+        },
       ]),
     ).toEqual({
       distro: "Ubuntu",
@@ -45,7 +62,11 @@ describe("resolveWslProjectSelection", () => {
   it("does not route to the only WSL backend when its distro is unknown", () => {
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo", [
-        { environmentId: "env-wsl", backendId: "wsl:default", runningDistro: null },
+        {
+          environmentId: "env-wsl",
+          backendId: "wsl:default",
+          runningDistro: null,
+        },
       ]),
     ).toBeNull();
   });
@@ -53,7 +74,11 @@ describe("resolveWslProjectSelection", () => {
   it("does not route to a sole WSL backend for a different distro", () => {
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Debian\\home\\theo\\repo", [
-        { environmentId: "env-ubuntu", backendId: "wsl:Ubuntu", runningDistro: null },
+        {
+          environmentId: "env-ubuntu",
+          backendId: "wsl:Ubuntu",
+          runningDistro: null,
+        },
       ]),
     ).toBeNull();
   });
@@ -61,15 +86,27 @@ describe("resolveWslProjectSelection", () => {
   it("does not guess when multiple WSL backends fail to match", () => {
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Fedora\\home\\theo\\repo", [
-        { environmentId: "env-debian", backendId: "wsl:Debian", runningDistro: null },
-        { environmentId: "env-ubuntu", backendId: "wsl:Ubuntu", runningDistro: null },
+        {
+          environmentId: "env-debian",
+          backendId: "wsl:Debian",
+          runningDistro: null,
+        },
+        {
+          environmentId: "env-ubuntu",
+          backendId: "wsl:Ubuntu",
+          runningDistro: null,
+        },
       ]),
     ).toBeNull();
   });
 
   it("routes a default backend only to the distro used by its running process", () => {
     const candidates = [
-      { environmentId: "env-wsl", backendId: "wsl:default", runningDistro: "Debian" },
+      {
+        environmentId: "env-wsl",
+        backendId: "wsl:default",
+        runningDistro: "Debian",
+      },
     ];
 
     expect(
@@ -109,12 +146,24 @@ describe("applyWslEnvironmentConfiguration", () => {
         "env-primary",
         ubuntuConfiguration,
       ),
-    ).toEqual([{ environmentId: "env-wsl", backendId: "wsl:default", runningDistro: "Debian" }]);
+    ).toEqual([
+      {
+        environmentId: "env-wsl",
+        backendId: "wsl:default",
+        runningDistro: "Debian",
+      },
+    ]);
   });
 
   it("does not replace a live default backend's running distro from current configuration", () => {
     const candidates = applyWslEnvironmentConfiguration(
-      [{ environmentId: "env-wsl", backendId: "wsl:default", runningDistro: "Debian" }],
+      [
+        {
+          environmentId: "env-wsl",
+          backendId: "wsl:default",
+          runningDistro: "Debian",
+        },
+      ],
       "env-primary",
       ubuntuConfiguration,
     );
@@ -138,7 +187,13 @@ describe("applyWslEnvironmentConfiguration", () => {
         wslOnly: true,
         distro: "ubuntu",
       }),
-    ).toEqual([{ environmentId: "env-primary", backendId: "wsl:Ubuntu", runningDistro: "Ubuntu" }]);
+    ).toEqual([
+      {
+        environmentId: "env-primary",
+        backendId: "wsl:Ubuntu",
+        runningDistro: "Ubuntu",
+      },
+    ]);
   });
 
   it("preserves default tracking for a WSL-only primary", () => {
@@ -147,7 +202,13 @@ describe("applyWslEnvironmentConfiguration", () => {
         ...ubuntuConfiguration,
         wslOnly: true,
       }),
-    ).toEqual([{ environmentId: "env-primary", backendId: "wsl:default", runningDistro: null }]);
+    ).toEqual([
+      {
+        environmentId: "env-primary",
+        backendId: "wsl:default",
+        runningDistro: null,
+      },
+    ]);
   });
 
   it("uses the live primary distro for a default-tracking WSL-only primary", () => {
@@ -163,7 +224,11 @@ describe("applyWslEnvironmentConfiguration", () => {
     );
 
     expect(candidates).toEqual([
-      { environmentId: "env-primary", backendId: "wsl:default", runningDistro: "Ubuntu" },
+      {
+        environmentId: "env-primary",
+        backendId: "wsl:default",
+        runningDistro: "Ubuntu",
+      },
     ]);
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo", candidates),
@@ -181,7 +246,13 @@ describe("applyWslEnvironmentConfiguration", () => {
         wslOnly: true,
         distro: "Fedora",
       }),
-    ).toEqual([{ environmentId: "env-primary", backendId: "wsl:Fedora", runningDistro: "Fedora" }]);
+    ).toEqual([
+      {
+        environmentId: "env-primary",
+        backendId: "wsl:Fedora",
+        runningDistro: "Fedora",
+      },
+    ]);
   });
 
   it("does not synthesize a backend for an empty configured distro name", () => {
@@ -223,7 +294,11 @@ describe("resolveProjectPickerTarget", () => {
         browseEnvironmentId: "env-primary",
         primaryEnvironmentId: "env-primary",
         desktopInstanceId: null,
-        wslConfiguration: { ...ubuntuConfiguration, distro: "ubuntu-22.04", distros: [] },
+        wslConfiguration: {
+          ...ubuntuConfiguration,
+          distro: "ubuntu-22.04",
+          distros: [],
+        },
       }),
     ).toBe("wsl:ubuntu-22.04");
   });

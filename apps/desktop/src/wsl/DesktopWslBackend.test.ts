@@ -196,4 +196,109 @@ describe("DesktopWslBackend", () => {
       ),
     );
   });
+
+  it.effect("skips ports that are unavailable inside the selected WSL distro", () => {
+    let registeredSpec: DesktopBackendPool.BackendInstanceSpec | undefined;
+    let selectedPort: number | undefined;
+    const probedPorts: number[] = [];
+    const primary = makeStubInstance({
+      id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
+      label: "Windows",
+      snapshot: primarySnapshot,
+    });
+    const wsl = makeStubInstance({
+      id: DesktopBackendPool.BackendInstanceId("wsl:Ubuntu"),
+      label: "WSL (Ubuntu)",
+      snapshot: primarySnapshot,
+    });
+    const poolLayer = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
+      get: (id) =>
+        Effect.succeed(
+          id === DesktopBackendPool.PRIMARY_INSTANCE_ID
+            ? Option.some(primary)
+            : Option.none<DesktopBackendPool.DesktopBackendInstance>(),
+        ),
+      list: Effect.succeed([primary]),
+      primary: Effect.succeed(primary),
+      register: (spec) =>
+        Effect.sync(() => {
+          registeredSpec = spec;
+          return wsl;
+        }),
+      unregister: () => Effect.die("unexpected unregister"),
+    } satisfies DesktopBackendPool.DesktopBackendPool["Service"]);
+    const configurationLayer = Layer.succeed(
+      DesktopBackendConfiguration.DesktopBackendConfiguration,
+      {
+        resolvePrimary: Effect.die("unexpected resolvePrimary"),
+        resolvePrimaryLabel: Effect.succeed("Windows"),
+        resolveWsl: (input) =>
+          Effect.sync(() => {
+            selectedPort = input.port;
+            return {
+              executablePath: "wsl.exe",
+              entryPath: "/repo/apps/server/dist/bin.mjs",
+              cwd: "/repo",
+              env: {},
+              extendEnv: false,
+              args: [],
+              bootstrap: {
+                mode: "desktop",
+                noBrowser: true,
+                port: input.port,
+                host: "0.0.0.0",
+                desktopBootstrapToken: "token",
+                tailscaleServeEnabled: false,
+                tailscaleServePort: 443,
+              },
+              bootstrapDelivery: "stdin",
+              httpBaseUrl: new URL(`http://127.0.0.1:${input.port}`),
+              captureOutput: true,
+              preflightFailure: Option.none(),
+            } satisfies DesktopBackendStartConfig;
+          }),
+      } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"],
+    );
+
+    return Effect.gen(function* () {
+      const backend = yield* DesktopWslBackend.DesktopWslBackend;
+
+      yield* backend.reconcile;
+      const spec = registeredSpec;
+      assert.isDefined(spec);
+      if (spec === undefined) {
+        throw new Error("Expected WSL backend registration");
+      }
+      yield* spec.configResolve;
+
+      assert.deepEqual(probedPorts, [3774, 3775]);
+      assert.equal(selectedPort, 3775);
+    }).pipe(
+      Effect.provide(
+        DesktopWslBackend.layer.pipe(
+          Layer.provideMerge(poolLayer),
+          Layer.provideMerge(configurationLayer),
+          Layer.provideMerge(serverExposureLayer),
+          Layer.provideMerge(netLayer),
+          Layer.provideMerge(
+            DesktopAppSettings.layerTest({
+              ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+              wslBackendEnabled: true,
+              wslDistro: "Ubuntu",
+              wslOnly: false,
+            }),
+          ),
+          Layer.provideMerge(
+            DesktopWslEnvironment.layerTest({
+              isAvailable: true,
+              canListenOnPort: (_distro, port) => {
+                probedPorts.push(port);
+                return port !== 3774;
+              },
+            }),
+          ),
+        ),
+      ),
+    );
+  });
 });

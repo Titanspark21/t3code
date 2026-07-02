@@ -11,7 +11,7 @@ import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
-import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
+import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -41,6 +41,7 @@ type WindowTitleBarOptions = Pick<
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
   | DesktopAssets.DesktopAssets
+  | ElectronProtocol.ElectronProtocol
   | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
@@ -197,6 +198,7 @@ function bindFirstRevealTrigger(
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const assets = yield* DesktopAssets.DesktopAssets;
+  const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
   const electronMenu = yield* ElectronMenu.ElectronMenu;
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
@@ -246,7 +248,7 @@ export const make = Effect.gen(function* () {
     DesktopWindowError
   > {
     yield* previewManager.getBrowserSession();
-    const applicationUrl = getDesktopUrl(environment.isDevelopment);
+    const applicationUrl = ElectronProtocol.getDesktopUrl(environment.isDevelopment);
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
@@ -549,7 +551,9 @@ export const make = Effect.gen(function* () {
   }).pipe(
     // The splash is best-effort UX — never let it fail startup.
     Effect.catch((error) =>
-      logWindowWarning("failed to show connecting splash", { message: error.message }),
+      logWindowWarning("failed to show connecting splash", {
+        message: error.message,
+      }),
     ),
     Effect.withSpan("desktop.window.showConnectingSplash"),
   );
@@ -583,7 +587,13 @@ export const make = Effect.gen(function* () {
     showConnectingSplash,
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
-      yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });
+      yield* logWindowInfo("backend ready", {
+        source: "http",
+        url: httpBaseUrl.href,
+      });
+      if (!environment.isDevelopment) {
+        yield* electronProtocol.updateDesktopProtocolTargetOrigin(httpBaseUrl);
+      }
       yield* createMainIfBackendReady;
     }),
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(

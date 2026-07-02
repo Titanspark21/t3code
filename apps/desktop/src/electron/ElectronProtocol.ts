@@ -61,6 +61,7 @@ export class ElectronProtocol extends Context.Service<
     readonly registerDesktopProtocol: (
       input: DesktopProtocolRegistrationInput,
     ) => Effect.Effect<void, ElectronProtocolRegistrationError, Scope.Scope>;
+    readonly updateDesktopProtocolTargetOrigin: (targetOrigin: URL) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronProtocol") {}
 
@@ -171,9 +172,11 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
 
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
+  let currentTargetOrigin: URL | undefined;
 
   const registerDesktopProtocol = Effect.fn("desktop.electron.protocol.registerDesktopProtocol")(
     function* (input: DesktopProtocolRegistrationInput) {
+      currentTargetOrigin = input.targetOrigin;
       if (yield* Ref.get(registered)) return;
 
       const contentSecurityPolicy = makeDesktopContentSecurityPolicy(input);
@@ -182,10 +185,18 @@ export const make = Effect.gen(function* () {
         Effect.try({
           try: () => {
             Electron.protocol.handle(input.scheme, (request) =>
-              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+              proxyRequest(
+                request,
+                currentTargetOrigin ?? input.targetOrigin,
+                contentSecurityPolicy,
+              ),
             );
           },
-          catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),
+          catch: (cause) =>
+            new ElectronProtocolRegistrationError({
+              scheme: input.scheme,
+              cause,
+            }),
         }).pipe(Effect.andThen(Ref.set(registered, true))),
         () =>
           Effect.try({
@@ -200,7 +211,16 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return ElectronProtocol.of({ registerDesktopProtocol });
+  const updateDesktopProtocolTargetOrigin = Effect.fn(
+    "desktop.electron.protocol.updateDesktopProtocolTargetOrigin",
+  )(function* (targetOrigin: URL) {
+    currentTargetOrigin = targetOrigin;
+  });
+
+  return ElectronProtocol.of({
+    registerDesktopProtocol,
+    updateDesktopProtocolTargetOrigin,
+  });
 });
 
 export const layer = Layer.effect(ElectronProtocol, make);

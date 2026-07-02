@@ -93,6 +93,7 @@ const CLAUDE_EFFORT_OPTIONS = {
     { value: "high", label: "High", isDefault: true },
     { value: "xhigh", label: "Extra High" },
     { value: "max", label: "Max" },
+    { value: "ultracode", label: "Ultracode" },
     { value: "ultrathink", label: "Ultrathink" },
   ],
   sonnet46: [

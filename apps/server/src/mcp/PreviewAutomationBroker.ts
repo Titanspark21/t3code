@@ -548,8 +548,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       });
     });
     const result = yield* awaitResponse().pipe(Effect.ensuring(removePending));
-    // A stop artifact identifies the globally recorded tab, not the caller's browsing target.
-    const responseTabId = input.operation === "recordingStop" ? undefined : readResultTabId(result);
+    if (input.operation === "recordingStop") return result;
+    // Page evaluation results are caller payloads, not automation routing metadata.
+    const responseTabId = input.operation === "evaluate" ? undefined : readResultTabId(result);
     const resultTabId = responseTabId === undefined ? input.tabId : responseTabId;
     if (resultTabId === null && input.tabId !== undefined) return result;
     if (resultTabId === undefined) return result;

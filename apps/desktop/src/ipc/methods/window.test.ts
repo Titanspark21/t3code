@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
-import { getLocalEnvironmentBootstraps } from "./window.ts";
+import { getLocalEnvironmentBootstraps, resolveWslPickerDistro } from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
   executablePath: "wsl.exe",
@@ -124,5 +124,29 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler();
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(DesktopBackendPool.layerTest([stoppedInstance])));
+  });
+});
+
+describe("resolveWslPickerDistro", () => {
+  it("prefers the live running distro before persisted default settings", () => {
+    assert.equal(
+      resolveWslPickerDistro({
+        targetDistro: null,
+        runningDistro: "Debian",
+        settingsDistro: "Ubuntu",
+      }),
+      "Debian",
+    );
+  });
+
+  it("keeps an explicit target distro ahead of live config", () => {
+    assert.equal(
+      resolveWslPickerDistro({
+        targetDistro: "Fedora",
+        runningDistro: "Debian",
+        settingsDistro: "Ubuntu",
+      }),
+      "Fedora",
+    );
   });
 });

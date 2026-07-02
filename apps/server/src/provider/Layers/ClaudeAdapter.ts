@@ -340,6 +340,7 @@ function selectedClaudeContextWindow(
   switch (modelSelection?.model) {
     case "claude-opus-4-8":
     case "claude-opus-4-7":
+    case "claude-sonnet-5":
       return 1_000_000;
   }
 

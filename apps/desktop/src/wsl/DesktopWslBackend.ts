@@ -74,15 +74,26 @@ const isWslInstanceId = (id: DesktopBackendPool.BackendInstanceId): boolean =>
 const buildLabel = (distro: string | null): string =>
   distro === null ? "WSL (default distro)" : `WSL (${distro})`;
 
-// Loopback-only port scan starting one above the primary's port. The
-// WSL backend is reachable via 127.0.0.1 from Windows (wslhost
-// auto-forwards), so we only need to verify the IPv4 loopback can bind.
+// Port scan starting one above the primary's port. The selected port has to be
+// free both on Windows loopback and inside the target WSL distro because the
+// backend process binds from Linux while the renderer may still use Windows
+// localhost forwarding.
 const scanForWslPort = Effect.fn("desktop.wslBackend.scanForWslPort")(function* (
   startPort: number,
-): Effect.fn.Return<number, NetService.NetError, NetService.NetService> {
+  distro: string | null,
+): Effect.fn.Return<
+  number,
+  NetService.NetError,
+  NetService.NetService | DesktopWslEnvironment.DesktopWslEnvironment
+> {
   const net = yield* NetService.NetService;
+  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   for (let port = startPort; port <= MAX_TCP_PORT; port += 1) {
-    if (yield* net.canListenOnHost(port, "127.0.0.1")) {
+    const windowsAvailable = yield* net.canListenOnHost(port, "127.0.0.1");
+    if (!windowsAvailable) {
+      continue;
+    }
+    if (yield* wslEnvironment.canListenOnPort(distro, port)) {
       return port;
     }
   }
@@ -136,8 +147,9 @@ export const layer = Layer.effect(
       readonly distro: string | null;
     }) {
       const primaryConfig = yield* serverExposure.backendConfig;
-      const port = yield* scanForWslPort(primaryConfig.port + 1).pipe(
+      const port = yield* scanForWslPort(primaryConfig.port + 1, input.distro).pipe(
         Effect.provideService(NetService.NetService, net),
+        Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
         Effect.map((value) => Option.some(value)),
         Effect.catch((error) =>
           logWslBackendWarning("could not allocate port for WSL backend", {
@@ -162,7 +174,10 @@ export const layer = Layer.effect(
         .register({
           id: targetId,
           label: Effect.succeed(buildLabel(input.distro)),
-          configResolve: configuration.resolveWsl({ port: allocatedPort, distro: input.distro }),
+          configResolve: configuration.resolveWsl({
+            port: allocatedPort,
+            distro: input.distro,
+          }),
           // Dual-mode secondary: record a fatal preflight failure so Connections
           // settings can show why the WSL backend never appeared. No dialog or
           // fallback — Windows is the primary and keeps working.
@@ -216,7 +231,9 @@ export const layer = Layer.effect(
         const isIdle =
           !snapshot.ready && Option.isNone(snapshot.activePid) && !snapshot.restartScheduled;
         if (isIdle) {
-          yield* logWslBackendInfo("retrying idle WSL backend", { id: existingInstance.id });
+          yield* logWslBackendInfo("retrying idle WSL backend", {
+            id: existingInstance.id,
+          });
           yield* Ref.set(preflightErrorRef, Option.none());
           yield* existingInstance.start;
         }
@@ -229,7 +246,9 @@ export const layer = Layer.effect(
       yield* Ref.set(preflightErrorRef, Option.none());
 
       if (Option.isSome(existingId)) {
-        yield* logWslBackendInfo("tearing down WSL backend", { id: existingId.value });
+        yield* logWslBackendInfo("tearing down WSL backend", {
+          id: existingId.value,
+        });
         yield* stopExisting(existingId.value);
       }
 
@@ -255,7 +274,9 @@ export const layer = Layer.effect(
       .withPermits(1)(reconcileBody)
       .pipe(
         Effect.catchCause((cause) =>
-          logWslBackendWarning("reconcile failed", { cause: Cause.pretty(cause) }),
+          logWslBackendWarning("reconcile failed", {
+            cause: Cause.pretty(cause),
+          }),
         ),
         Effect.withSpan("desktop.wslBackend.reconcile"),
       );
