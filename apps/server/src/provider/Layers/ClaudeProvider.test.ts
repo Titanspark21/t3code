@@ -24,5 +24,12 @@ describe("ClaudeProvider", () => {
     });
 
     expect(descriptors.map((descriptor) => descriptor.id)).toEqual(["effort"]);
+    expect(
+      descriptors.some(
+        (descriptor) =>
+          descriptor.type === "select" &&
+          descriptor.options.some((option) => option.id === "ultracode"),
+      ),
+    ).toBe(true);
   });
 });
