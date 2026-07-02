@@ -149,6 +149,8 @@ const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const TIMELINE_DISCLOSURE_SETTLE_MS = 220;
+const TIMELINE_MINIMAP_PREVIEW_MAX_CHARS = 240;
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -222,36 +224,54 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [foldToggleSettling, setFoldToggleSettling] = useState(false);
   const foldToggleSettlingFrameRef = useRef<number | null>(null);
+  const foldToggleSettlingTimeoutRef = useRef<number | null>(null);
 
-  const onToggleTurnFold = useCallback((turnId: TurnId) => {
+  const suspendEndFollowingForDisclosure = useCallback(() => {
     setFoldToggleSettling(true);
     if (foldToggleSettlingFrameRef.current !== null) {
       window.cancelAnimationFrame(foldToggleSettlingFrameRef.current);
     }
+    if (foldToggleSettlingTimeoutRef.current !== null) {
+      window.clearTimeout(foldToggleSettlingTimeoutRef.current);
+    }
     foldToggleSettlingFrameRef.current = window.requestAnimationFrame(() => {
       foldToggleSettlingFrameRef.current = null;
-      setFoldToggleSettling(false);
-    });
-    setExpandedTurnIds((existing) => {
-      const next = new Set(existing);
-      if (next.has(turnId)) {
-        next.delete(turnId);
-      } else {
-        next.add(turnId);
-      }
-      return next;
+      foldToggleSettlingTimeoutRef.current = window.setTimeout(() => {
+        foldToggleSettlingTimeoutRef.current = null;
+        setFoldToggleSettling(false);
+      }, TIMELINE_DISCLOSURE_SETTLE_MS);
     });
   }, []);
+
+  const onToggleTurnFold = useCallback(
+    (turnId: TurnId) => {
+      suspendEndFollowingForDisclosure();
+      setExpandedTurnIds((existing) => {
+        const next = new Set(existing);
+        if (next.has(turnId)) {
+          next.delete(turnId);
+        } else {
+          next.add(turnId);
+        }
+        return next;
+      });
+    },
+    [suspendEndFollowingForDisclosure],
+  );
   useEffect(() => {
     return () => {
       if (foldToggleSettlingFrameRef.current !== null) {
         window.cancelAnimationFrame(foldToggleSettlingFrameRef.current);
+      }
+      if (foldToggleSettlingTimeoutRef.current !== null) {
+        window.clearTimeout(foldToggleSettlingTimeoutRef.current);
       }
     };
   }, []);
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorElement?: HTMLElement) => {
       const anchorBottomBeforeToggle = anchorElement?.getBoundingClientRect().bottom ?? null;
+      suspendEndFollowingForDisclosure();
 
       flushSync(() => {
         setExpandedWorkGroupIds((existing) => {
@@ -280,7 +300,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         list.scrollToOffset({ offset: currentScroll + delta, animated: false });
       }
     },
-    [listRef],
+    [listRef, suspendEndFollowingForDisclosure],
   );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
@@ -338,11 +358,29 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
-  const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
+  const minimapEligible = useMemo(() => {
+    if (!minimapHasPersistentGutter) {
+      return false;
+    }
+    let userRows = 0;
+    for (const row of rows) {
+      if (row.kind === "message" && row.message.role === "user") {
+        userRows += 1;
+        if (userRows >= TIMELINE_MINIMAP_MIN_ITEMS) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [minimapHasPersistentGutter, rows]);
+  const minimapItems = useMemo(
+    () => (minimapEligible ? deriveTimelineMinimapItems(rows) : []),
+    [minimapEligible, rows],
+  );
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -609,7 +647,8 @@ function resolveFinalAssistantTextForTurn(
 }
 
 function compactMinimapPreview(text: string | null | undefined) {
-  const compact = text?.replace(/\s+/g, " ").trim() ?? "";
+  const compact =
+    text?.slice(0, TIMELINE_MINIMAP_PREVIEW_MAX_CHARS).replace(/\s+/g, " ").trim() ?? "";
   return compact.length > 0 ? compact : null;
 }
 
@@ -685,7 +724,7 @@ function TimelineMinimap({
     [items.length],
   );
 
-  if (items.length < TIMELINE_MINIMAP_MIN_ITEMS) {
+  if (!hasPersistentGutter || items.length < TIMELINE_MINIMAP_MIN_ITEMS) {
     return null;
   }
 
@@ -695,9 +734,7 @@ function TimelineMinimap({
     <div
       className={cn(
         "group/minimap pointer-events-auto absolute top-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
-        hasPersistentGutter
-          ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+        hasPersistentGutter ? "opacity-100" : "pointer-events-none opacity-0",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}

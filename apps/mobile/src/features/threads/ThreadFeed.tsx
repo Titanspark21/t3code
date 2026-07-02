@@ -1118,7 +1118,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const router = useRouter();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
-  const foldSettleSecondFrameRef = useRef<number | null>(null);
+  const foldSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disclosureAnchorKeyRef = useRef<string | null>(null);
   const previousLatestTurnRef = useRef(props.latestTurn);
   const { width: viewportWidth } = useWindowDimensions();
@@ -1276,8 +1276,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       if (foldSettleFrameRef.current !== null) {
         cancelAnimationFrame(foldSettleFrameRef.current);
       }
-      if (foldSettleSecondFrameRef.current !== null) {
-        cancelAnimationFrame(foldSettleSecondFrameRef.current);
+      if (foldSettleTimeoutRef.current !== null) {
+        clearTimeout(foldSettleTimeoutRef.current);
       }
     };
   }, []);
@@ -1288,16 +1288,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     if (foldSettleFrameRef.current !== null) {
       cancelAnimationFrame(foldSettleFrameRef.current);
     }
-    if (foldSettleSecondFrameRef.current !== null) {
-      cancelAnimationFrame(foldSettleSecondFrameRef.current);
+    if (foldSettleTimeoutRef.current !== null) {
+      clearTimeout(foldSettleTimeoutRef.current);
     }
     foldSettleFrameRef.current = requestAnimationFrame(() => {
-      foldSettleSecondFrameRef.current = requestAnimationFrame(() => {
+      foldSettleFrameRef.current = null;
+      foldSettleTimeoutRef.current = setTimeout(() => {
         disclosureAnchorKeyRef.current = null;
         setDisclosureToggleSettling(false);
-        foldSettleFrameRef.current = null;
-        foldSettleSecondFrameRef.current = null;
-      });
+        foldSettleTimeoutRef.current = null;
+      }, 220);
     });
   }, []);
 
