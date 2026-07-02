@@ -156,6 +156,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly environment?: NodeJS.ProcessEnv;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -167,6 +168,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.environment ? { environment: config.environment } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -1793,9 +1795,7 @@ describe("ClaudeAdapterLive", () => {
         event: {
           type: "message_delta",
           delta: {},
-          usage: {
-            total_tokens: 1_250_000,
-          },
+          usage: { total_tokens: 1_250_000 },
         },
       } as unknown as SDKMessage);
 
@@ -1810,6 +1810,66 @@ describe("ClaudeAdapterLive", () => {
             usedTokens: 1_000_000,
             lastUsedTokens: 1_000_000,
             maxTokens: 1_000_000,
+          },
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("seeds Claude Sonnet 5 sessions with 200K when 1M context is disabled", () => {
+    const harness = makeHarness({
+      environment: {
+        ...process.env,
+        CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-sonnet-5",
+        ),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-sonnet-5-200k-usage",
+        uuid: "stream-sonnet-5-200k-usage",
+        parent_tool_use_id: null,
+        event: {
+          type: "message_delta",
+          delta: {},
+          usage: { total_tokens: 250_000 },
+        },
+      } as unknown as SDKMessage);
+
+      const usageEvent = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "thread.token-usage.updated",
+      ).pipe(Stream.runHead);
+      assert.equal(usageEvent._tag, "Some");
+      if (usageEvent._tag === "Some") {
+        assert.deepEqual(usageEvent.value.payload, {
+          usage: {
+            usedTokens: 200_000,
+            lastUsedTokens: 200_000,
+            maxTokens: 200_000,
           },
         });
       }

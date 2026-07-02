@@ -245,7 +245,7 @@ describe("instance-scoped model selection", () => {
     ).toBe("claude-sonnet-4-6");
   });
 
-  it("prefers the live provider default when the selected model is unavailable", () => {
+  it("prefers the provider chat default when the selected model is unavailable", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -305,6 +305,28 @@ describe("instance-scoped model selection", () => {
     expect(resolveAppModelSelectionState(settings, providers)).toEqual({
       instanceId: ProviderInstanceId.make("claude_openrouter"),
       model: "openai/gpt-5.5",
+    });
+  });
+
+  it("uses the Git text default when text generation falls back within an instance", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-fable-5", "claude-sonnet-5", "claude-haiku-4-5"],
+      }),
+    ];
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      textGenerationModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-4-6",
+      },
+    };
+
+    expect(resolveAppModelSelectionState(settings, providers)).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-haiku-4-5",
     });
   });
 });

@@ -16,6 +16,7 @@ import {
   formatNodePtyProbeFailureReason,
   formatWslShellTransportFailureReason,
   parseNodePath,
+  parseResolvedEnv,
   parseResolvedPath,
   parseToolchainReport,
   probeWslDistros,
@@ -190,6 +191,34 @@ describe("parseResolvedPath", () => {
   it("returns null when the resolved PATH is absent or empty", () => {
     expect(parseResolvedPath("nodePath:/usr/bin/node\n")).toBeNull();
     expect(parseResolvedPath("resolvedPath:\n")).toBeNull();
+  });
+});
+
+describe("parseResolvedEnv", () => {
+  it("decodes allow-listed login-shell env output", () => {
+    expect(
+      parseResolvedEnv(
+        [
+          "resolvedEnv:CURSOR_API_KEY=Y3Vyc29yLWtleQ==",
+          "resolvedEnv:XAI_API_KEY=eGFpLWtleQ==",
+        ].join("\n"),
+      ),
+    ).toEqual({
+      CURSOR_API_KEY: "cursor-key",
+      XAI_API_KEY: "xai-key",
+    });
+  });
+
+  it("ignores malformed env lines", () => {
+    expect(
+      parseResolvedEnv(
+        [
+          "resolvedEnv:bad-name=Y3Vyc29yLWtleQ==",
+          "resolvedEnv:MISSING_VALUE=",
+          "resolvedEnv:CURSOR_API_KEY",
+        ].join("\n"),
+      ),
+    ).toEqual({});
   });
 });
 

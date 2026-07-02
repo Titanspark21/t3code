@@ -207,6 +207,7 @@ describe("DesktopBackendConfiguration", () => {
                     ok: true,
                     nodePath: "/usr/bin/node",
                     resolvedPath: "/usr/bin:/bin",
+                    resolvedEnv: {},
                   };
                 },
                 getDistroIp: (distro) => {
@@ -270,7 +271,12 @@ describe("DesktopBackendConfiguration", () => {
                   isAvailable: true,
                   distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
                   windowsToWslPath: () => Option.some(linuxEntryPath),
-                  ensureNodePty: () => ({ ok: true, nodePath, resolvedPath }),
+                  ensureNodePty: () => ({
+                    ok: true,
+                    nodePath,
+                    resolvedPath,
+                    resolvedEnv: { CURSOR_API_KEY: "cursor key", XAI_API_KEY: "xai-key" },
+                  }),
                   getDistroIp: () => Option.some("172.27.0.99"),
                 }),
               ),
@@ -294,6 +300,8 @@ describe("DesktopBackendConfiguration", () => {
           "--exec",
           "env",
           "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
+          "CURSOR_API_KEY=cursor key",
+          "XAI_API_KEY=xai-key",
           nodePath,
           linuxEntryPath,
           "--bootstrap-fd",

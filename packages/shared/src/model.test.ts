@@ -75,8 +75,8 @@ describe("normalizeModelSlug", () => {
     const claude = ProviderDriverKind.make("claudeAgent");
     expect(normalizeModelSlug("gpt-5-codex")).toBe("gpt-5.4");
     expect(normalizeModelSlug("5.3")).toBe("gpt-5.3-codex");
-    expect(normalizeModelSlug("sonnet", claude)).toBe("claude-sonnet-5");
-    expect(normalizeModelSlug("claude-sonnet-5-0", claude)).toBe("claude-sonnet-5");
+    expect(normalizeModelSlug("sonnet", claude)).toBe("sonnet");
+    expect(normalizeModelSlug("sonnet-5", claude)).toBe("claude-sonnet-5");
     expect(normalizeModelSlug("sonnet-4.6", claude)).toBe("claude-sonnet-4-6");
   });
 
@@ -122,8 +122,11 @@ describe("resolveSelectableModel", () => {
       "gpt-5.3-codex",
     );
     expect(resolveSelectableModel(ProviderDriverKind.make("claudeAgent"), "sonnet", options)).toBe(
-      "claude-sonnet-5",
+      null,
     );
+    expect(
+      resolveSelectableModel(ProviderDriverKind.make("claudeAgent"), "sonnet-5", options),
+    ).toBe("claude-sonnet-5");
     expect(
       resolveSelectableModel(ProviderDriverKind.make("claudeAgent"), "sonnet-4.6", options),
     ).toBe("claude-sonnet-4-6");
