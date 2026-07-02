@@ -336,14 +336,8 @@ function maxClaudeContextWindowFromModelUsage(
 
 function selectedClaudeContextWindow(
   modelSelection: ModelSelection | undefined,
+  environment: NodeJS.ProcessEnv,
 ): number | undefined {
-  switch (modelSelection?.model) {
-    case "claude-opus-4-8":
-    case "claude-opus-4-7":
-    case "claude-sonnet-5":
-      return 1_000_000;
-  }
-
   const optionValue = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
   if (optionValue === "1m") {
     return 1_000_000;
@@ -351,6 +345,18 @@ function selectedClaudeContextWindow(
   if (optionValue === "200k") {
     return 200_000;
   }
+
+  switch (modelSelection?.model) {
+    case "claude-opus-4-8":
+    case "claude-opus-4-7":
+      return 1_000_000;
+    case "claude-sonnet-5":
+      return environment.CLAUDE_CODE_DISABLE_1M_CONTEXT === "1" ||
+        (environment.ANTHROPIC_BASE_URL?.trim().length ?? 0) > 0
+        ? 200_000
+        : 1_000_000;
+  }
+
   const caps = getClaudeModelCapabilities(modelSelection?.model);
   const hasContextWindowOption = getProviderOptionDescriptors({ caps }).some(
     (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
@@ -3413,7 +3419,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
       const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
-      const initialContextWindow = selectedClaudeContextWindow(modelSelection);
+      const initialContextWindow = selectedClaudeContextWindow(modelSelection, claudeEnvironment);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
       const fastModeSupported = descriptors.some(
