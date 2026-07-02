@@ -441,6 +441,16 @@ export function canRetainCachedPlatformRegistrationAfterRefreshFailure(
   );
 }
 
+export function desktopSecondaryBootstrapSignature(bootstrap: DesktopEnvironmentBootstrap): string {
+  return [
+    bootstrap.id,
+    bootstrap.runningDistro ?? "",
+    bootstrap.httpBaseUrl ?? "",
+    bootstrap.wsBaseUrl ?? "",
+    bootstrap.bootstrapToken ?? "",
+  ].join("|");
+}
+
 export function secondaryRegistrationsToRetainAfterTopologyRead(
   previous: ReadonlyMap<string, CachedPlatformRegistration>,
   topologyRead: DesktopSecondaryBootstrapsRead,
@@ -453,6 +463,25 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
     [...previous].filter(
       ([, cached]) => cached.expiresAtEpochMs !== undefined && nowEpochMs < cached.expiresAtEpochMs,
     ),
+  );
+}
+
+export function secondaryRegistrationsToRetainForPendingBootstraps(
+  previous: ReadonlyMap<string, CachedPlatformRegistration>,
+  bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>,
+  nowEpochMs: number,
+): ReadonlyMap<string, CachedPlatformRegistration> {
+  return new Map(
+    bootstraps
+      .filter((bootstrap) => bootstrap.httpBaseUrl === null || bootstrap.wsBaseUrl === null)
+      .flatMap((bootstrap) => {
+        const cached = previous.get(bootstrap.id);
+        return cached !== undefined &&
+          cached.expiresAtEpochMs !== undefined &&
+          nowEpochMs < cached.expiresAtEpochMs
+          ? ([[bootstrap.id, cached]] as const)
+          : [];
+      }),
   );
 }
 
@@ -536,8 +565,16 @@ const platformConnectionSourceLayer = Layer.effect(
           cause: topologyRead.cause,
         });
       } else {
+        for (const [id, cached] of secondaryRegistrationsToRetainForPendingBootstraps(
+          previous,
+          topologyRead.bootstraps,
+          nowEpochMs,
+        )) {
+          next.set(id, cached);
+          registrations.push(cached.registration);
+        }
         for (const bootstrap of topologyRead.bootstraps) {
-          const signature = `${bootstrap.httpBaseUrl}|${bootstrap.wsBaseUrl}|${bootstrap.bootstrapToken ?? ""}`;
+          const signature = desktopSecondaryBootstrapSignature(bootstrap);
           const cached = previous.get(bootstrap.id);
           if (
             cached !== undefined &&

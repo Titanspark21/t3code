@@ -90,7 +90,17 @@ const DESKTOP_BACKEND_ENV_NAMES = [
 // forward across the wsl.exe boundary without WSLENV. The dev-server URL is
 // handled separately via a `--dev-url` CLI flag because WSLENV translation of
 // URL-shaped values (colons / slashes) is unreliable.
-const WSL_FORWARDED_ENV_NAMES = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
+const WSL_FORWARDED_ENV_NAMES = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "CURSOR_API_KEY",
+  "XAI_API_KEY",
+  "GROK_OAUTH2_REFERRER",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+] as const;
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -186,6 +196,9 @@ interface WslPreflightSuccess {
   // PATH captured from the same login shell after the shared resolver loaded
   // version managers. The launch forwards this value directly without a shell.
   readonly resolvedPath: string;
+  // Provider credentials captured from the same login shell. Bounded allow-list
+  // only; this is not a dump of the user's entire WSL environment.
+  readonly resolvedEnv: Readonly<Record<string, string>>;
 }
 
 interface WslPreflightFailure {
@@ -292,6 +305,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     linuxEntryPath: linuxEntry.value,
     nodePath: nodePtyResult.nodePath,
     resolvedPath: nodePtyResult.resolvedPath,
+    resolvedEnv: nodePtyResult.resolvedEnv,
   } as const;
 });
 
@@ -550,6 +564,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "--exec",
       "env",
       `PATH=${launchPath}`,
+      ...Object.entries(preflight.resolvedEnv).map(([name, value]) => `${name}=${value}`),
       preflight.nodePath,
       preflight.linuxEntryPath,
       "--bootstrap-fd",

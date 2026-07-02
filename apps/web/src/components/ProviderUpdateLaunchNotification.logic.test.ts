@@ -982,6 +982,7 @@ describe("provider update launch notification logic", () => {
 
     it("parses the WSL distro from the backend instance id", () => {
       expect(parseWslDistroFromInstanceId("wsl:ubuntu")).toBe("ubuntu");
+      expect(parseWslDistroFromInstanceId("wsl:@default")).toBeNull();
       expect(parseWslDistroFromInstanceId("wsl:default")).toBeNull();
       expect(parseWslDistroFromInstanceId("wsl:")).toBeNull();
       expect(parseWslDistroFromInstanceId("ssh:host")).toBeNull();

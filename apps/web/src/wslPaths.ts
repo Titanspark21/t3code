@@ -25,7 +25,7 @@ export interface WslProjectSelection<TEnvironmentId extends string = string> ext
 
 const WSL_UNC_PREFIXES = ["\\\\wsl.localhost\\", "\\\\wsl$\\"] as const;
 const WSL_DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
-const WSL_DEFAULT_BACKEND_ID = "wsl:default";
+const WSL_DEFAULT_BACKEND_ID = "wsl:@default";
 
 export function parseWslUncPath(input: string): WslUncPath | null {
   const normalized = input.trim().replaceAll("/", "\\");
@@ -66,7 +66,9 @@ export function resolveWslProjectSelection<TEnvironmentId extends string>(
     const backendDistro = candidate.backendId.slice("wsl:".length);
     const runningDistro =
       candidate.runningDistro ??
-      (backendDistro.length > 0 && backendDistro.toLowerCase() !== "default"
+      (backendDistro.length > 0 &&
+      backendDistro.toLowerCase() !== "@default" &&
+      backendDistro.toLowerCase() !== "default"
         ? backendDistro
         : null);
     return runningDistro?.toLowerCase() === parsed.distro.toLowerCase();

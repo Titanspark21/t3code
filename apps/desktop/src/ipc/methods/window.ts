@@ -118,15 +118,14 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
 });
 
 // Pull the distro selection out of a backend instance id like
-// "wsl:ubuntu". Returns null for "wsl:default", which is the sentinel
-// for "track the user's WSL default distro" and maps to the
+// "wsl:ubuntu". Returns null for the default-tracking sentinel and maps to the
 // wslEnv-derived default at picker time.
 function extractWslDistroFromEnvironmentId(envId: string): string | null {
   if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
     return null;
   }
   const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
-  return suffix === "default" || suffix.length === 0 ? null : suffix;
+  return suffix === "@default" || suffix === "default" || suffix.length === 0 ? null : suffix;
 }
 
 export function resolveWslPickerDistro(input: {
@@ -135,6 +134,23 @@ export function resolveWslPickerDistro(input: {
   readonly settingsDistro: string | null;
 }): string | null {
   return input.targetDistro ?? input.runningDistro ?? input.settingsDistro;
+}
+
+export function resolveSelectedWslLinuxPath(input: {
+  readonly selectedPath: string;
+  readonly targetDistro: string | null;
+}): string | null {
+  const selectedUncDistro = extractDistroFromUncPath(input.selectedPath);
+  if (selectedUncDistro === null) {
+    return null;
+  }
+  if (
+    input.targetDistro !== null &&
+    selectedUncDistro.toLowerCase() !== input.targetDistro.toLowerCase()
+  ) {
+    return input.selectedPath;
+  }
+  return wslUncPathToLinuxPath(input.selectedPath);
 }
 
 export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
@@ -165,7 +181,7 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
     //     box.
     //   - targetEnvironmentId starts with "wsl:": route to the WSL picker
     //     using the distro encoded in the id (or the user's selected
-    //     wslDistro when the id is the "wsl:default" sentinel).
+    //     wslDistro when the id is the default-tracking sentinel).
     //   - anything else (incl. PRIMARY_LOCAL_ENVIRONMENT_ID): primary picker.
     const targetId = options?.targetEnvironmentId;
     const wslDistroFromTarget =
@@ -219,7 +235,10 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       return selectedPath.value;
     }
 
-    const linuxUncPath = wslUncPathToLinuxPath(selectedPath.value);
+    const linuxUncPath = resolveSelectedWslLinuxPath({
+      selectedPath: selectedPath.value,
+      targetDistro: wslDistro,
+    });
     if (linuxUncPath !== null) {
       return linuxUncPath;
     }

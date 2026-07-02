@@ -64,7 +64,7 @@ describe("resolveWslProjectSelection", () => {
       resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo", [
         {
           environmentId: "env-wsl",
-          backendId: "wsl:default",
+          backendId: "wsl:@default",
           runningDistro: null,
         },
       ]),
@@ -104,7 +104,7 @@ describe("resolveWslProjectSelection", () => {
     const candidates = [
       {
         environmentId: "env-wsl",
-        backendId: "wsl:default",
+        backendId: "wsl:@default",
         runningDistro: "Debian",
       },
     ];
@@ -139,7 +139,7 @@ describe("applyWslEnvironmentConfiguration", () => {
         [
           {
             environmentId: "env-wsl",
-            backendId: "wsl:default",
+            backendId: "wsl:@default",
             runningDistro: "Debian",
           },
         ],
@@ -149,7 +149,7 @@ describe("applyWslEnvironmentConfiguration", () => {
     ).toEqual([
       {
         environmentId: "env-wsl",
-        backendId: "wsl:default",
+        backendId: "wsl:@default",
         runningDistro: "Debian",
       },
     ]);
@@ -160,7 +160,7 @@ describe("applyWslEnvironmentConfiguration", () => {
       [
         {
           environmentId: "env-wsl",
-          backendId: "wsl:default",
+          backendId: "wsl:@default",
           runningDistro: "Debian",
         },
       ],
@@ -205,7 +205,7 @@ describe("applyWslEnvironmentConfiguration", () => {
     ).toEqual([
       {
         environmentId: "env-primary",
-        backendId: "wsl:default",
+        backendId: "wsl:@default",
         runningDistro: null,
       },
     ]);
@@ -226,7 +226,7 @@ describe("applyWslEnvironmentConfiguration", () => {
     expect(candidates).toEqual([
       {
         environmentId: "env-primary",
-        backendId: "wsl:default",
+        backendId: "wsl:@default",
         runningDistro: "Ubuntu",
       },
     ]);
@@ -322,6 +322,21 @@ describe("resolveProjectPickerTarget", () => {
         desktopInstanceId: null,
         wslConfiguration: { ...ubuntuConfiguration, distro: null },
       }),
+    ).toBe("wsl:@default");
+  });
+
+  it("does not collide an explicit distro named default with the default-tracking sentinel", () => {
+    expect(
+      resolveProjectPickerTarget({
+        browseEnvironmentId: "env-primary",
+        primaryEnvironmentId: "env-primary",
+        desktopInstanceId: null,
+        wslConfiguration: {
+          ...ubuntuConfiguration,
+          distro: "default",
+          distros: [{ name: "default", isDefault: false }],
+        },
+      }),
     ).toBe("wsl:default");
   });
 
@@ -337,7 +352,7 @@ describe("resolveProjectPickerTarget", () => {
           distros: [{ name: "Ubuntu-22.04", isDefault: false }],
         },
       }),
-    ).toBe("wsl:default");
+    ).toBe("wsl:@default");
 
     expect(
       resolveProjectPickerTarget({
@@ -346,7 +361,7 @@ describe("resolveProjectPickerTarget", () => {
         desktopInstanceId: null,
         wslConfiguration: { ...ubuntuConfiguration, distro: null, distros: [] },
       }),
-    ).toBe("wsl:default");
+    ).toBe("wsl:@default");
   });
 
   it("preserves combo-mode routing for primary and WSL backends", () => {

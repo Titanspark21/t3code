@@ -36,6 +36,7 @@ export type EnsureWslNodePtyResult =
       readonly ok: true;
       readonly nodePath: string;
       readonly resolvedPath: string;
+      readonly resolvedEnv: Readonly<Record<string, string>>;
     }
   | {
       readonly ok: false;
@@ -226,8 +227,30 @@ export const formatNodePtyProbeFailureReason = (exitCode: number): string | null
 
 const NODE_PTY_PROBE_SCRIPT = (
   linuxServerDir: string,
-) => `printf 'nodePath:%s\\n' "$(command -v node 2>/dev/null)"
+) => `node_path="$(command -v node 2>/dev/null)"
+printf 'nodePath:%s\\n' "$node_path"
 printf 'resolvedPath:%s\\n' "$PATH"
+if [ -n "$node_path" ]; then
+  "$node_path" <<'NODE'
+const names = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "CURSOR_API_KEY",
+  "XAI_API_KEY",
+  "GROK_OAUTH2_REFERRER",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+];
+for (const name of names) {
+  const value = process.env[name];
+  if (typeof value === "string" && value.length > 0) {
+    console.log(\`resolvedEnv:\${name}=\${Buffer.from(value, "utf8").toString("base64")}\`);
+  }
+}
+NODE
+fi
 cd ${shellQuote(linuxServerDir)} && node <<'NODE' >/dev/null 2>&1
 // The server bundle externalizes its deps to node_modules, and the WSL Node
 // can't read inside app.asar, so confirm those deps are unpacked on the real
@@ -334,6 +357,25 @@ export const parseResolvedPath = (stdout: string): string | null => {
   return resolvedPath.length > 0 ? resolvedPath : null;
 };
 
+export const parseResolvedEnv = (stdout: string): Readonly<Record<string, string>> => {
+  const resolved: Record<string, string> = {};
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("resolvedEnv:")) continue;
+    const separator = line.indexOf("=");
+    if (separator <= "resolvedEnv:".length) continue;
+    const name = line.slice("resolvedEnv:".length, separator);
+    const encoded = line.slice(separator + 1).trim();
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || encoded.length === 0) continue;
+    try {
+      resolved[name] = Buffer.from(encoded, "base64").toString("utf8");
+    } catch {
+      // Ignore malformed shell output; missing credentials are safer than
+      // failing the whole backend preflight.
+    }
+  }
+  return resolved;
+};
+
 export const formatMissingToolsReason = (
   report: ToolchainReport,
   requiredRange: string | null,
@@ -406,6 +448,7 @@ const ensureNodePtyImpl = (
     );
     const nodePath = parseNodePath(probe.stdout);
     const resolvedPath = parseResolvedPath(probe.stdout);
+    const resolvedEnv = parseResolvedEnv(probe.stdout);
 
     const transportFailureReason = formatWslShellTransportFailureReason(probe.transportFailure);
     if (transportFailureReason !== null) {
@@ -466,7 +509,7 @@ const ensureNodePtyImpl = (
       } as const;
     }
 
-    if (probe.exitCode === 0) return { ok: true, nodePath, resolvedPath } as const;
+    if (probe.exitCode === 0) return { ok: true, nodePath, resolvedPath, resolvedEnv } as const;
 
     if (options.allowBuild !== true) {
       const packagedProbeFailure = formatNodePtyProbeFailureReason(probe.exitCode);
@@ -546,7 +589,7 @@ const ensureNodePtyImpl = (
         retryLimit: BUILD_TRANSPORT_RETRY_LIMIT,
       } as const;
     }
-    if (build.exitCode === 0) return { ok: true, nodePath, resolvedPath } as const;
+    if (build.exitCode === 0) return { ok: true, nodePath, resolvedPath, resolvedEnv } as const;
     const trimmedTail = `${build.stdout}${build.stderr}`.trim().slice(-500);
     return {
       ok: false,
@@ -696,10 +739,18 @@ const canListenOnPortImpl = (
   distro: string | null,
   port: number,
 ): Effect.Effect<boolean, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  runWslShell(
-    distro,
-    `
-T3CODE_PORT_PROBE_HEX=$(printf '%04X' ${port})
+  Effect.scoped(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const command = ChildProcess.make(
+        "wsl.exe",
+        [
+          ...buildDistroArgs(distro),
+          "--",
+          "sh",
+          "-c",
+          `
+T3CODE_PORT_PROBE_HEX=$(printf '%04X' "$1")
 if awk -v probe_port="$T3CODE_PORT_PROBE_HEX" '
   NR > 1 {
     split($2, local_address, ":")
@@ -716,8 +767,32 @@ else
   echo ok
 fi
 `,
-    PROBE_TIMEOUT,
-  ).pipe(Effect.map((result) => result.exitCode === 0 && result.stdout.trim() === "ok"));
+          "t3code-port-probe",
+          String(port),
+        ],
+        {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "ignore",
+          killSignal: "SIGTERM",
+          forceKillAfter: PROCESS_TERMINATE_GRACE,
+        },
+      );
+      const handle = yield* spawner.spawn(command);
+      const [stdoutBytes, exitCode] = yield* Effect.all(
+        [Stream.runCollect(handle.stdout), handle.exitCode],
+        { concurrency: "unbounded" },
+      );
+      return (
+        (exitCode as unknown as number) === 0 &&
+        decodeUtf8(concatChunks(stdoutBytes)).trim() === "ok"
+      );
+    }),
+  ).pipe(
+    Effect.timeoutOption(PROBE_TIMEOUT),
+    Effect.map(Option.getOrElse(() => false)),
+    Effect.orElseSucceed(() => false),
+  );
 
 const getUserHomeImpl = (
   distro: string | null,
