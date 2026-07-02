@@ -552,7 +552,6 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     // Page evaluation results are caller payloads, not automation routing metadata.
     const responseTabId = input.operation === "evaluate" ? undefined : readResultTabId(result);
     const resultTabId = responseTabId === undefined ? input.tabId : responseTabId;
-    if (resultTabId === null && input.tabId !== undefined) return result;
     if (resultTabId === undefined) return result;
     const assignmentKey = hostAssignmentKey(input.scope);
     yield* SynchronizedRef.update(state, (current) => {
@@ -567,6 +566,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       }
       const assignments = new Map(current.assignments);
       if (resultTabId === null) {
+        if (input.tabId !== undefined && assignment.tabId !== input.tabId) {
+          return current;
+        }
         const { tabId: _tabId, ...withoutTabId } = assignment;
         assignments.set(assignmentKey, { ...withoutTabId, tabSequence: requestSequence });
       } else {
