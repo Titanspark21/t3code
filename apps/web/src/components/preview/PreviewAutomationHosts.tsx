@@ -335,6 +335,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           if (!bridge || !readyTabId) {
             throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
           }
+          if (request.tabIdExplicit && !state.sessions[readyTabId]) {
+            throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
+          }
           await waitForDesktopOverlay(threadRef, request.requestId, readyTabId, request.timeoutMs);
           return { bridge, tabId: readyTabId };
         };
