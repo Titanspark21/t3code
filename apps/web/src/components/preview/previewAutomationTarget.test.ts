@@ -56,4 +56,15 @@ describe("preview automation target selection", () => {
     expect(resolvePreviewAutomationOpenTab(state, undefined, true)).toBe(uiActive.tabId);
     expect(resolvePreviewAutomationOpenTab(state, agentTab.tabId, false)).toBeNull();
   });
+
+  it("reports an explicit missing tab separately from opening a new tab", () => {
+    const active = snapshot("tab-active");
+    expect(
+      resolvePreviewAutomationOpenTab(
+        { snapshot: active, sessions: { [active.tabId]: active } },
+        "tab-missing",
+        true,
+      ),
+    ).toBeUndefined();
+  });
 });
