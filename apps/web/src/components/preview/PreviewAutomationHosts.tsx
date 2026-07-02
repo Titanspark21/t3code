@@ -348,6 +348,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               request.tabId,
               input.reuseExistingTab ?? true,
             );
+            if (activeTabId === undefined) {
+              throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
+            }
             let activeSnapshot = activeTabId
               ? (state.sessions[activeTabId] ?? state.snapshot ?? undefined)
               : undefined;
