@@ -1486,13 +1486,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
-      it.effect("does not expose Sonnet 5 while Claude Code version is still pending", () =>
+      it.effect("keeps Sonnet 5 selectable while Claude Code version is still pending", () =>
         Effect.gen(function* () {
           const provider = yield* makePendingClaudeProvider(defaultClaudeSettings);
 
           assert.strictEqual(
             provider.models.some((model) => model.slug === "claude-sonnet-5"),
-            false,
+            true,
           );
         }),
       );
@@ -1549,7 +1549,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       );
 
       it.effect(
-        "includes Claude Sonnet 5 with reasoning options on supported Claude Code versions",
+        "includes Claude Sonnet 5 with reasoning and context options on supported Claude Code versions",
         () =>
           Effect.gen(function* () {
             const status = yield* checkClaudeProviderStatus(
@@ -1571,6 +1571,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               effortDescriptor?.type === "select" &&
                 effortDescriptor.options.some((option) => option.id === "xhigh"),
             );
+            const contextDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
+              (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
+            );
+            assert.ok(
+              contextDescriptor?.type === "select" &&
+                contextDescriptor.options.some((option) => option.id === "1m"),
+            );
           }).pipe(
             Effect.provide(
               mockSpawnerLayer((args) => {
@@ -1588,14 +1595,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           ),
       );
 
-      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5 without a context selector", () => {
+      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5 with a context selector", () => {
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"), "xhigh");
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"), "max");
         assert.strictEqual(
           getClaudeModelCapabilities("claude-sonnet-5").optionDescriptors?.some(
             (descriptor) => descriptor.id === "contextWindow",
           ),
-          false,
+          true,
         );
       });
 
