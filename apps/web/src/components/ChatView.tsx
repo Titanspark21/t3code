@@ -3251,13 +3251,25 @@ function ChatViewContent(props: ChatViewProps) {
   }, []);
   useEffect(() => {
     let removeListeners: (() => void) | null = null;
-    const frame = requestAnimationFrame(() => {
+    let frame: number | null = null;
+    let attemptsRemaining = 60;
+    const attachListeners = () => {
       const scrollNode = legendListRef.current?.getScrollableNode();
       if (!scrollNode) {
+        attemptsRemaining -= 1;
+        if (attemptsRemaining > 0) {
+          frame = requestAnimationFrame(attachListeners);
+        }
         return;
       }
       const handleManualNavigation = () => {
         cancelTimelineLiveFollowForUserNavigationRef.current();
+      };
+      const handleWheelNavigation = (event: WheelEvent) => {
+        if (event.defaultPrevented || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+          return;
+        }
+        handleManualNavigation();
       };
       const targetAcceptsKeyboardInput = (target: EventTarget | null) => {
         if (!(target instanceof HTMLElement)) return false;
@@ -3311,7 +3323,7 @@ function ChatViewContent(props: ChatViewProps) {
           handleManualNavigation();
         }
       };
-      scrollNode.addEventListener("wheel", handleManualNavigation, {
+      scrollNode.addEventListener("wheel", handleWheelNavigation, {
         passive: true,
       });
       scrollNode.addEventListener("touchmove", handleManualNavigation, {
@@ -3322,23 +3334,27 @@ function ChatViewContent(props: ChatViewProps) {
       });
       window.addEventListener("keydown", handleKeyboardNavigation, true);
       removeListeners = () => {
-        scrollNode.removeEventListener("wheel", handleManualNavigation);
+        scrollNode.removeEventListener("wheel", handleWheelNavigation);
         scrollNode.removeEventListener("touchmove", handleManualNavigation);
         scrollNode.removeEventListener("pointerdown", handlePointerDown);
         window.removeEventListener("keydown", handleKeyboardNavigation, true);
       };
-    });
+    };
+    frame = requestAnimationFrame(attachListeners);
 
     return () => {
-      cancelAnimationFrame(frame);
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
       removeListeners?.();
     };
   }, [activeThread?.id]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
-    if (pendingTimelineAnchorRef.current === messageId) {
-      pendingTimelineAnchorRef.current = null;
+    if (pendingTimelineAnchorRef.current !== messageId) {
+      return;
     }
+    pendingTimelineAnchorRef.current = null;
     activeTimelineAnchorIndexRef.current = anchorIndex;
     if (positionedTimelineAnchorRef.current === messageId) {
       return;
@@ -3372,6 +3388,9 @@ function ChatViewContent(props: ChatViewProps) {
           const scrollOffset = list.getState().scroll;
           void list.scrollToOffset({ offset: scrollOffset, animated: false });
           settledTimelineAnchorRef.current = messageId;
+          setTimelineAnchor((current) =>
+            current.messageId === messageId ? { ...current, messageId: null } : current,
+          );
         };
         const fallbackTimer = window.setTimeout(finishAnimatedPositioning, 750);
         scrollNode.addEventListener("scrollend", finishAnimatedPositioning, { once: true });
