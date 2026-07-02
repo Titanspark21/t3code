@@ -584,7 +584,7 @@ describe("DesktopBackendConfiguration", () => {
           const failure = Option.getOrThrow(config.preflightFailure);
 
           assert.equal(config.executablePath, "wsl.exe");
-          assert.equal(config.bootstrap.tailscaleServeEnabled, true);
+          assert.equal(config.bootstrap.tailscaleServeEnabled, false);
           assert.equal(config.bootstrap.tailscaleServePort, 8443);
           assert.isTrue(failure.fatal);
           assert.include(failure.reason, "Removed-Distro");
@@ -611,6 +611,46 @@ describe("DesktopBackendConfiguration", () => {
           ),
         );
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("resolvePrimary keeps wsl-only primary network exposure local-only", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-backend-config-test-",
+      });
+
+      yield* Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+
+        assert.equal(config.bootstrap.port, 4888);
+        assert.equal(config.bootstrap.tailscaleServeEnabled, false);
+        assert.equal(config.httpBaseUrl.href, "http://127.0.0.1:4888/");
+      }).pipe(
+        Effect.provide(
+          DesktopBackendConfiguration.layer.pipe(
+            Layer.provideMerge(serverExposureLayer),
+            Layer.provideMerge(
+              DesktopAppSettings.layerTest({
+                ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+                wslBackendEnabled: true,
+                wslOnly: true,
+                wslDistro: "Ubuntu",
+                serverExposureMode: "network-accessible",
+              }),
+            ),
+            Layer.provideMerge(
+              DesktopWslEnvironment.layerTest({
+                isAvailable: true,
+                distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
+              }),
+            ),
+            Layer.provideMerge(makeEnvironmentLayer(baseDir, { platform: "win32" })),
+          ),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("resolveWsl keeps a transient distro-list failure retryable", () =>
