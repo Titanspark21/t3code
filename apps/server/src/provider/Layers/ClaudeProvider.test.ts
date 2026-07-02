@@ -18,17 +18,25 @@ describe("ClaudeProvider", () => {
     ).toContain("claude-sonnet-5");
   });
 
-  it("treats Claude Sonnet 5 as a native 1M model without a context selector", () => {
+  it("exposes reasoning and context options for Claude Sonnet 5", () => {
     const descriptors = getProviderOptionDescriptors({
       caps: getClaudeModelCapabilities("claude-sonnet-5"),
     });
 
-    expect(descriptors.map((descriptor) => descriptor.id)).toEqual(["effort"]);
+    expect(descriptors.map((descriptor) => descriptor.id)).toEqual(["effort", "contextWindow"]);
     expect(
       descriptors.some(
         (descriptor) =>
           descriptor.type === "select" &&
           descriptor.options.some((option) => option.id === "ultracode"),
+      ),
+    ).toBe(true);
+    expect(
+      descriptors.some(
+        (descriptor) =>
+          descriptor.type === "select" &&
+          descriptor.id === "contextWindow" &&
+          descriptor.options.some((option) => option.id === "1m"),
       ),
     ).toBe(true);
   });

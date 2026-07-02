@@ -3177,6 +3177,9 @@ function ChatViewContent(props: ChatViewProps) {
     settledTimelineAnchorRef.current = null;
     activeTimelineAnchorIndexRef.current = null;
     pendingAnchorScrollRestoreRef.current = null;
+    setTimelineAnchor((current) =>
+      current.messageId === null ? current : { ...current, messageId: null },
+    );
     if (anchorScrollRestoreFrameRef.current !== null) {
       cancelAnimationFrame(anchorScrollRestoreFrameRef.current);
       anchorScrollRestoreFrameRef.current = null;

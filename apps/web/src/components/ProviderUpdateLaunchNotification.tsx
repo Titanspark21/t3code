@@ -1,9 +1,12 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { useEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderUpdateEnvironmentRows } from "./ProviderUpdateEnvironmentRows";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
@@ -12,6 +15,7 @@ import {
   environmentGroupsWithUpdates,
   getProviderUpdateInitialToastView,
   localEnvironmentUpdateNotificationKey,
+  shouldUseLocalEnvironmentUpdateFlow,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -25,10 +29,23 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
  */
 function useHasLocalSecondaryEnvironment(): boolean {
   const { environments } = useEnvironments();
+  const desktopWslStateResult = useAtomValue(desktopWslStateAtom);
+  const desktopWslState = AsyncResult.getOrElse(desktopWslStateResult, () => null);
   return useMemo(
-    () =>
-      environments.some((environment) => isDesktopLocalConnectionTarget(environment.entry.target)),
-    [environments],
+    () => {
+      const hasDesktopLocalSecondary = environments.some((environment) =>
+        isDesktopLocalConnectionTarget(environment.entry.target),
+      );
+      return shouldUseLocalEnvironmentUpdateFlow({
+        hasDesktopLocalSecondary,
+        isDesktopWslStatePending: AsyncResult.isWaiting(desktopWslStateResult),
+        isDesktopWslBackendExpected:
+          desktopWslState?.available === true &&
+          desktopWslState.enabled &&
+          !desktopWslState.wslOnly,
+      });
+    },
+    [desktopWslState, desktopWslStateResult, environments],
   );
 }
 

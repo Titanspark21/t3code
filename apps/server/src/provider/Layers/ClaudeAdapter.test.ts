@@ -3271,6 +3271,40 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("uses the Sonnet 5 1M gateway model when selected", () => {
+    const harness = makeHarness({
+      environment: {
+        ...process.env,
+        ANTHROPIC_BASE_URL: "https://llm-gateway.example.test",
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-sonnet-5",
+          [{ id: "contextWindow", value: "1m" }],
+        ),
+        attachments: [],
+      });
+
+      assert.deepEqual(harness.query.setModelCalls, ["claude-sonnet-5[1m]"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("sets plan permission mode on sendTurn when interactionMode is plan", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

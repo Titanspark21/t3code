@@ -323,12 +323,12 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
       rejectStartup(error);
       throw error;
     }
-    resolveStartup();
     if (!isRecordingStarting(recording)) {
+      let error: BrowserRecordingOperationError;
       try {
         await bridge.recording.stopScreencast(tabId);
       } catch (cause) {
-        throw recordingStartupCancelledError(
+        error = recordingStartupCancelledError(
           recording,
           new AggregateError(
             [new Error(`Browser recording startup was cancelled for tab ${tabId}.`), cause],
@@ -336,9 +336,14 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
             { cause },
           ),
         );
+        rejectStartup(error);
+        throw error;
       }
-      throw recordingStartupCancelledError(recording);
+      error = recordingStartupCancelledError(recording);
+      rejectStartup(error);
+      throw error;
     }
+    resolveStartup();
     recording.lifecycle = { phase: "recording" };
     appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
     return startedAt;
@@ -456,9 +461,9 @@ export function stopBrowserRecording(
     .then(() => finalizeBrowserRecording(bridge, recording))
     .catch((error) => {
       if (isStartupWaitTimeout(error) && active === recording) {
-        const cleanupAfterStartup = recording.startupSettled.then(() =>
-          discardBrowserRecording(bridge, recording),
-        );
+        const cleanupAfterStartup = recording.startupSettled
+          .catch(() => undefined)
+          .then(() => discardBrowserRecording(bridge, recording));
         recording.lifecycle = { phase: "stopping", stopPromise: cleanupAfterStartup };
         void cleanupAfterStartup.catch(() => undefined);
       }

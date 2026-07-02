@@ -31,6 +31,7 @@ import {
   parseWslDistroFromInstanceId,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
+  shouldUseLocalEnvironmentUpdateFlow,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
   type LocalProviderUpdateOutcome,
@@ -895,6 +896,36 @@ describe("provider update launch notification logic", () => {
         result.groups.find((group) => group.environmentId === ("env-wsl" as EnvironmentId))
           ?.isSettling,
       ).toBe(true);
+    });
+
+    it("uses the environment update flow while WSL settings are still loading", () => {
+      expect(
+        shouldUseLocalEnvironmentUpdateFlow({
+          hasDesktopLocalSecondary: false,
+          isDesktopWslStatePending: true,
+          isDesktopWslBackendExpected: false,
+        }),
+      ).toBe(true);
+    });
+
+    it("uses the environment update flow while configured WSL is not registered yet", () => {
+      expect(
+        shouldUseLocalEnvironmentUpdateFlow({
+          hasDesktopLocalSecondary: false,
+          isDesktopWslStatePending: false,
+          isDesktopWslBackendExpected: true,
+        }),
+      ).toBe(true);
+    });
+
+    it("keeps the primary-only update flow when no local secondary can appear", () => {
+      expect(
+        shouldUseLocalEnvironmentUpdateFlow({
+          hasDesktopLocalSecondary: false,
+          isDesktopWslStatePending: false,
+          isDesktopWslBackendExpected: false,
+        }),
+      ).toBe(false);
     });
 
     it("keeps only environments that have a one-click update on offer", () => {

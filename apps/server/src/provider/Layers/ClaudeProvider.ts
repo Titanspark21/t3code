@@ -230,6 +230,14 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           options: CLAUDE_EFFORT_OPTIONS.sonnet5,
           promptInjectedValues: ["ultrathink"],
         }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
+          ],
+        }),
       ],
     }),
   },
@@ -842,7 +850,7 @@ export const makePendingClaudeProvider = (
   Effect.gen(function* () {
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
-      getBuiltInClaudeModelsForVersion(null),
+      BUILT_IN_MODELS,
       PROVIDER,
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
