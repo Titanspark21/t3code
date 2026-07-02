@@ -245,7 +245,9 @@ describe("browser recording", () => {
       operation: "wait-startup",
       tabId: "recording-tab",
     });
-    const restartAfterStop = stopPromise.catch(() => null).then(() => startBrowserRecording("recording-tab"));
+    const restartAfterStop = stopPromise
+      .catch(() => null)
+      .then(() => startBrowserRecording("recording-tab"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     const startCallsBeforeFirstSettled = startScreencast.mock.calls.length;
 
