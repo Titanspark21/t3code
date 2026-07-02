@@ -3263,9 +3263,18 @@ function ChatViewContent(props: ChatViewProps) {
         if (!(target instanceof HTMLElement)) return false;
         return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
       };
+      const targetUsesSpaceActivation = (target: EventTarget | null) => {
+        if (!(target instanceof HTMLElement)) return false;
+        return Boolean(
+          target.closest(
+            "button, a[href], summary, [role='button'], [role='checkbox'], [role='menuitem'], [role='switch'], [tabindex]:not([tabindex='-1'])",
+          ),
+        );
+      };
       const handleKeyboardNavigation = (event: KeyboardEvent) => {
         if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
         if (targetAcceptsKeyboardInput(event.target)) return;
+        if (event.key === " " && targetUsesSpaceActivation(event.target)) return;
         const activeElement = document.activeElement;
         if (
           activeElement &&
