@@ -20,6 +20,7 @@ import {
   parseResolvedPath,
   parseToolchainReport,
   probeWslDistros,
+  resolveWslPortProbeCanListen,
 } from "./DesktopWslEnvironment.ts";
 
 const encoder = new TextEncoder();
@@ -107,6 +108,20 @@ describe("formatWslShellTransportFailureReason", () => {
     expect(formatWslShellTransportFailureReason("spawn")).toContain("could not start wsl.exe");
     expect(formatWslShellTransportFailureReason("process")).toContain("lost communication");
     expect(formatWslShellTransportFailureReason(null)).toBeNull();
+  });
+});
+
+describe("resolveWslPortProbeCanListen", () => {
+  it("treats confirmed listener output as occupied", () => {
+    expect(resolveWslPortProbeCanListen(0, encoder.encode("occupied\n"))).toBe(false);
+  });
+
+  it("treats clean probe output as available", () => {
+    expect(resolveWslPortProbeCanListen(0, encoder.encode("ok\n"))).toBe(true);
+  });
+
+  it("treats probe failures as available so WSL preflight can report the real error", () => {
+    expect(resolveWslPortProbeCanListen(1, encoder.encode(""))).toBe(true);
   });
 });
 

@@ -166,7 +166,9 @@ jobs:
     name: Build WSL node-pty (linux-x64)
     needs: [preflight]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Build on an older glibc baseline so the bundled WSL native addon loads on
+    # common Ubuntu 20.04/22.04 WSL distros; N-API covers Node ABI, not libc ABI.
+    runs-on: blacksmith-8vcpu-ubuntu-2204
     timeout-minutes: 15
     steps:
       - name: Checkout

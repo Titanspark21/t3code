@@ -783,16 +783,20 @@ fi
         [Stream.runCollect(handle.stdout), handle.exitCode],
         { concurrency: "unbounded" },
       );
-      return (
-        (exitCode as unknown as number) === 0 &&
-        decodeUtf8(concatChunks(stdoutBytes)).trim() === "ok"
-      );
+      return resolveWslPortProbeCanListen(exitCode as unknown as number, concatChunks(stdoutBytes));
     }),
   ).pipe(
     Effect.timeoutOption(PROBE_TIMEOUT),
-    Effect.map(Option.getOrElse(() => false)),
-    Effect.orElseSucceed(() => false),
+    Effect.map(Option.getOrElse(() => true)),
+    Effect.orElseSucceed(() => true),
   );
+
+export const resolveWslPortProbeCanListen = (exitCode: number, stdout: Uint8Array): boolean => {
+  if (exitCode !== 0) {
+    return true;
+  }
+  return decodeUtf8(stdout).trim() !== "occupied";
+};
 
 const getUserHomeImpl = (
   distro: string | null,
