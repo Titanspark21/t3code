@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -247,8 +248,10 @@ export function resolveAppModelSelectionForInstance(
   );
   if (!entry) return null;
   const options = getAppModelOptionsForInstance(settings, entry);
+  const defaultModel = DEFAULT_MODEL_BY_PROVIDER[entry.driverKind];
   return (
     resolveSelectableModel(entry.driverKind, selectedModel, options) ??
+    resolveSelectableModel(entry.driverKind, defaultModel, options) ??
     options[0]?.slug ??
     entry.models[0]?.slug ??
     null
