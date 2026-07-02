@@ -132,7 +132,10 @@ const logBackendObservabilitySettingsReadFailure = (
   settingsPath: string,
   cause: PlatformError.PlatformError,
 ) => {
-  const error = new DesktopBackendObservabilitySettingsReadError({ settingsPath, cause });
+  const error = new DesktopBackendObservabilitySettingsReadError({
+    settingsPath,
+    cause,
+  });
   return Effect.logWarning(error).pipe(
     Effect.annotateLogs({
       component: "desktop-backend-configuration",
@@ -378,10 +381,13 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   never,
   | DesktopEnvironment.DesktopEnvironment
   | DesktopWslEnvironment.DesktopWslEnvironment
+  | DesktopServerExposure.DesktopServerExposure
   | FileSystem.FileSystem
 > {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+  const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+  const backendExposure = yield* serverExposure.backendConfig;
 
   // Bind to 0.0.0.0 inside WSL so the backend is reachable both via
   // WSL2's automatic localhost forwarding (wslhost: Windows 127.0.0.1
@@ -409,8 +415,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     // need a valid number in this slot. The backend reads tailscaleServePort
     // only when tailscaleServeEnabled is true, so the actual value here is
     // inert.
-    tailscaleServeEnabled: false,
-    tailscaleServePort: 443,
+    tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
+    tailscaleServePort: backendExposure.tailscaleServePort,
     ...buildObservabilityFragment(input.observabilitySettings),
   };
 
@@ -594,7 +600,10 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
-    return { bootstrapToken, observabilitySettings } satisfies SharedBootstrapInput;
+    return {
+      bootstrapToken,
+      observabilitySettings,
+    } satisfies SharedBootstrapInput;
   });
 
   const buildWslPrimaryConfig = Effect.gen(function* () {
@@ -615,6 +624,7 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
+      Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
     );
   });
@@ -673,6 +683,7 @@ export const make = Effect.gen(function* () {
         return yield* resolveWslStartConfig({ ...shared, ...input }).pipe(
           Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
           Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
+          Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
         );
       }).pipe(

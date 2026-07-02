@@ -32,7 +32,11 @@ export interface EnsureWslNodePtyOptions {
 }
 
 export type EnsureWslNodePtyResult =
-  | { readonly ok: true; readonly nodePath: string; readonly resolvedPath: string }
+  | {
+      readonly ok: true;
+      readonly nodePath: string;
+      readonly resolvedPath: string;
+    }
   | {
       readonly ok: false;
       readonly reason: string;
@@ -75,6 +79,7 @@ export class DesktopWslEnvironment extends Context.Service<
     // (the backend can be listening for 30+ seconds before wslhost starts
     // forwarding 127.0.0.1:port to WSL-side localhost).
     readonly getDistroIp: (distro: string | null) => Effect.Effect<Option.Option<string>>;
+    readonly canListenOnPort: (distro: string | null, port: number) => Effect.Effect<boolean>;
     readonly ensureNodePty: (
       distro: string | null,
       windowsRepoRoot: string,
@@ -404,7 +409,11 @@ const ensureNodePtyImpl = (
 
     const transportFailureReason = formatWslShellTransportFailureReason(probe.transportFailure);
     if (transportFailureReason !== null) {
-      return { ok: false, reason: transportFailureReason, fatal: false } as const;
+      return {
+        ok: false,
+        reason: transportFailureReason,
+        fatal: false,
+      } as const;
     }
 
     // No node at all, even after the shared resolver repaired PATH. Surface
@@ -462,7 +471,11 @@ const ensureNodePtyImpl = (
     if (options.allowBuild !== true) {
       const packagedProbeFailure = formatNodePtyProbeFailureReason(probe.exitCode);
       if (packagedProbeFailure !== null) {
-        return { ok: false, reason: packagedProbeFailure, fatal: true } as const;
+        return {
+          ok: false,
+          reason: packagedProbeFailure,
+          fatal: true,
+        } as const;
       }
     }
 
@@ -679,6 +692,28 @@ const getDistroIpImpl = (
     Effect.orElseSucceed(() => Option.none<string>()),
   );
 
+const canListenOnPortImpl = (
+  distro: string | null,
+  port: number,
+): Effect.Effect<boolean, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  runWslShell(
+    distro,
+    `
+T3CODE_PORT_PROBE=${port} node <<'NODE'
+const net = require("node:net");
+const port = Number(process.env.T3CODE_PORT_PROBE);
+const server = net.createServer();
+server.once("error", () => process.exit(1));
+server.listen({ host: "0.0.0.0", port }, () => {
+  server.close(() => {
+    console.log("ok");
+  });
+});
+NODE
+`,
+    PROBE_TIMEOUT,
+  ).pipe(Effect.map((result) => result.exitCode === 0 && result.stdout.trim() === "ok"));
+
 const getUserHomeImpl = (
   distro: string | null,
 ): Effect.Effect<Option.Option<string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -736,6 +771,7 @@ export interface DesktopWslEnvironmentTestStub {
   readonly windowsToWslPath?: (distro: string | null, windowsPath: string) => Option.Option<string>;
   readonly getUserHome?: (distro: string | null) => Option.Option<string>;
   readonly getDistroIp?: (distro: string | null) => Option.Option<string>;
+  readonly canListenOnPort?: (distro: string | null, port: number) => boolean;
   readonly ensureNodePty?: (
     distro: string | null,
     windowsRepoRoot: string,
@@ -758,6 +794,8 @@ export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
         Effect.succeed(stub.windowsToWslPath?.(distro, windowsPath) ?? Option.none()),
       getUserHome: (distro) => Effect.succeed(stub.getUserHome?.(distro) ?? Option.none<string>()),
       getDistroIp: (distro) => Effect.succeed(stub.getDistroIp?.(distro) ?? Option.none<string>()),
+      canListenOnPort: (distro, port) =>
+        Effect.succeed(stub.canListenOnPort?.(distro, port) ?? true),
       ensureNodePty: (distro, windowsRepoRoot, options) =>
         Effect.succeed(
           stub.ensureNodePty?.(distro, windowsRepoRoot, options) ?? {
@@ -824,6 +862,11 @@ export const layer = Layer.effect(
     const getDistroIp = (distro: string | null) =>
       provideSpawner(getDistroIpImpl(distro)).pipe(Effect.withSpan("desktop.wsl.getDistroIp"));
 
+    const canListenOnPort = (distro: string | null, port: number) =>
+      provideSpawner(canListenOnPortImpl(distro, port)).pipe(
+        Effect.withSpan("desktop.wsl.canListenOnPort"),
+      );
+
     const probeDistros = provideSpawner(probeWslDistros).pipe(
       Effect.withSpan("desktop.wsl.probeDistros"),
     );
@@ -840,6 +883,7 @@ export const layer = Layer.effect(
       windowsToWslPath,
       getUserHome,
       getDistroIp,
+      canListenOnPort,
       ensureNodePty: (distro, windowsRepoRoot, options) =>
         provideSpawner(ensureNodePtyImpl(distro, windowsRepoRoot, windowsToWslPath, options)).pipe(
           Effect.withSpan("desktop.wsl.ensureNodePty"),

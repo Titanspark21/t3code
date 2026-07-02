@@ -39,6 +39,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/unstable/http";
 
@@ -317,9 +318,9 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   }
   const httpBaseUrl = entry.httpBaseUrl;
   const wsBaseUrl = entry.wsBaseUrl;
-  const descriptor = yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
-    Effect.mapError(mapRemoteEnvironmentError),
-  );
+  const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+    httpBaseUrl,
+  }).pipe(Effect.mapError(mapRemoteEnvironmentError));
   const issuedAtEpochMs = yield* Clock.currentTimeMillis;
   const access = yield* bootstrapRemoteBearerSession({
     httpBaseUrl,
@@ -350,7 +351,9 @@ const loadSecondaryConnectionRegistration = Effect.fn(
         httpBaseUrl,
         wsBaseUrl,
       }),
-      credential: new BearerConnectionCredential({ token: access.access_token }),
+      credential: new BearerConnectionCredential({
+        token: access.access_token,
+      }),
     }),
     expiresAtEpochMs: secondaryBearerExpiresAtEpochMs(issuedAtEpochMs, access.expires_in),
     refreshAtEpochMs: secondaryBearerRefreshAtEpochMs(issuedAtEpochMs, access.expires_in),
@@ -498,16 +501,22 @@ const platformConnectionSourceLayer = Layer.effect(
           next.set(PRIMARY_LOCAL_ENVIRONMENT_ID, cached);
           registrations.push(cached.registration);
         } else {
-          const built = yield* loadPrimaryConnectionRegistration(primaryTarget).pipe(
-            Effect.tapError((error) =>
-              Effect.logWarning("Could not discover the primary environment.", { error }),
-            ),
-            Effect.option,
-          );
-          if (Option.isSome(built)) {
-            const cacheEntry = { signature, registration: built.value };
+          const built = yield* loadPrimaryConnectionRegistration(primaryTarget).pipe(Effect.result);
+          if (Result.isSuccess(built)) {
+            const cacheEntry = { signature, registration: built.success };
             next.set(PRIMARY_LOCAL_ENVIRONMENT_ID, cacheEntry);
-            registrations.push(built.value);
+            registrations.push(built.success);
+          } else {
+            yield* Effect.logWarning("Could not discover the primary environment.", {
+              error: built.failure,
+            });
+            if (
+              cached !== undefined &&
+              canReuseCachedPlatformRegistration(cached, signature, nowEpochMs)
+            ) {
+              next.set(PRIMARY_LOCAL_ENVIRONMENT_ID, cached);
+              registrations.push(cached.registration);
+            }
           }
         }
       }
