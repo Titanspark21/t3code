@@ -1536,7 +1536,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ),
       );
 
-      it.effect("includes Claude Sonnet 5 with reasoning and context options", () =>
+      it.effect("includes Claude Sonnet 5 with reasoning options on supported Claude Code versions", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
@@ -1557,20 +1557,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             effortDescriptor?.type === "select" &&
               effortDescriptor.options.some((option) => option.id === "xhigh"),
           );
-          const contextDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
-            (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
-          );
-          assert.deepStrictEqual(
-            contextDescriptor?.type === "select"
-              ? contextDescriptor.options.find((option) => option.isDefault)
-              : undefined,
-            { id: "200k", label: "200k", isDefault: true },
-          );
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {
               const joined = args.join(" ");
-              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "--version") return { stdout: "2.1.197\n", stderr: "", code: 0 };
               if (joined === "auth status")
                 return {
                   stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
@@ -1583,14 +1574,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ),
       );
 
-      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5", () => {
+      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5 without a context selector", () => {
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"), "xhigh");
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"), "max");
         assert.strictEqual(
           getClaudeModelCapabilities("claude-sonnet-5").optionDescriptors?.some(
             (descriptor) => descriptor.id === "contextWindow",
           ),
-          true,
+          false,
         );
       });
 
