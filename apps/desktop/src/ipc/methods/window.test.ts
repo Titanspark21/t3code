@@ -4,7 +4,11 @@ import * as Option from "effect/Option";
 
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
-import { getLocalEnvironmentBootstraps, resolveWslPickerDistro } from "./window.ts";
+import {
+  getLocalEnvironmentBootstraps,
+  resolveSelectedWslLinuxPath,
+  resolveWslPickerDistro,
+} from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
   executablePath: "wsl.exe",
@@ -30,7 +34,7 @@ const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
 };
 
 const defaultWslInstance: DesktopBackendManager.DesktopBackendInstance = {
-  id: DesktopBackendManager.BackendInstanceId("wsl:default"),
+  id: DesktopBackendManager.BackendInstanceId("wsl:@default"),
   label: Effect.succeed("WSL (default distro)"),
   start: Effect.void,
   stop: () => Effect.void,
@@ -52,7 +56,7 @@ describe("getLocalEnvironmentBootstraps", () => {
 
       assert.deepEqual(result, [
         {
-          id: "wsl:default",
+          id: "wsl:@default",
           label: "WSL (Ubuntu)",
           runningDistro: "Ubuntu",
           httpBaseUrl: "http://127.0.0.1:3774/",
@@ -88,7 +92,7 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler();
       assert.deepEqual(result, [
         {
-          id: "wsl:default",
+          id: "wsl:@default",
           label: "WSL (default distro)",
           runningDistro: null,
           httpBaseUrl: null,
@@ -147,6 +151,28 @@ describe("resolveWslPickerDistro", () => {
         settingsDistro: "Ubuntu",
       }),
       "Fedora",
+    );
+  });
+});
+
+describe("resolveSelectedWslLinuxPath", () => {
+  it("converts UNC selections from the targeted distro to Linux paths", () => {
+    assert.equal(
+      resolveSelectedWslLinuxPath({
+        selectedPath: "\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo",
+        targetDistro: "Ubuntu",
+      }),
+      "/home/theo/repo",
+    );
+  });
+
+  it("preserves UNC identity when the picker navigates to another distro", () => {
+    assert.equal(
+      resolveSelectedWslLinuxPath({
+        selectedPath: "\\\\wsl.localhost\\Debian\\home\\theo\\repo",
+        targetDistro: "Ubuntu",
+      }),
+      "\\\\wsl.localhost\\Debian\\home\\theo\\repo",
     );
   });
 });

@@ -664,7 +664,7 @@ export function parseWslDistroFromInstanceId(instanceId: string | undefined): st
     return null;
   }
   const distro = instanceId.slice(WSL_INSTANCE_ID_PREFIX.length).trim();
-  return distro.length === 0 || distro === "default" ? null : distro;
+  return distro.length === 0 || distro === "@default" || distro === "default" ? null : distro;
 }
 
 /**

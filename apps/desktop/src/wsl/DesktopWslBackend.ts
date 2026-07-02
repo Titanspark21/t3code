@@ -7,7 +7,7 @@
 // having left the pool in a consistent state (either the previous WSL
 // instance is still running, or none is).
 //
-// The instance id encodes the desired distro selection — `wsl:default`
+// The instance id encodes the desired distro selection — `wsl:@default`
 // when the user picked "track the WSL default" (settings.wslDistro is
 // null) and `wsl:<distro>` otherwise. Changing the distro setting
 // changes the id, so reconcile unregisters the old instance before
@@ -42,7 +42,7 @@ import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
 // module produces. Keeping it inline in two places risks silent
 // divergence if one ever gets renamed.
 export const WSL_INSTANCE_ID_PREFIX = "wsl:";
-const WSL_DEFAULT_DISTRO_ID = `${WSL_INSTANCE_ID_PREFIX}default`;
+export const WSL_DEFAULT_DISTRO_INSTANCE_ID = `${WSL_INSTANCE_ID_PREFIX}@default`;
 const MAX_TCP_PORT = 65_535;
 
 export class DesktopWslBackend extends Context.Service<
@@ -65,7 +65,7 @@ const { logInfo: logWslBackendInfo, logWarning: logWslBackendWarning } =
 
 const resolveTargetInstanceId = (distro: string | null): DesktopBackendPool.BackendInstanceId =>
   DesktopBackendPool.BackendInstanceId(
-    distro === null ? WSL_DEFAULT_DISTRO_ID : `${WSL_INSTANCE_ID_PREFIX}${distro}`,
+    distro === null ? WSL_DEFAULT_DISTRO_INSTANCE_ID : `${WSL_INSTANCE_ID_PREFIX}${distro}`,
   );
 
 const isWslInstanceId = (id: DesktopBackendPool.BackendInstanceId): boolean =>
