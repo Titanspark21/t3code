@@ -31,22 +31,17 @@ function useHasLocalSecondaryEnvironment(): boolean {
   const { environments } = useEnvironments();
   const desktopWslStateResult = useAtomValue(desktopWslStateAtom);
   const desktopWslState = AsyncResult.getOrElse(desktopWslStateResult, () => null);
-  return useMemo(
-    () => {
-      const hasDesktopLocalSecondary = environments.some((environment) =>
-        isDesktopLocalConnectionTarget(environment.entry.target),
-      );
-      return shouldUseLocalEnvironmentUpdateFlow({
-        hasDesktopLocalSecondary,
-        isDesktopWslStatePending: AsyncResult.isWaiting(desktopWslStateResult),
-        isDesktopWslBackendExpected:
-          desktopWslState?.available === true &&
-          desktopWslState.enabled &&
-          !desktopWslState.wslOnly,
-      });
-    },
-    [desktopWslState, desktopWslStateResult, environments],
-  );
+  return useMemo(() => {
+    const hasDesktopLocalSecondary = environments.some((environment) =>
+      isDesktopLocalConnectionTarget(environment.entry.target),
+    );
+    return shouldUseLocalEnvironmentUpdateFlow({
+      hasDesktopLocalSecondary,
+      isDesktopWslStatePending: AsyncResult.isWaiting(desktopWslStateResult),
+      isDesktopWslBackendExpected:
+        desktopWslState?.available === true && desktopWslState.enabled && !desktopWslState.wslOnly,
+    });
+  }, [desktopWslState, desktopWslStateResult, environments]);
 }
 
 /**
