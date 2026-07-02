@@ -46,17 +46,6 @@ export class BrowserRecordingCanvasUnavailableError extends Schema.TaggedErrorCl
   }
 }
 
-export class BrowserRecordingRequiresVisibleTabError extends Schema.TaggedErrorClass<BrowserRecordingRequiresVisibleTabError>()(
-  "BrowserRecordingRequiresVisibleTabError",
-  {
-    tabId: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Browser recording requires tab ${this.tabId} to be visible.`;
-  }
-}
-
 export class BrowserRecordingOperationError extends Schema.TaggedErrorClass<BrowserRecordingOperationError>()(
   "BrowserRecordingOperationError",
   {
@@ -193,7 +182,10 @@ const waitForRecordingStartupToSettle = async (recording: ActiveRecording): Prom
 };
 
 const isStartupWaitTimeout = (error: unknown): error is BrowserRecordingOperationError =>
-  isBrowserRecordingOperationError(error) && error.operation === "wait-startup";
+  isBrowserRecordingOperationError(error) &&
+  error.operation === "wait-startup" &&
+  error.cause instanceof Error &&
+  error.cause.message.startsWith("Browser recording startup did not settle");
 
 export async function startBrowserRecording(tabId: string): Promise<string> {
   const bridge = previewBridge;
@@ -208,7 +200,6 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
     });
   }
   const surface = useBrowserSurfaceStore.getState().byTabId[tabId];
-  if (!surface?.visible) throw new BrowserRecordingRequiresVisibleTabError({ tabId });
   const recordingSize = surface?.content ?? surface?.rect;
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, recordingSize?.width ?? 1280);
@@ -239,9 +230,23 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
   const startedAt = new Date().toISOString();
   const chunks: Blob[] = [];
   let settleStartup: (() => void) | undefined;
-  const startupSettled = new Promise<void>((resolve) => {
+  let failStartup: ((error: unknown) => void) | undefined;
+  let startupComplete = false;
+  const startupSettled = new Promise<void>((resolve, reject) => {
     settleStartup = resolve;
+    failStartup = reject;
   });
+  void startupSettled.catch(() => undefined);
+  const resolveStartup = () => {
+    if (startupComplete) return;
+    startupComplete = true;
+    settleStartup?.();
+  };
+  const rejectStartup = (error: unknown) => {
+    if (startupComplete) return;
+    startupComplete = true;
+    failStartup?.(error);
+  };
   recorder.addEventListener("dataavailable", (event) => {
     if (event.data.size > 0) chunks.push(event.data);
   });
@@ -257,35 +262,43 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
     lifecycle: { phase: "starting" },
   };
   active = recording;
-  try {
+  {
     try {
       unsubscribeFrames ??= bridge.recording.onFrame(drawFrame);
     } catch (cause) {
-      clearActiveRecording(recording);
-      throw new BrowserRecordingOperationError({
+      const error = new BrowserRecordingOperationError({
         operation: "subscribe-frames",
         tabId,
         cause,
       });
+      clearActiveRecording(recording);
+      rejectStartup(error);
+      throw error;
     }
     try {
       recorder.start(1_000);
     } catch (cause) {
-      clearActiveRecording(recording);
-      throw new BrowserRecordingOperationError({
+      const error = new BrowserRecordingOperationError({
         operation: "start-media-recorder",
         tabId,
         cause,
       });
+      clearActiveRecording(recording);
+      rejectStartup(error);
+      throw error;
     }
     if (!isRecordingStarting(recording)) {
-      throw recordingStartupCancelledError(recording);
+      const error = recordingStartupCancelledError(recording);
+      rejectStartup(error);
+      throw error;
     }
     try {
       await bridge.recording.startScreencast(tabId);
     } catch (cause) {
       if (!isRecordingStarting(recording)) {
-        throw recordingStartupCancelledError(recording, cause);
+        const error = recordingStartupCancelledError(recording, cause);
+        rejectStartup(error);
+        throw error;
       }
       let cleanupCause: unknown;
       try {
@@ -295,7 +308,7 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
       } finally {
         clearActiveRecording(recording);
       }
-      throw new BrowserRecordingOperationError({
+      const error = new BrowserRecordingOperationError({
         operation: "start-screencast",
         tabId,
         cause:
@@ -307,7 +320,10 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
                 { cause },
               ),
       });
+      rejectStartup(error);
+      throw error;
     }
+    resolveStartup();
     if (!isRecordingStarting(recording)) {
       try {
         await bridge.recording.stopScreencast(tabId);
@@ -326,8 +342,6 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
     recording.lifecycle = { phase: "recording" };
     appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
     return startedAt;
-  } finally {
-    settleStartup?.();
   }
 }
 
