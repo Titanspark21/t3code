@@ -3259,19 +3259,64 @@ function ChatViewContent(props: ChatViewProps) {
       const handleManualNavigation = () => {
         cancelTimelineLiveFollowForUserNavigationRef.current();
       };
+      const targetAcceptsKeyboardInput = (target: EventTarget | null) => {
+        if (!(target instanceof HTMLElement)) return false;
+        return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+      };
+      const handleKeyboardNavigation = (event: KeyboardEvent) => {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+        if (targetAcceptsKeyboardInput(event.target)) return;
+        const activeElement = document.activeElement;
+        if (
+          activeElement &&
+          activeElement !== document.body &&
+          activeElement !== scrollNode &&
+          !scrollNode.contains(activeElement)
+        ) {
+          return;
+        }
+        if (
+          event.key === "PageUp" ||
+          event.key === "PageDown" ||
+          event.key === "Home" ||
+          event.key === "End" ||
+          event.key === " "
+        ) {
+          handleManualNavigation();
+        }
+      };
+      const handlePointerDown = (event: PointerEvent) => {
+        if (event.button !== 0) return;
+        const rect = scrollNode.getBoundingClientRect();
+        const scrollbarWidth = scrollNode.offsetWidth - scrollNode.clientWidth;
+        const scrollbarHeight = scrollNode.offsetHeight - scrollNode.clientHeight;
+        const onVerticalScrollbar =
+          scrollbarWidth > 0 &&
+          event.clientX >= rect.right - scrollbarWidth &&
+          event.clientX <= rect.right;
+        const onHorizontalScrollbar =
+          scrollbarHeight > 0 &&
+          event.clientY >= rect.bottom - scrollbarHeight &&
+          event.clientY <= rect.bottom;
+        if (onVerticalScrollbar || onHorizontalScrollbar) {
+          handleManualNavigation();
+        }
+      };
       scrollNode.addEventListener("wheel", handleManualNavigation, {
         passive: true,
       });
       scrollNode.addEventListener("touchmove", handleManualNavigation, {
         passive: true,
       });
-      scrollNode.addEventListener("pointerdown", handleManualNavigation, {
+      scrollNode.addEventListener("pointerdown", handlePointerDown, {
         passive: true,
       });
+      window.addEventListener("keydown", handleKeyboardNavigation, true);
       removeListeners = () => {
         scrollNode.removeEventListener("wheel", handleManualNavigation);
         scrollNode.removeEventListener("touchmove", handleManualNavigation);
-        scrollNode.removeEventListener("pointerdown", handleManualNavigation);
+        scrollNode.removeEventListener("pointerdown", handlePointerDown);
+        window.removeEventListener("keydown", handleKeyboardNavigation, true);
       };
     });
 

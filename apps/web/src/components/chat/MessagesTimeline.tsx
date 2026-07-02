@@ -220,8 +220,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
+  const [foldToggleSettling, setFoldToggleSettling] = useState(false);
+  const foldToggleSettlingFrameRef = useRef<number | null>(null);
 
   const onToggleTurnFold = useCallback((turnId: TurnId) => {
+    setFoldToggleSettling(true);
+    if (foldToggleSettlingFrameRef.current !== null) {
+      window.cancelAnimationFrame(foldToggleSettlingFrameRef.current);
+    }
+    foldToggleSettlingFrameRef.current = window.requestAnimationFrame(() => {
+      foldToggleSettlingFrameRef.current = null;
+      setFoldToggleSettling(false);
+    });
     setExpandedTurnIds((existing) => {
       const next = new Set(existing);
       if (next.has(turnId)) {
@@ -231,6 +241,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }
       return next;
     });
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (foldToggleSettlingFrameRef.current !== null) {
+        window.cancelAnimationFrame(foldToggleSettlingFrameRef.current);
+      }
+    };
   }, []);
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorElement?: HTMLElement) => {
@@ -488,7 +505,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
             maintainScrollAtEnd={
-              anchoredEndSpace
+              anchoredEndSpace || foldToggleSettling
                 ? false
                 : {
                     animated: false,
@@ -501,7 +518,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }
             maintainVisibleContentPosition={{
               data: true,
-              size: false,
+              size: true,
             }}
             onScroll={handleScroll}
             className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5"
