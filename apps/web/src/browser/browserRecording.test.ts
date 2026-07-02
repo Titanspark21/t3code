@@ -48,7 +48,6 @@ import {
   BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS,
   BrowserRecordingConflictError,
   BrowserRecordingOperationError,
-  BrowserRecordingRequiresVisibleTabError,
   startBrowserRecording,
   stopBrowserRecording,
 } from "./browserRecording";
@@ -116,7 +115,7 @@ describe("browser recording", () => {
     await stopBrowserRecording("recording-tab");
   });
 
-  it("rejects recording for a hidden tab before starting screencast", async () => {
+  it("starts recording for an offscreen tab with retained content size", async () => {
     surfaceState.byTabId = {
       "recording-tab": {
         visible: false,
@@ -125,12 +124,12 @@ describe("browser recording", () => {
       },
     };
 
-    await expect(startBrowserRecording("recording-tab")).rejects.toBeInstanceOf(
-      BrowserRecordingRequiresVisibleTabError,
-    );
+    await startBrowserRecording("recording-tab");
 
-    expect(startScreencast).not.toHaveBeenCalled();
-    expect(registrySet).not.toHaveBeenCalled();
+    expect(startScreencast).toHaveBeenCalledWith("recording-tab");
+    expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
+
+    await stopBrowserRecording("recording-tab");
   });
 
   it("does not report success for a second start while the first is still starting", async () => {
@@ -288,6 +287,34 @@ describe("browser recording", () => {
     await rejectedStart;
     const cleanupResult = await stopBrowserRecording("recording-tab");
     expect(cleanupResult).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(events.at(-1)).toBe("clear");
+  });
+
+  it("propagates screencast startup failures to a pending stop without saving", async () => {
+    let rejectStartingScreencast: ((error: Error) => void) | undefined;
+    startScreencast.mockImplementationOnce(async () => {
+      events.push("start-screencast");
+      await new Promise<void>((_, reject) => {
+        rejectStartingScreencast = reject;
+      });
+    });
+
+    const startPromise = startBrowserRecording("recording-tab");
+    await vi.waitFor(() => expect(startScreencast).toHaveBeenCalledOnce());
+
+    const stopPromise = stopBrowserRecording("recording-tab");
+    await vi.waitFor(() => expect(stopScreencast).toHaveBeenCalledOnce());
+    rejectStartingScreencast?.(new Error("DevTools attachment rejected"));
+
+    await expect(startPromise).rejects.toMatchObject({
+      operation: "start-screencast",
+      tabId: "recording-tab",
+    });
+    await expect(stopPromise).rejects.toMatchObject({
+      operation: "wait-startup",
+      tabId: "recording-tab",
+    });
     expect(save).not.toHaveBeenCalled();
     expect(events.at(-1)).toBe("clear");
   });
