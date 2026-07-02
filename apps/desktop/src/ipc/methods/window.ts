@@ -129,6 +129,14 @@ function extractWslDistroFromEnvironmentId(envId: string): string | null {
   return suffix === "default" || suffix.length === 0 ? null : suffix;
 }
 
+export function resolveWslPickerDistro(input: {
+  readonly targetDistro: string | null;
+  readonly runningDistro: string | null;
+  readonly settingsDistro: string | null;
+}): string | null {
+  return input.targetDistro ?? input.runningDistro ?? input.settingsDistro;
+}
+
 export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
   payload: Schema.Void,
@@ -148,6 +156,7 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
     // Three picker modes:
     //   - targetEnvironmentId omitted: default to the primary picker. Keeps
@@ -168,10 +177,27 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
       targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
     const settings = yield* appSettings.get;
-    // Fall back to the persisted wslDistro when the id is the
-    // "wsl:default" sentinel; the orchestrator uses the same fallback
-    // for the actual backend.
-    const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
+    const currentWslConfig =
+      useWsl && targetId !== undefined
+        ? yield* pool.get(DesktopBackendPool.BackendInstanceId(targetId)).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.succeed(Option.none()),
+                onSome: (instance) => instance.currentConfig,
+              }),
+            ),
+          )
+        : Option.none();
+    const runningDistro = Option.isSome(currentWslConfig)
+      ? (currentWslConfig.value.runningDistro ?? null)
+      : null;
+    const wslDistro = useWsl
+      ? resolveWslPickerDistro({
+          targetDistro: wslDistroFromTarget,
+          runningDistro,
+          settingsDistro: settings.wslDistro,
+        })
+      : null;
     const defaultPath = useWsl
       ? Option.fromNullishOr(
           resolveWslPickFolderDefaultPath(

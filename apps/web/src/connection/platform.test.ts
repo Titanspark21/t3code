@@ -214,6 +214,10 @@ describe("primary topology cache", () => {
     ).toBe(cached);
   });
 
+  it("allows same-signature primary registrations to be reused after descriptor failures", () => {
+    expect(canReuseCachedPlatformRegistration(cached, cached.signature, 10_000)).toBe(true);
+  });
+
   it("treats a successful primary absence as authoritative removal", () => {
     expect(
       primaryRegistrationToRetainAfterTopologyRead(previous, {

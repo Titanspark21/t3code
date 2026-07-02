@@ -24,6 +24,7 @@ import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -115,6 +116,11 @@ const desktopServerExposureLayer = Layer.succeed(DesktopServerExposure.DesktopSe
   getAdvertisedEndpoints: Effect.die("unexpected getAdvertisedEndpoints"),
 } satisfies DesktopServerExposure.DesktopServerExposure["Service"]);
 
+const electronProtocolLayer = Layer.succeed(ElectronProtocol.ElectronProtocol, {
+  registerDesktopProtocol: () => Effect.void,
+  updateDesktopProtocolTargetOrigin: () => Effect.void,
+} satisfies ElectronProtocol.ElectronProtocol["Service"]);
+
 const electronMenuLayer = Layer.succeed(ElectronMenu.ElectronMenu, {
   setApplicationMenu: () => Effect.void,
   popupTemplate: () => Effect.void,
@@ -172,6 +178,7 @@ function makeTestLayer(input: {
         desktopEnvironmentLayer,
         desktopServerExposureLayer,
         DesktopState.layer,
+        electronProtocolLayer,
         electronMenuLayer,
         Layer.succeed(ElectronShell.ElectronShell, {
           openExternal: (url) =>
@@ -269,6 +276,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
           desktopAssetsLayer,
           desktopEnvironmentLayer,
           desktopServerExposureLayer,
+          electronProtocolLayer,
           electronMenuLayer,
           Layer.succeed(ElectronShell.ElectronShell, {
             openExternal: () => Effect.succeed(true),

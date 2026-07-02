@@ -158,7 +158,10 @@ describe("DesktopBackendConfiguration", () => {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
 
         const primary = yield* configuration.resolvePrimary;
-        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+        const wsl = yield* configuration.resolveWsl({
+          port: 5000,
+          distro: null,
+        });
 
         assert.equal(wsl.bootstrap.desktopBootstrapToken, primary.bootstrap.desktopBootstrapToken);
       }),
@@ -173,7 +176,9 @@ describe("DesktopBackendConfiguration", () => {
         prefix: "t3-desktop-backend-config-test-",
       });
       const entryPath = path.join(baseDir, "app.asar.unpacked/apps/server/dist/bin.mjs");
-      yield* fileSystem.makeDirectory(path.dirname(entryPath), { recursive: true });
+      yield* fileSystem.makeDirectory(path.dirname(entryPath), {
+        recursive: true,
+      });
       yield* fileSystem.writeFileString(entryPath, "");
 
       const observedDistros: Array<string | null> = [];
@@ -198,7 +203,11 @@ describe("DesktopBackendConfiguration", () => {
                 },
                 ensureNodePty: (distro) => {
                   observedDistros.push(distro);
-                  return { ok: true, nodePath: "/usr/bin/node", resolvedPath: "/usr/bin:/bin" };
+                  return {
+                    ok: true,
+                    nodePath: "/usr/bin/node",
+                    resolvedPath: "/usr/bin:/bin",
+                  };
                 },
                 getDistroIp: (distro) => {
                   observedDistros.push(distro);
@@ -218,6 +227,8 @@ describe("DesktopBackendConfiguration", () => {
       );
 
       assert.equal(config.runningDistro, "Ubuntu");
+      assert.equal(config.bootstrap.tailscaleServeEnabled, true);
+      assert.equal(config.bootstrap.tailscaleServePort, 8443);
       assert.deepEqual(config.args.slice(0, 2), ["-d", "Ubuntu"]);
       assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu", "Ubuntu"]);
       assert.isTrue(Option.isNone(config.preflightFailure));
@@ -234,7 +245,9 @@ describe("DesktopBackendConfiguration", () => {
           prefix: "t3-desktop-backend-config-test-",
         });
         const entryPath = path.join(baseDir, "app.asar.unpacked/apps/server/dist/bin.mjs");
-        yield* fileSystem.makeDirectory(path.dirname(entryPath), { recursive: true });
+        yield* fileSystem.makeDirectory(path.dirname(entryPath), {
+          recursive: true,
+        });
         yield* fileSystem.writeFileString(entryPath, "");
 
         const nodePath = "/home/test user's/.nvm/versions/node/v22.0.0/bin/node";
@@ -243,7 +256,10 @@ describe("DesktopBackendConfiguration", () => {
         const devServerUrl = "http://127.0.0.1:5733/dev%20assets/?label=hello%20world";
         const config = yield* Effect.gen(function* () {
           const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-          return yield* configuration.resolveWsl({ port: 5000, distro: "Ubuntu" });
+          return yield* configuration.resolveWsl({
+            port: 5000,
+            distro: "Ubuntu",
+          });
         }).pipe(
           Effect.provide(
             DesktopBackendConfiguration.layer.pipe(
@@ -456,14 +472,18 @@ describe("DesktopBackendConfiguration", () => {
 
         yield* Effect.gen(function* () {
           const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-          const config = yield* configuration.resolveWsl({ port: 5050, distro: null });
+          const config = yield* configuration.resolveWsl({
+            port: 5050,
+            distro: null,
+          });
 
           assert.equal(config.executablePath, "wsl.exe");
           assert.equal(config.bootstrap.port, 5050);
           // Binds to 0.0.0.0 inside WSL so the backend is reachable via
           // both wslhost-forwarded localhost and the distro's eth0 IP.
           assert.equal(config.bootstrap.host, "0.0.0.0");
-          assert.equal(config.bootstrap.tailscaleServeEnabled, false);
+          assert.equal(config.bootstrap.tailscaleServeEnabled, true);
+          assert.equal(config.bootstrap.tailscaleServePort, 8443);
           // httpBaseUrl uses the resolved distro IP from the test stub,
           // not localhost — the renderer reaches the backend directly to
           // avoid relying on wslhost forwarding.
@@ -592,7 +612,10 @@ describe("DesktopBackendConfiguration", () => {
 
       yield* Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-        const config = yield* configuration.resolveWsl({ port: 5050, distro: "Ubuntu" });
+        const config = yield* configuration.resolveWsl({
+          port: 5050,
+          distro: "Ubuntu",
+        });
         const failure = Option.getOrThrow(config.preflightFailure);
 
         assert.isFalse(failure.fatal);
@@ -627,7 +650,10 @@ describe("DesktopBackendConfiguration", () => {
 
       yield* Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-        const config = yield* configuration.resolveWsl({ port: 5050, distro: "Ubuntu" });
+        const config = yield* configuration.resolveWsl({
+          port: 5050,
+          distro: "Ubuntu",
+        });
         const failure = Option.getOrThrow(config.preflightFailure);
 
         assert.isTrue(failure.fatal);
@@ -659,7 +685,10 @@ describe("DesktopBackendConfiguration", () => {
 
       yield* Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-        const config = yield* configuration.resolveWsl({ port: 5050, distro: "Removed-Distro" });
+        const config = yield* configuration.resolveWsl({
+          port: 5050,
+          distro: "Removed-Distro",
+        });
         const failure = Option.getOrThrow(config.preflightFailure);
 
         assert.isTrue(failure.fatal);
@@ -781,7 +810,11 @@ describe("DesktopBackendConfiguration", () => {
             ),
           ),
         ),
-        Layer.provideMerge(makeEnvironmentLayer("/tmp/t3-wsl-isavailable", { platform: "win32" })),
+        Layer.provideMerge(
+          makeEnvironmentLayer("/tmp/t3-wsl-isavailable", {
+            platform: "win32",
+          }),
+        ),
         Layer.provide(NodeServices.layer),
       ),
     );
