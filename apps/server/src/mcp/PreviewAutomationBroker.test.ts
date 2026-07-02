@@ -208,6 +208,79 @@ it.effect("does not replace the default tab with a globally stopped recording ta
   ),
 );
 
+it.effect("does not replace the default tab with an explicit recording stop target", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-session-b");
+      const recordingTabId = PreviewTabId.make("tab-session-a-recording");
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result:
+            request.operation === "open"
+              ? { available: true, tabId: browsingTabId }
+              : request.operation === "recordingStop"
+                ? { id: "recording-1", tabId: recordingTabId }
+                : { url: "http://localhost:3200" },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      yield* broker.invoke({
+        scope,
+        operation: "recordingStop",
+        input: {},
+        tabId: recordingTabId,
+      });
+      yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBe(browsingTabId);
+    }),
+  ),
+);
+
+it.effect("does not repin the default tab from evaluated page data", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-session-b");
+      const pagePayloadTabId = PreviewTabId.make("tab-page-payload");
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result:
+            request.operation === "open"
+              ? { available: true, tabId: browsingTabId }
+              : request.operation === "evaluate"
+                ? { tabId: pagePayloadTabId, value: "application data" }
+                : { url: "http://localhost:3200" },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      yield* broker.invoke({ scope, operation: "evaluate", input: {} });
+      yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBe(browsingTabId);
+    }),
+  ),
+);
+
 it.effect("does not clear the default tab after an explicit missing-tab status check", () =>
   Effect.scoped(
     Effect.gen(function* () {
