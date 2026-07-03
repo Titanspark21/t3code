@@ -759,8 +759,7 @@ export function shouldGateLocalEnvironmentUpdatePrompt(input: {
   readonly settleGraceElapsed: boolean;
 }): boolean {
   return (
-    (input.isAnySettling || input.isWaitingForExpectedLocalSecondary) &&
-    !input.settleGraceElapsed
+    (input.isAnySettling || input.isWaitingForExpectedLocalSecondary) && !input.settleGraceElapsed
   );
 }
 
