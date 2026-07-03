@@ -300,8 +300,6 @@ describe("DesktopBackendConfiguration", () => {
           "--exec",
           "env",
           "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
-          "CURSOR_API_KEY=cursor key",
-          "XAI_API_KEY=xai-key",
           nodePath,
           linuxEntryPath,
           "--bootstrap-fd",
@@ -312,6 +310,12 @@ describe("DesktopBackendConfiguration", () => {
         assert.notInclude(config.args, "bash");
         assert.notInclude(config.args, "/bin/sh");
         assert.notInclude(config.args, "-c");
+        assert.notInclude(config.args, "CURSOR_API_KEY=cursor key");
+        assert.notInclude(config.args, "XAI_API_KEY=xai-key");
+        assert.deepEqual(config.bootstrap.processEnv, {
+          CURSOR_API_KEY: "cursor key",
+          XAI_API_KEY: "xai-key",
+        });
         assert.isTrue(Option.isNone(config.preflightFailure));
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

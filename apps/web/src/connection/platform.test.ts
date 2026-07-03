@@ -15,6 +15,7 @@ import {
   provisionDesktopSshEnvironment,
   readPrimaryEnvironmentTargetResult,
   secondaryRegistrationsToRetainAfterTopologyRead,
+  secondaryRegistrationsToRetainForPendingBootstraps,
   secondaryBearerExpiresAtEpochMs,
   secondaryBearerRefreshAtEpochMs,
 } from "./platform.ts";
@@ -181,6 +182,33 @@ describe("desktop-local bearer cache", () => {
       secondaryRegistrationsToRetainAfterTopologyRead(
         previous,
         { _tag: "Success", bootstraps: [] },
+        10_000,
+      ),
+    ).toEqual(new Map());
+  });
+
+  it("does not retain stale secondary URLs while the bootstrap is pending", () => {
+    const cached = {
+      expiresAtEpochMs: 20_000,
+      signature: "wsl:ubuntu|Ubuntu|http://127.0.0.1:4888/|ws://127.0.0.1:4888/|token",
+      registration,
+      refreshAtEpochMs: 15_000,
+    };
+    const previous = new Map([["wsl:ubuntu", cached]]);
+
+    expect(
+      secondaryRegistrationsToRetainForPendingBootstraps(
+        previous,
+        [
+          {
+            id: "wsl:ubuntu",
+            label: "WSL",
+            runningDistro: "Ubuntu",
+            httpBaseUrl: null,
+            wsBaseUrl: null,
+            bootstrapToken: "token",
+          },
+        ],
         10_000,
       ),
     ).toEqual(new Map());

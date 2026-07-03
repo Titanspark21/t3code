@@ -753,6 +753,16 @@ export function shouldUseLocalEnvironmentUpdateFlow(input: {
   );
 }
 
+export function shouldGateLocalEnvironmentUpdatePrompt(input: {
+  readonly isAnySettling: boolean;
+  readonly isWaitingForExpectedLocalSecondary: boolean;
+  readonly settleGraceElapsed: boolean;
+}): boolean {
+  return (
+    (input.isAnySettling || input.isWaitingForExpectedLocalSecondary) && !input.settleGraceElapsed
+  );
+}
+
 /** Groups that actually have a one-click update available, in display order (primary first). */
 export function environmentGroupsWithUpdates(
   groups: ReadonlyArray<LocalEnvironmentUpdateGroup>,
