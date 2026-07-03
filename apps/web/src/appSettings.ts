@@ -333,7 +333,7 @@ function toUnifiedPatch(patch: Partial<AppSettings>): Partial<UnifiedSettings> {
       continue;
     }
     providersPatch[provider] = {
-      ...(providersPatch[provider] ?? {}),
+      ...providersPatch[provider],
       customModels: normalizeCustomModelSlugsLocal(models),
     };
   }

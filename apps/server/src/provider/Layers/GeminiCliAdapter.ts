@@ -68,9 +68,7 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* 
   const manager =
     options.manager ??
     options.makeManager?.() ??
-    new GeminiCliServerManager({
-      ...(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {}),
-    });
+    new GeminiCliServerManager(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {});
   // Keep the manager's binary path in sync with the latest config — drivers
   // recreate the adapter when settings change, but tests may pass a manager
   // with an empty default that should pick up the config value.
