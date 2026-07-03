@@ -363,6 +363,9 @@ function runtimeStateFromResolvedExposure(input: {
   };
 }
 
+const shouldForceLocalOnlyExposure = (settings: DesktopAppSettings.DesktopSettings): boolean =>
+  settings.wslBackendEnabled && settings.wslOnly;
+
 function resolveRuntimeState(input: {
   readonly requestedMode: DesktopServerExposureMode;
   readonly settings: DesktopAppSettings.DesktopSettings;
@@ -371,14 +374,16 @@ function resolveRuntimeState(input: {
   readonly advertisedHostOverride: Option.Option<string>;
 }): ResolvedRuntimeState {
   const advertisedHostOverride = Option.getOrUndefined(input.advertisedHostOverride);
+  const forceLocalOnly = shouldForceLocalOnlyExposure(input.settings);
+  const effectiveMode = forceLocalOnly ? "local-only" : input.requestedMode;
   const requestedExposure = resolveDesktopServerExposure({
-    mode: input.requestedMode,
+    mode: effectiveMode,
     port: input.port,
     networkInterfaces: input.networkInterfaces,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
   const unavailable =
-    input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
+    effectiveMode === "network-accessible" && requestedExposure.endpointUrl === null;
   const exposure = unavailable
     ? resolveDesktopServerExposure({
         mode: "local-only",
@@ -391,7 +396,12 @@ function resolveRuntimeState(input: {
   return {
     state: runtimeStateFromResolvedExposure({
       requestedMode: input.requestedMode,
-      settings: input.settings,
+      settings: forceLocalOnly
+        ? {
+            ...input.settings,
+            tailscaleServeEnabled: false,
+          }
+        : input.settings,
       exposure,
       port: input.port,
     }),
