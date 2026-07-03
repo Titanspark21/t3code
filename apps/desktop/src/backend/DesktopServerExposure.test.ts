@@ -209,6 +209,49 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
+  it.effect("forces effective exposure local-only while WSL-only is the primary", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        assert.deepEqual(state, {
+          mode: "local-only",
+          endpointUrl: null,
+          advertisedHost: null,
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 8443,
+        });
+
+        const backendConfig = yield* serverExposure.backendConfig;
+        assert.equal(backendConfig.bindHost, "127.0.0.1");
+        assert.equal(backendConfig.tailscaleServeEnabled, false);
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/"],
+        );
+
+        const persisted = yield* settings.get;
+        assert.equal(persisted.serverExposureMode, "network-accessible");
+        assert.equal(persisted.tailscaleServeEnabled, true);
+      }),
+      {},
+      undefined,
+      DesktopAppSettings.layerTest({
+        ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+        serverExposureMode: "network-accessible",
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 8443,
+        wslBackendEnabled: true,
+        wslOnly: true,
+      }),
+    ),
+  );
+
   it.effect("persists tailscale serve preferences atomically and reports no-op updates", () =>
     withHarness(
       emptyNetworkInterfaces,

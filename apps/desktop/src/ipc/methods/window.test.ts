@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import {
+  extractWslDistroFromEnvironmentId,
   getLocalEnvironmentBootstraps,
   resolveSelectedWslLinuxPath,
   resolveWslPickerDistro,
@@ -128,6 +129,16 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler();
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(DesktopBackendPool.layerTest([stoppedInstance])));
+  });
+});
+
+describe("extractWslDistroFromEnvironmentId", () => {
+  it("preserves a real distro named default", () => {
+    assert.equal(extractWslDistroFromEnvironmentId("wsl:default"), "default");
+  });
+
+  it("maps only the explicit default-tracking sentinel to null", () => {
+    assert.equal(extractWslDistroFromEnvironmentId("wsl:@default"), null);
   });
 });
 
