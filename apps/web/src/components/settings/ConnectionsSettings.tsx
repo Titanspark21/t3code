@@ -2919,8 +2919,6 @@ export function ConnectionsSettings() {
   const handleSelectWslMode = useCallback(
     (value: string) => {
       if (!desktopBridge || !desktopWslState) return;
-      const defaultDistroName =
-        desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
       if (value === BACKEND_VALUE_WSL_OFF) {
         // Match the recovery row's visibility (`enabled || wslOnly`): when WSL
         // went unavailable while wsl-only was persisted, `enabled` can be false
@@ -2939,7 +2937,6 @@ export function ConnectionsSettings() {
         return;
       }
       const nextDistro = value === BACKEND_VALUE_DEFAULT_WSL ? null : value;
-      const resolvedNext = nextDistro ?? defaultDistroName;
       if (!desktopWslState.enabled) {
         // Was off, user picked a distro: ask whether to run both
         // backends or only WSL. We always ask here so the user picks
@@ -2948,10 +2945,11 @@ export function ConnectionsSettings() {
         setPendingWslChange({ kind: "enable", nextDistro });
         return;
       }
-      // Already enabled — treat as a distro switch. Skip the change if
-      // the user re-picked the row that's already selected.
-      const resolvedCurrent = desktopWslState.distro ?? defaultDistroName;
-      if (resolvedCurrent === resolvedNext) return;
+      // Already enabled — treat as a distro switch. Skip only if the persisted
+      // target is unchanged. A null target tracks the WSL default, which is
+      // different from pinning the current default distro by name even when both
+      // currently resolve to the same distro.
+      if (desktopWslState.distro === nextDistro) return;
       // Confirm when there's WSL registration to lose, OR in wsl-only mode:
       // there the primary IS the WSL backend, so a distro change relaunches
       // the app (the IPC handler does this) rather than swapping a secondary,
@@ -3081,15 +3079,9 @@ export function ConnectionsSettings() {
         />
       );
     }
-    // Distro is null when the user wants the WSL default. Map it to the
-    // real default's name so the Select highlights a real option; fall
-    // back to the sentinel only when no distros are listed yet (the
-    // dropdown then renders a single placeholder that matches).
-    const defaultDistroName =
-      desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
     const selectValue = !desktopWslState.enabled
       ? BACKEND_VALUE_WSL_OFF
-      : (desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL);
+      : (desktopWslState.distro ?? BACKEND_VALUE_DEFAULT_WSL);
     const selectLabel =
       selectValue === BACKEND_VALUE_WSL_OFF
         ? "Off"
@@ -3129,18 +3121,15 @@ export function ConnectionsSettings() {
                 <SelectItem hideIndicator value={BACKEND_VALUE_WSL_OFF}>
                   Off
                 </SelectItem>
-                {desktopWslState.distros.length === 0 ? (
-                  <SelectItem hideIndicator value={BACKEND_VALUE_DEFAULT_WSL}>
-                    Default distro
+                <SelectItem hideIndicator value={BACKEND_VALUE_DEFAULT_WSL}>
+                  Default distro
+                </SelectItem>
+                {desktopWslState.distros.map((distro) => (
+                  <SelectItem hideIndicator key={distro.name} value={distro.name}>
+                    {distro.name}
+                    {distro.isDefault ? " (default)" : ""}
                   </SelectItem>
-                ) : (
-                  desktopWslState.distros.map((distro) => (
-                    <SelectItem hideIndicator key={distro.name} value={distro.name}>
-                      {distro.name}
-                      {distro.isDefault ? " (default)" : ""}
-                    </SelectItem>
-                  ))
-                )}
+                ))}
               </SelectPopup>
             </Select>
           }

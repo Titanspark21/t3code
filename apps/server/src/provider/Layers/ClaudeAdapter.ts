@@ -73,6 +73,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
+  isClaudeSonnet5ConstrainedContextEnvironment,
   isClaudeUltracodeEffort,
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
@@ -339,6 +340,13 @@ function selectedClaudeContextWindow(
   environment: NodeJS.ProcessEnv,
 ): number | undefined {
   const optionValue = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
+  if (modelSelection?.model === "claude-sonnet-5") {
+    if (optionValue === "1m") {
+      return 1_000_000;
+    }
+    return isClaudeSonnet5ConstrainedContextEnvironment(environment) ? 200_000 : 1_000_000;
+  }
+
   if (optionValue === "1m") {
     return 1_000_000;
   }
@@ -350,11 +358,6 @@ function selectedClaudeContextWindow(
     case "claude-opus-4-8":
     case "claude-opus-4-7":
       return 1_000_000;
-    case "claude-sonnet-5":
-      return environment.CLAUDE_CODE_DISABLE_1M_CONTEXT === "1" ||
-        (environment.ANTHROPIC_BASE_URL?.trim().length ?? 0) > 0
-        ? 200_000
-        : 1_000_000;
   }
 
   const caps = getClaudeModelCapabilities(modelSelection?.model);
@@ -3671,6 +3674,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           catch: (cause) => toRequestError(input.threadId, "turn/setModel", cause),
         });
         context.currentApiModelId = apiModelId;
+      }
+      const selectedContextWindow = selectedClaudeContextWindow(modelSelection, claudeEnvironment);
+      if (selectedContextWindow !== undefined) {
+        context.lastKnownContextWindow = selectedContextWindow;
       }
       context.session = {
         ...context.session,

@@ -1819,6 +1819,62 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("treats stale direct Claude Sonnet 5 200K selections as native 1M", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-sonnet-5",
+          [{ id: "contextWindow", value: "200k" }],
+        ),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-sonnet-5-stale-200k-usage",
+        uuid: "stream-sonnet-5-stale-200k-usage",
+        parent_tool_use_id: null,
+        event: {
+          type: "message_delta",
+          delta: {},
+          usage: { total_tokens: 1_250_000 },
+        },
+      } as unknown as SDKMessage);
+
+      const usageEvent = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "thread.token-usage.updated",
+      ).pipe(Stream.runHead);
+      assert.equal(usageEvent._tag, "Some");
+      if (usageEvent._tag === "Some") {
+        assert.deepEqual(usageEvent.value.payload, {
+          usage: {
+            usedTokens: 1_000_000,
+            lastUsedTokens: 1_000_000,
+            maxTokens: 1_000_000,
+          },
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("seeds Claude Sonnet 5 sessions with 200K when 1M context is disabled", () => {
     const harness = makeHarness({
       environment: {
@@ -2198,6 +2254,7 @@ describe("ClaudeAdapterLive", () => {
         provider: ProviderDriverKind.make("claudeAgent"),
         runtimeMode: "full-access",
       });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
 
       yield* adapter.sendTurn({
         threadId: session.threadId,
@@ -3297,8 +3354,36 @@ describe("ClaudeAdapterLive", () => {
         ),
         attachments: [],
       });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
-      assert.deepEqual(harness.query.setModelCalls, ["claude-sonnet-5[1m]"]);
+      assert.deepEqual(harness.query.setModelCalls, ["sonnet[1m]"]);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-sonnet-5-gateway-1m-usage",
+        uuid: "stream-sonnet-5-gateway-1m-usage",
+        parent_tool_use_id: null,
+        event: {
+          type: "message_delta",
+          delta: {},
+          usage: { total_tokens: 750_000 },
+        },
+      } as unknown as SDKMessage);
+
+      const usageEvent = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "thread.token-usage.updated",
+      ).pipe(Stream.runHead);
+      assert.equal(usageEvent._tag, "Some");
+      if (usageEvent._tag === "Some") {
+        assert.deepEqual(usageEvent.value.payload, {
+          usage: {
+            usedTokens: 750_000,
+            lastUsedTokens: 750_000,
+            maxTokens: 1_000_000,
+          },
+        });
+      }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

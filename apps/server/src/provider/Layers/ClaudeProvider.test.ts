@@ -18,25 +18,17 @@ describe("ClaudeProvider", () => {
     ).toContain("claude-sonnet-5");
   });
 
-  it("exposes reasoning and context options for Claude Sonnet 5", () => {
+  it("exposes reasoning without a direct Anthropic context selector for Claude Sonnet 5", () => {
     const descriptors = getProviderOptionDescriptors({
       caps: getClaudeModelCapabilities("claude-sonnet-5"),
     });
 
-    expect(descriptors.map((descriptor) => descriptor.id)).toEqual(["effort", "contextWindow"]);
+    expect(descriptors.map((descriptor) => descriptor.id)).toEqual(["effort"]);
     expect(
       descriptors.some(
         (descriptor) =>
           descriptor.type === "select" &&
           descriptor.options.some((option) => option.id === "ultracode"),
-      ),
-    ).toBe(true);
-    expect(
-      descriptors.some(
-        (descriptor) =>
-          descriptor.type === "select" &&
-          descriptor.id === "contextWindow" &&
-          descriptor.options.some((option) => option.id === "1m"),
       ),
     ).toBe(true);
   });
