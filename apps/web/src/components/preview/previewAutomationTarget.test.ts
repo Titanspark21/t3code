@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   needsPreviewAutomationSessionSync,
+  resolvePreviewAutomationOpenTab,
   resolvePreviewAutomationTarget,
 } from "./previewAutomationTarget";
 
@@ -41,5 +42,29 @@ describe("preview automation target selection", () => {
         "tab-missing",
       ),
     ).toEqual({ tabId: null, snapshot: null });
+  });
+
+  it("reuses the provider session's pinned tab instead of the mutable UI tab", () => {
+    const uiActive = snapshot("tab-ui-active");
+    const agentTab = snapshot("tab-opened-by-agent");
+    const state = {
+      snapshot: uiActive,
+      sessions: { [uiActive.tabId]: uiActive, [agentTab.tabId]: agentTab },
+    };
+
+    expect(resolvePreviewAutomationOpenTab(state, agentTab.tabId, true)).toBe(agentTab.tabId);
+    expect(resolvePreviewAutomationOpenTab(state, undefined, true)).toBe(uiActive.tabId);
+    expect(resolvePreviewAutomationOpenTab(state, agentTab.tabId, false)).toBeNull();
+  });
+
+  it("reports an explicit missing tab separately from opening a new tab", () => {
+    const active = snapshot("tab-active");
+    expect(
+      resolvePreviewAutomationOpenTab(
+        { snapshot: active, sessions: { [active.tabId]: active } },
+        "tab-missing",
+        true,
+      ),
+    ).toBeUndefined();
   });
 });

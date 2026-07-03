@@ -8,13 +8,13 @@ import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { cn } from "~/lib/utils";
 
-import { useActiveBrowserRecordingTabId } from "./browserRecording";
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
-import { browserViewportSettingKey } from "./browserViewportLayout";
 import { reconcileLockedAspectRatio } from "./browserDeviceToolbarState";
+import { browserViewportSettingKey } from "./browserViewportLayout";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
+import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
 import { useBrowserViewportResize } from "./useBrowserViewportResize";
 
@@ -56,8 +56,6 @@ export function HostedBrowserWebview(props: {
       };
     }),
   );
-  const recording = useActiveBrowserRecordingTabId() === tabId;
-
   usePreviewBridge({ threadRef, tabId });
 
   useEffect(() => {
@@ -170,24 +168,11 @@ export function HostedBrowserWebview(props: {
 
   if (!config) return null;
 
-  const wrapperStyle =
-    active && lastRect
-      ? {
-          left: lastRect.x,
-          top: lastRect.y,
-          width: lastRect.width,
-          height: lastRect.height,
-          zIndex: 30,
-          pointerEvents: "auto" as const,
-        }
-      : {
-          left: 0,
-          top: 0,
-          width: hiddenSize.width,
-          height: hiddenSize.height,
-          zIndex: recording ? 0 : -1,
-          pointerEvents: "none" as const,
-        };
+  const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
+    active,
+    rect: lastRect,
+    hiddenSize,
+  });
 
   return (
     <div
