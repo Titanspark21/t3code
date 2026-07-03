@@ -15,19 +15,21 @@ import {
   environmentGroupsWithUpdates,
   getProviderUpdateInitialToastView,
   localEnvironmentUpdateNotificationKey,
+  shouldGateLocalEnvironmentUpdatePrompt,
   shouldUseLocalEnvironmentUpdateFlow,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 /**
- * True when a desktop-local secondary backend (the parallel WSL backend) is
- * present alongside the primary. Local secondaries connect over loopback with a
- * `local:<backendInstanceId>` bearer connection id; everything else (SSH, relay,
- * remote) is ignored. Gating on this keeps non-WSL users on the unchanged
- * single-prompt flow.
+ * Tracks whether the environment-aware provider update flow should be active,
+ * including the short window where WSL is configured but its desktop-local
+ * backend has not registered yet.
  */
-function useHasLocalSecondaryEnvironment(): boolean {
+function useProviderUpdateLaunchState(): {
+  readonly shouldUseLocalEnvironmentFlow: boolean;
+  readonly isExpectedLocalSecondaryMissing: boolean;
+} {
   const { environments } = useEnvironments();
   const desktopWslStateResult = useAtomValue(desktopWslStateAtom);
   const desktopWslState = AsyncResult.getOrElse(desktopWslStateResult, () => null);
@@ -35,12 +37,18 @@ function useHasLocalSecondaryEnvironment(): boolean {
     const hasDesktopLocalSecondary = environments.some((environment) =>
       isDesktopLocalConnectionTarget(environment.entry.target),
     );
-    return shouldUseLocalEnvironmentUpdateFlow({
-      hasDesktopLocalSecondary,
-      isDesktopWslStatePending: AsyncResult.isWaiting(desktopWslStateResult),
-      isDesktopWslBackendExpected:
-        desktopWslState?.available === true && desktopWslState.enabled && !desktopWslState.wslOnly,
-    });
+    const isDesktopWslStatePending = AsyncResult.isWaiting(desktopWslStateResult);
+    const isDesktopWslBackendExpected =
+      desktopWslState?.available === true && desktopWslState.enabled && !desktopWslState.wslOnly;
+    return {
+      shouldUseLocalEnvironmentFlow: shouldUseLocalEnvironmentUpdateFlow({
+        hasDesktopLocalSecondary,
+        isDesktopWslStatePending,
+        isDesktopWslBackendExpected,
+      }),
+      isExpectedLocalSecondaryMissing:
+        !hasDesktopLocalSecondary && (isDesktopWslStatePending || isDesktopWslBackendExpected),
+    };
   }, [desktopWslState, desktopWslStateResult, environments]);
 }
 
@@ -50,10 +58,12 @@ function useHasLocalSecondaryEnvironment(): boolean {
  * single-prompt flow so non-WSL users see no change.
  */
 export function ProviderUpdateLaunchNotification() {
-  const hasLocalSecondary = useHasLocalSecondaryEnvironment();
+  const launchState = useProviderUpdateLaunchState();
 
-  return hasLocalSecondary ? (
-    <ProviderUpdateEnvironmentsNotification />
+  return launchState.shouldUseLocalEnvironmentFlow ? (
+    <ProviderUpdateEnvironmentsNotification
+      isExpectedLocalSecondaryMissing={launchState.isExpectedLocalSecondaryMissing}
+    />
   ) : (
     <ProviderUpdatePrimaryNotification />
   );
@@ -62,12 +72,16 @@ export function ProviderUpdateLaunchNotification() {
 const seenProviderUpdateNotificationKeys = new Set<string>();
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
-// While a local backend (e.g. WSL) is still connecting, defer the popover so it
-// reflects every environment. Cap the wait so a stuck or failed backend can't
-// suppress the primary's updates indefinitely.
+// While a local backend (e.g. WSL) is still missing or connecting, defer the
+// popover so it reflects every environment. Cap the wait so a stuck or failed
+// backend can't suppress the primary's updates indefinitely.
 const SETTLING_GRACE_MS = 30_000;
 
-function ProviderUpdateEnvironmentsNotification() {
+function ProviderUpdateEnvironmentsNotification({
+  isExpectedLocalSecondaryMissing,
+}: {
+  readonly isExpectedLocalSecondaryMissing: boolean;
+}) {
   const navigate = useNavigate();
   const { groups, isAnySettling } = useLocalEnvironmentUpdateGroups();
   const { dismissedNotificationKeys, dismissNotificationKey } =
@@ -107,17 +121,22 @@ function ProviderUpdateEnvironmentsNotification() {
     [updateGroups],
   );
 
-  // Defer while any local backend is still connecting, up to the grace period.
+  // Defer while any expected local backend is still missing/connecting, up to
+  // the grace period.
   const [settleGraceElapsed, setSettleGraceElapsed] = useState(false);
   useEffect(() => {
-    if (!isAnySettling) {
+    if (!isAnySettling && !isExpectedLocalSecondaryMissing) {
       setSettleGraceElapsed(false);
       return;
     }
     const timer = setTimeout(() => setSettleGraceElapsed(true), SETTLING_GRACE_MS);
     return () => clearTimeout(timer);
-  }, [isAnySettling]);
-  const isGated = isAnySettling && !settleGraceElapsed;
+  }, [isAnySettling, isExpectedLocalSecondaryMissing]);
+  const isGated = shouldGateLocalEnvironmentUpdatePrompt({
+    isAnySettling,
+    isWaitingForExpectedLocalSecondary: isExpectedLocalSecondaryMissing,
+    settleGraceElapsed,
+  });
 
   const openProviderSettings = useCallback(() => {
     const active = activeToastRef.current;

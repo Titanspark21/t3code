@@ -31,6 +31,7 @@ import {
   parseWslDistroFromInstanceId,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
+  shouldGateLocalEnvironmentUpdatePrompt,
   shouldUseLocalEnvironmentUpdateFlow,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
@@ -924,6 +925,26 @@ describe("provider update launch notification logic", () => {
           hasDesktopLocalSecondary: false,
           isDesktopWslStatePending: false,
           isDesktopWslBackendExpected: false,
+        }),
+      ).toBe(false);
+    });
+
+    it("gates the local-environment prompt while an expected secondary is missing", () => {
+      expect(
+        shouldGateLocalEnvironmentUpdatePrompt({
+          isAnySettling: false,
+          isWaitingForExpectedLocalSecondary: true,
+          settleGraceElapsed: false,
+        }),
+      ).toBe(true);
+    });
+
+    it("releases the local-environment prompt after the settling grace elapses", () => {
+      expect(
+        shouldGateLocalEnvironmentUpdatePrompt({
+          isAnySettling: false,
+          isWaitingForExpectedLocalSecondary: true,
+          settleGraceElapsed: true,
         }),
       ).toBe(false);
     });

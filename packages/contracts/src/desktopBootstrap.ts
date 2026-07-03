@@ -16,6 +16,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
   tailscaleServePort: PortSchema,
   otlpTracesUrl: Schema.optional(Schema.String),
   otlpMetricsUrl: Schema.optional(Schema.String),
+  processEnv: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
 export type DesktopBackendBootstrap = typeof DesktopBackendBootstrap.Type;

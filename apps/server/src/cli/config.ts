@@ -229,6 +229,9 @@ export const resolveServerConfig = (
         ? yield* readBootstrapEnvelope(DesktopBackendBootstrap, bootstrapFd)
         : Option.none();
     const bootstrap = Option.getOrUndefined(bootstrapEnvelope);
+    if (bootstrap?.processEnv !== undefined) {
+      Object.assign(process.env, bootstrap.processEnv);
+    }
 
     const mode: ServerConfig.RuntimeMode = Option.getOrElse(
       resolveOptionPrecedence(

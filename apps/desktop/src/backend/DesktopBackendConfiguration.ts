@@ -549,22 +549,25 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // for provider updates, and the installed CLIs themselves (e.g. `codex`). Those
   // live in the resolved Node's bin dir, which `wsl.exe -- node` does NOT put on
   // the process PATH, so `npm install -g ...` fails with NotFound. Pass the
-  // user PATH entries captured by the login-shell preflight. Every dynamic
-  // value is a separate argv entry under `wsl.exe --exec`; no shell command is
-  // involved, so Windows cannot mangle nested quotes and stdin remains reserved
-  // for the bootstrap envelope.
+  // user PATH entries captured by the login-shell preflight. Keep credential
+  // env captured from the login shell out of argv; those values ride in the
+  // bootstrap envelope delivered over stdin.
   const lastSlash = preflight.nodePath.lastIndexOf("/");
   const nodeBinDir = lastSlash > 0 ? preflight.nodePath.slice(0, lastSlash) : "/usr/bin";
   const launchPath = `${nodeBinDir}:${WSL_SERVER_SYSTEM_PATH}:${preflight.resolvedPath}`;
+  const bootstrapWithResolvedEnv =
+    Object.keys(preflight.resolvedEnv).length === 0
+      ? bootstrap
+      : { ...bootstrap, processEnv: preflight.resolvedEnv };
 
   return {
     ...baseConfig,
+    bootstrap: bootstrapWithResolvedEnv,
     args: [
       ...distroArgs,
       "--exec",
       "env",
       `PATH=${launchPath}`,
-      ...Object.entries(preflight.resolvedEnv).map(([name, value]) => `${name}=${value}`),
       preflight.nodePath,
       preflight.linuxEntryPath,
       "--bootstrap-fd",

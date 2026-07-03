@@ -332,6 +332,61 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
+  it.effect("applies bootstrap process env values", () =>
+    Effect.gen(function* () {
+      const previousCursorApiKey = process.env.CURSOR_API_KEY;
+      try {
+        delete process.env.CURSOR_API_KEY;
+        const fd = yield* openBootstrapFd(
+          makeDesktopBootstrap({
+            processEnv: {
+              CURSOR_API_KEY: "cursor-key-from-bootstrap",
+            },
+          }),
+        );
+
+        yield* resolveServerConfig(
+          {
+            mode: Option.none(),
+            port: Option.none(),
+            host: Option.none(),
+            baseDir: Option.none(),
+            cwd: Option.none(),
+            devUrl: Option.none(),
+            noBrowser: Option.none(),
+            bootstrapFd: Option.none(),
+            autoBootstrapProjectFromCwd: Option.none(),
+            logWebSocketEvents: Option.none(),
+            tailscaleServeEnabled: Option.none(),
+            tailscaleServePort: Option.none(),
+          },
+          Option.none(),
+        ).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: {
+                    T3CODE_BOOTSTRAP_FD: String(fd),
+                  },
+                }),
+              ),
+              NetService.layer,
+            ),
+          ),
+        );
+
+        assert.equal(process.env.CURSOR_API_KEY, "cursor-key-from-bootstrap");
+      } finally {
+        if (previousCursorApiKey === undefined) {
+          delete process.env.CURSOR_API_KEY;
+        } else {
+          process.env.CURSOR_API_KEY = previousCursorApiKey;
+        }
+      }
+    }),
+  );
+
   it.effect("creates derived runtime directories during config resolution", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
