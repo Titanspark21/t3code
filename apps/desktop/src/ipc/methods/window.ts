@@ -120,12 +120,12 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
 // Pull the distro selection out of a backend instance id like
 // "wsl:ubuntu". Returns null for the default-tracking sentinel and maps to the
 // wslEnv-derived default at picker time.
-function extractWslDistroFromEnvironmentId(envId: string): string | null {
+export function extractWslDistroFromEnvironmentId(envId: string): string | null {
   if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
     return null;
   }
   const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
-  return suffix === "@default" || suffix === "default" || suffix.length === 0 ? null : suffix;
+  return suffix === "@default" || suffix.length === 0 ? null : suffix;
 }
 
 export function resolveWslPickerDistro(input: {
