@@ -73,6 +73,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
+  isClaudeSonnet5ConstrainedContextEnvironment,
   isClaudeUltracodeEffort,
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
@@ -336,20 +337,29 @@ function maxClaudeContextWindowFromModelUsage(
 
 function selectedClaudeContextWindow(
   modelSelection: ModelSelection | undefined,
+  environment: NodeJS.ProcessEnv,
 ): number | undefined {
-  switch (modelSelection?.model) {
-    case "claude-opus-4-8":
-    case "claude-opus-4-7":
+  const optionValue = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
+  if (modelSelection?.model === "claude-sonnet-5") {
+    if (optionValue === "1m") {
       return 1_000_000;
+    }
+    return isClaudeSonnet5ConstrainedContextEnvironment(environment) ? 200_000 : 1_000_000;
   }
 
-  const optionValue = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
   if (optionValue === "1m") {
     return 1_000_000;
   }
   if (optionValue === "200k") {
     return 200_000;
   }
+
+  switch (modelSelection?.model) {
+    case "claude-opus-4-8":
+    case "claude-opus-4-7":
+      return 1_000_000;
+  }
+
   const caps = getClaudeModelCapabilities(modelSelection?.model);
   const hasContextWindowOption = getProviderOptionDescriptors({ caps }).some(
     (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
@@ -3412,7 +3422,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
       const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
-      const initialContextWindow = selectedClaudeContextWindow(modelSelection);
+      const initialContextWindow = selectedClaudeContextWindow(modelSelection, claudeEnvironment);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
       const fastModeSupported = descriptors.some(
@@ -3664,6 +3674,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           catch: (cause) => toRequestError(input.threadId, "turn/setModel", cause),
         });
         context.currentApiModelId = apiModelId;
+      }
+      const selectedContextWindow = selectedClaudeContextWindow(modelSelection, claudeEnvironment);
+      if (selectedContextWindow !== undefined) {
+        context.lastKnownContextWindow = selectedContextWindow;
       }
       context.session = {
         ...context.session,
