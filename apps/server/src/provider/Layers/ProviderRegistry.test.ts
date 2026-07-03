@@ -1549,7 +1549,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       );
 
       it.effect(
-        "includes Claude Sonnet 5 with reasoning and context options on supported Claude Code versions",
+        "includes Claude Sonnet 5 with reasoning and no direct Anthropic context selector",
         () =>
           Effect.gen(function* () {
             const status = yield* checkClaudeProviderStatus(
@@ -1574,10 +1574,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             const contextDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
               (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
             );
-            assert.ok(
-              contextDescriptor?.type === "select" &&
-                contextDescriptor.options.some((option) => option.id === "1m"),
-            );
+            assert.strictEqual(contextDescriptor, undefined);
           }).pipe(
             Effect.provide(
               mockSpawnerLayer((args) => {
@@ -1595,14 +1592,55 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           ),
       );
 
-      it("keeps xhigh as a supported Claude CLI effort for Sonnet 5 with a context selector", () => {
+      it.effect(
+        "exposes the Sonnet 5 context selector for Anthropic gateway environments",
+        () =>
+          Effect.gen(function* () {
+            const status = yield* checkClaudeProviderStatus(
+              defaultClaudeSettings,
+              claudeCapabilities(),
+              {
+                ...process.env,
+                ANTHROPIC_BASE_URL: "https://llm-gateway.example.test",
+              },
+            );
+            const sonnet5 = status.models.find((model) => model.slug === "claude-sonnet-5");
+            const contextDescriptor = sonnet5?.capabilities?.optionDescriptors?.find(
+              (descriptor) => descriptor.type === "select" && descriptor.id === "contextWindow",
+            );
+            assert.ok(contextDescriptor?.type === "select");
+            if (contextDescriptor?.type === "select") {
+              assert.deepStrictEqual(
+                contextDescriptor.options.find((option) => option.isDefault),
+                { id: "200k", label: "200k", isDefault: true },
+              );
+              assert.ok(contextDescriptor.options.some((option) => option.id === "1m"));
+            }
+          }).pipe(
+            Effect.provide(
+              mockSpawnerLayer((args) => {
+                const joined = args.join(" ");
+                if (joined === "--version") return { stdout: "2.1.197\n", stderr: "", code: 0 };
+                if (joined === "auth status")
+                  return {
+                    stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                    stderr: "",
+                    code: 0,
+                  };
+                throw new Error(`Unexpected args: ${joined}`);
+              }),
+            ),
+          ),
+      );
+
+      it("keeps xhigh as a supported Claude CLI effort for native-1M Sonnet 5", () => {
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-5"), "xhigh");
         assert.strictEqual(normalizeClaudeCliEffort("xhigh", "claude-sonnet-4-6"), "max");
         assert.strictEqual(
           getClaudeModelCapabilities("claude-sonnet-5").optionDescriptors?.some(
             (descriptor) => descriptor.id === "contextWindow",
           ),
-          true,
+          false,
         );
       });
 
