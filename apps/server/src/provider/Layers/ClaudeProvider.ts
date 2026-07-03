@@ -297,7 +297,7 @@ function withClaudeSonnet5ContextWindowSelector(
       return model;
     }
 
-    const optionDescriptors = model.capabilities.optionDescriptors ?? [];
+    const optionDescriptors = model.capabilities?.optionDescriptors ?? [];
     if (optionDescriptors.some((descriptor) => descriptor.id === "contextWindow")) {
       return model;
     }
