@@ -111,6 +111,19 @@ const CLAUDE_EFFORT_OPTIONS = {
   ],
 } as const;
 
+const CLAUDE_CONTEXT_WINDOW_OPTIONS = [
+  { value: "200k", label: "200k", isDefault: true },
+  { value: "1m", label: "1M" },
+] as const;
+
+function buildClaudeContextWindowDescriptor() {
+  return buildSelectOptionDescriptor({
+    id: "contextWindow",
+    label: "Context Window",
+    options: CLAUDE_CONTEXT_WINDOW_OPTIONS,
+  });
+}
+
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-fable-5",
@@ -127,10 +140,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
+          options: CLAUDE_CONTEXT_WINDOW_OPTIONS,
         }),
       ],
     }),
@@ -192,10 +202,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
+          options: CLAUDE_CONTEXT_WINDOW_OPTIONS,
         }),
       ],
     }),
@@ -230,14 +237,6 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           options: CLAUDE_EFFORT_OPTIONS.sonnet5,
           promptInjectedValues: ["ultrathink"],
         }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
-        }),
       ],
     }),
   },
@@ -256,10 +255,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
+          options: CLAUDE_CONTEXT_WINDOW_OPTIONS,
         }),
       ],
     }),
@@ -278,6 +274,42 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     }),
   },
 ];
+
+export function isClaudeSonnet5ConstrainedContextEnvironment(
+  environment: NodeJS.ProcessEnv,
+): boolean {
+  return (
+    environment.CLAUDE_CODE_DISABLE_1M_CONTEXT === "1" ||
+    (environment.ANTHROPIC_BASE_URL?.trim().length ?? 0) > 0
+  );
+}
+
+function withClaudeSonnet5ContextWindowSelector(
+  models: ReadonlyArray<ServerProviderModel>,
+  environment: NodeJS.ProcessEnv,
+): ReadonlyArray<ServerProviderModel> {
+  if (!isClaudeSonnet5ConstrainedContextEnvironment(environment)) {
+    return models;
+  }
+
+  return models.map((model) => {
+    if (model.slug !== "claude-sonnet-5") {
+      return model;
+    }
+
+    const optionDescriptors = model.capabilities.optionDescriptors ?? [];
+    if (optionDescriptors.some((descriptor) => descriptor.id === "contextWindow")) {
+      return model;
+    }
+
+    return {
+      ...model,
+      capabilities: createModelCapabilities({
+        optionDescriptors: [...optionDescriptors, buildClaudeContextWindowDescriptor()],
+      }),
+    };
+  });
+}
 
 function supportsClaudeFable5(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_VERSION) >= 0 : false;
@@ -395,7 +427,12 @@ export function isClaudeUltracodeEffort(effort: string | null | undefined): bool
 }
 
 export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
-  switch (getModelSelectionStringOptionValue(modelSelection, "contextWindow")) {
+  const contextWindow = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
+  if (modelSelection.model === "claude-sonnet-5") {
+    return contextWindow === "1m" ? "sonnet[1m]" : modelSelection.model;
+  }
+
+  switch (contextWindow) {
     case "1m":
       return `${modelSelection.model}[1m]`;
     default:
@@ -689,7 +726,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    withClaudeSonnet5ContextWindowSelector(BUILT_IN_MODELS, resolvedEnvironment),
     PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
@@ -780,7 +817,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   }
 
   const models = providerModelsFromSettings(
-    getBuiltInClaudeModelsForVersion(parsedVersion),
+    withClaudeSonnet5ContextWindowSelector(
+      getBuiltInClaudeModelsForVersion(parsedVersion),
+      resolvedEnvironment,
+    ),
     PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
@@ -846,11 +886,12 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 export const makePendingClaudeProvider = (
   claudeSettings: ClaudeSettings,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
-      BUILT_IN_MODELS,
+      withClaudeSonnet5ContextWindowSelector(BUILT_IN_MODELS, environment),
       PROVIDER,
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
