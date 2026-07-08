@@ -1,5 +1,6 @@
+import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
-import { Stack, useRouter } from "expo-router";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +22,7 @@ import { hasCloudPublicConfig } from "./publicConfig";
  * clears the connected environments, so each new session starts from zero.
  */
 export function ConnectOnboardingRouteScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
 
   // The route is deep-linkable; without cloud config the sheet would present
   // empty with no chrome to dismiss it, so bail back out instead.
@@ -29,18 +30,18 @@ export function ConnectOnboardingRouteScreen() {
     if (hasCloudPublicConfig()) {
       return;
     }
-    if (router.canGoBack()) {
-      router.back();
+    if (navigation.canGoBack()) {
+      navigation.goBack();
     } else {
-      router.replace("/");
+      navigation.dispatch(StackActions.replace("Home"));
     }
-  }, [router]);
+  }, [navigation]);
 
   return hasCloudPublicConfig() ? <ConfiguredConnectOnboardingRouteScreen /> : null;
 }
 
 function ConfiguredConnectOnboardingRouteScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
   const { connectedEnvironments, onReconnectEnvironment } = useRemoteConnections();
@@ -63,8 +64,8 @@ function ConfiguredConnectOnboardingRouteScreen() {
   }, [refreshRelayEnvironments]);
 
   const handleClose = useCallback(() => {
-    router.back();
-  }, [router]);
+    navigation.goBack();
+  }, [navigation]);
 
   // Persist before dismissing so a quick sign-out/sign-in cannot race ahead
   // of the preference write; the write is a local secure-store update.
@@ -74,20 +75,15 @@ function ConfiguredConnectOnboardingRouteScreen() {
         const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
         reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
       }
-      router.back();
+      navigation.goBack();
     })();
-  }, [router, userId]);
+  }, [navigation, userId]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      <Stack.Screen
-        options={{
-          title: "Set up T3 Connect",
-        }}
-      />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="xmark" onPress={handleClose} separateBackground />
-      </Stack.Toolbar>
+      <NativeHeaderToolbar placement="right">
+        <NativeHeaderToolbar.Button icon="xmark" onPress={handleClose} separateBackground />
+      </NativeHeaderToolbar>
       <ScrollView
         alwaysBounceVertical
         contentInsetAdjustmentBehavior="automatic"
@@ -111,7 +107,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
           />
         ) : (
           <View collapsable={false} className="rounded-[24px] bg-card p-5">
-            <Text className="text-sm leading-[20px] text-foreground-muted">
+            <Text className="text-sm leading-normal text-foreground-muted">
               Sign in to your T3 account to set up T3 Connect.
             </Text>
           </View>

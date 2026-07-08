@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useEffect } from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -11,13 +11,13 @@ import { isConnectOnboardingOptedOut } from "./connectOnboardingOptOut";
 const PRESENT_ONBOARDING_DELAY_MS = 600;
 
 /**
- * Consumes the onboarding request inside the navigation tree and presents the
- * onboarding formSheet. Lives apart from connectOnboarding.ts so
- * non-navigation consumers (CloudAuthProvider) do not pull expo-router into
- * their module graph.
+ * Consumes the onboarding request inside the navigation tree (RootStackLayout)
+ * and presents the onboarding formSheet. Lives apart from connectOnboarding.ts
+ * so non-navigation consumers (CloudAuthProvider) do not pull
+ * @react-navigation into their module graph.
  */
 export function useConnectOnboardingNavigation(): void {
-  const router = useRouter();
+  const navigation = useNavigation();
   const requestedAccountId = useAtomValue(connectOnboardingRequestAtom);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function useConnectOnboardingNavigation(): void {
         }
         clearConnectOnboardingRequest();
         if (!optedOut) {
-          router.push("/connect-onboarding");
+          navigation.navigate("ConnectOnboarding");
         }
       })();
     }, PRESENT_ONBOARDING_DELAY_MS);
@@ -45,5 +45,5 @@ export function useConnectOnboardingNavigation(): void {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestedAccountId, router]);
+  }, [navigation, requestedAccountId]);
 }
