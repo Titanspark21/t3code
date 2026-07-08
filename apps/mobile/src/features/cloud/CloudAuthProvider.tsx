@@ -63,6 +63,12 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
     if (!isLoaded) {
       return;
     }
+    // Clerk can briefly emit isLoaded+isSignedIn with a null userId during
+    // sign-in; treat this as an incomplete snapshot and skip to avoid
+    // deactivating a live session or falsely triggering onboarding.
+    if (isSignedIn && !userId) {
+      return;
+    }
 
     const previousObservedAccount = observedAccountRef.current;
     const nextAccount = isSignedIn && userId ? userId : null;

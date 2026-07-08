@@ -63,9 +63,17 @@ function ConfiguredConnectOnboardingRouteScreen() {
     })();
   }, [refreshRelayEnvironments]);
 
-  const handleClose = useCallback(() => {
-    navigation.goBack();
+  const dismissScreen = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.dispatch(StackActions.replace("Home"));
+    }
   }, [navigation]);
+
+  const handleClose = useCallback(() => {
+    dismissScreen();
+  }, [dismissScreen]);
 
   // Persist before dismissing so a quick sign-out/sign-in cannot race ahead
   // of the preference write; the write is a local secure-store update.
@@ -75,9 +83,9 @@ function ConfiguredConnectOnboardingRouteScreen() {
         const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
         reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
       }
-      navigation.goBack();
+      dismissScreen();
     })();
-  }, [navigation, userId]);
+  }, [dismissScreen, userId]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">

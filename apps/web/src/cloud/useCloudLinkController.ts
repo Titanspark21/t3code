@@ -31,7 +31,7 @@ export interface CloudLinkDesiredState {
  * (re)link and set the publish preference.
  */
 export function useCloudLinkController() {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, userId } = useAuth();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -68,11 +68,11 @@ export function useCloudLinkController() {
     });
   };
 
-  // Fork links always imply a managed tunnel; keep the upstream field name so
-  // onboarding/settings callers can share one controller shape.
-  const managedTunnelActive = primaryCloudLinkState.data?.linked ?? false;
   const publishAgentActivity = primaryCloudLinkState.data?.publishAgentActivity ?? false;
   const linked = primaryCloudLinkState.data?.linked ?? false;
+  // Use the server-reported field when available; older servers that don't
+  // return it always provision a managed tunnel, so fall back to `linked`.
+  const managedTunnelActive = primaryCloudLinkState.data?.managedTunnelActive ?? linked;
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -114,7 +114,11 @@ export function useCloudLinkController() {
         reportUpdateFailure(new Error("Sign in to T3 Connect before enabling this."));
         return false;
       }
-      if (!linked) {
+      // Re-link if not yet linked, or if linked to a different Clerk account
+      // (the cached cloudUserId differs from the current user after an account switch).
+      const linkedToCurrentUser =
+        linked && primaryCloudLinkState.data?.cloudUserId === userId;
+      if (!linkedToCurrentUser) {
         const linkResult = await linkPrimaryEnvironment({
           target,
           clerkToken,
