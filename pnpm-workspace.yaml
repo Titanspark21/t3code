@@ -5,15 +5,23 @@ packages:
   - packages/*
   - scripts
 
-onlyBuiltDependencies:
-  - electron
-  - esbuild
-  - msgpackr-extract
-  - node-pty
-  - sharp
-
-ignoredBuiltDependencies:
-  - msw
+# Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11).
+# true = allowed to run build scripts; false mirrors the pnpm 10 behavior
+# where anything outside onlyBuiltDependencies was silently not built.
+# Fork keeps pnpm 10.24 for now; allowBuilds is supported and matches upstream.
+allowBuilds:
+  browser-tabs-lock: false
+  bufferutil: false
+  core-js: false
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  msgpackr-extract: true
+  msw: false
+  node-pty: true
+  sharp: true
+  utf-8-validate: false
+  workerd: false
 
 # Install both Windows and Linux native binaries so the WSL (Linux) backend
 # can load platform-gated optional deps (e.g. @yuuang/ffi-rs-linux-x64-gnu)
@@ -62,6 +70,7 @@ catalog:
 minimumReleaseAgeExclude:
   - "@clerk/backend@3.11.1"
   - "@clerk/clerk-js@6.25.0"
+  - "@clerk/electron-passkeys@0.0.3"
   - "@clerk/electron@0.0.10"
   - "@clerk/expo@3.7.1"
   - "@clerk/react@6.12.0"
