@@ -116,7 +116,8 @@ export function useCloudLinkController() {
       }
       // Re-link if not yet linked, or if linked to a different Clerk account
       // (the cached cloudUserId differs from the current user after an account switch).
-      const linkedToCurrentUser = linked && primaryCloudLinkState.data?.cloudUserId === userId;
+      const linkedToCurrentUser =
+        linked && primaryCloudLinkState.data?.cloudUserId === userId;
       if (!linkedToCurrentUser) {
         const linkResult = await linkPrimaryEnvironment({
           target,
