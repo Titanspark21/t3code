@@ -112,11 +112,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const setReady = SubscriptionRef.update(state, (current) =>
     current.status === "live" || current.status === "deleted"
       ? current
-      : {
-          ...current,
-          status: "synchronizing" as const,
-          error: Option.none(),
-        },
+      : current.status === "synchronizing" && Option.isSome(current.data)
+        ? { ...current, status: "live" as const, error: Option.none() }
+        : { ...current, status: "synchronizing" as const, error: Option.none() },
   );
   const setDisconnected = SubscriptionRef.update(state, (current) => ({
     ...current,
@@ -235,7 +233,16 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           });
 
       if (Option.isSome(base)) {
-        yield* applyItem({ kind: "snapshot", snapshot: base.value });
+        // Apply the base snapshot while keeping status at "synchronizing" — the
+        // socket subscribe/catch-up hasn't attached yet so marking "live" here
+        // would be premature (e.g. an offline deletion would never be seen).
+        yield* SubscriptionRef.set(lastSequence, base.value.snapshotSequence);
+        yield* SubscriptionRef.set(state, {
+          data: Option.some(base.value.thread),
+          status: "synchronizing",
+          error: Option.none(),
+        });
+        yield* Queue.offer(persistence, base.value);
       }
 
       const subscribeInput = Option.match(base, {

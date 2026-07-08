@@ -102,11 +102,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   const setReady = SubscriptionRef.update(state, (current) =>
     current.status === "live"
       ? current
-      : {
-          ...current,
-          status: "synchronizing" as const,
-          error: Option.none(),
-        },
+      : current.status === "synchronizing" && Option.isSome(current.snapshot)
+        ? { ...current, status: "live" as const, error: Option.none() }
+        : { ...current, status: "synchronizing" as const, error: Option.none() },
   );
   const setStreamError = (error: unknown) =>
     Effect.logWarning("Could not synchronize the environment shell.").pipe(
@@ -175,7 +173,15 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           });
 
       if (Option.isSome(base)) {
-        yield* applyItem({ kind: "snapshot", snapshot: base.value });
+        // Apply the base snapshot while keeping status at "synchronizing" — the
+        // socket subscribe/catch-up hasn't attached yet so marking "live" here
+        // would be premature (setReady promotes to "live" once the connection is ready).
+        yield* SubscriptionRef.set(state, {
+          snapshot: Option.some(base.value),
+          status: "synchronizing",
+          error: Option.none(),
+        });
+        yield* Queue.offer(persistence, base.value);
       }
 
       const subscribeInput = Option.match(base, {
