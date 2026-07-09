@@ -57,7 +57,7 @@ export default function App() {
                     header (glass buttons, title, materials) is forced light even when
                     the system is in dark mode. */}
                 {/* Blur target for Android dropdown backdrops — see appBlurTarget.ts. */}
-                <BlurTargetView ref={appBlurTargetRef} className="flex-1">
+                <BlurTargetView ref={appBlurTargetRef} style={{ flex: 1 }}>
                   <Navigation
                     linking={appLinking}
                     theme={colorScheme === "dark" ? DarkTheme : DefaultTheme}
