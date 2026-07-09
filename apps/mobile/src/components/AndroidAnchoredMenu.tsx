@@ -108,7 +108,12 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   }, []);
 
   // The dropdown renders in-window (no Modal takes focus), so the hardware
-  // back gesture needs explicit handling while it is open.
+  // back gesture needs explicit handling while it is open. Under predictive
+  // back (enableOnBackInvokedCallback) this stays correct: back reaches JS
+  // through always-registered OnBackPressedDispatcher callbacks (react-native
+  // core on Android 16+, withAndroidPredictiveBackCompat on 13-15), which
+  // also keeps the system from playing a "leave app" preview while the menu
+  // merely closes.
   useEffect(() => {
     if (anchor === null) {
       return;

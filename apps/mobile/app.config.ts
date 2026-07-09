@@ -159,7 +159,10 @@ const config: ExpoConfig = {
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",
     },
-    predictiveBackGestureEnabled: false,
+    // Opts into OnBackInvokedCallback-based back dispatch (Android 13+).
+    // JS back handling survives it via react-native's Android 16 shim plus
+    // withAndroidPredictiveBackCompat on Android 13-15.
+    predictiveBackGestureEnabled: true,
   },
   web: {
     favicon: "./assets/favicon.png",
@@ -254,6 +257,7 @@ const config: ExpoConfig = {
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
+    "./plugins/withAndroidPredictiveBackCompat.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
