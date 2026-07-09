@@ -83,6 +83,26 @@ const dmSansFonts = {
   bold: "@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf",
 } as const;
 
+const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "expo-widgets",
+  {
+    bundleIdentifier: `${variant.iosBundleIdentifier}.widgets`,
+    groupIdentifier: `group.${variant.iosBundleIdentifier}`,
+    enablePushNotifications: true,
+    // Agent activity can update many times an hour; without the
+    // frequent-updates entitlement iOS throttles the update budget sooner.
+    frequentUpdates: true,
+    widgets: [
+      {
+        name: "AgentActivity",
+        displayName: "Agent Activity",
+        description: "Shows the current state of active T3 Code agents.",
+        supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
+      },
+    ],
+  },
+];
+
 // These aliases match the fonts' PostScript names on iOS. Register the same
 // names on Android so React Native and the native composer use one set of
 // family names without waiting for runtime font loading.
@@ -215,28 +235,13 @@ const config: ExpoConfig = {
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
     // would delete the asset catalog) and its xcodeproj mod creates the widget
     // target (which must exist before the compile phase can be attached).
-    "./plugins/withWidgetLogoAsset.cjs",
-    [
-      "expo-widgets",
-      {
-        bundleIdentifier: `${variant.iosBundleIdentifier}.widgets`,
-        groupIdentifier: `group.${variant.iosBundleIdentifier}`,
-        enablePushNotifications: true,
-        // Agent activity can update many times an hour; without the
-        // frequent-updates entitlement iOS throttles the update budget sooner.
-        frequentUpdates: true,
-        widgets: [
-          {
-            name: "AgentActivity",
-            displayName: "Agent Activity",
-            description: "Shows the current state of active T3 Code agents.",
-            supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
-          },
-        ],
-      },
-    ],
+    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
+    "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidModernPopupMenu.cjs",
+    "./plugins/withAndroidModernAlertDialog.cjs",
+    ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
     appVariant: APP_VARIANT,
