@@ -166,9 +166,11 @@ jobs:
     name: Build WSL node-pty (linux-x64)
     needs: [preflight]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
-    # Build on an older glibc baseline so the bundled WSL native addon loads on
-    # common Ubuntu 20.04/22.04 WSL distros; N-API covers Node ABI, not libc ABI.
-    runs-on: blacksmith-8vcpu-ubuntu-2004
+    # Build against Debian bullseye glibc (≈ Ubuntu 20.04) so the bundled WSL
+    # native addon loads on common Ubuntu 20.04/22.04 WSL distros. N-API covers
+    # Node ABI, not libc ABI. Use a standard GitHub-hosted runner + Node bullseye
+    # container instead of Blacksmith Ubuntu 2004 labels, which can queue forever.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -189,11 +191,16 @@ jobs:
         run: |
           set -euo pipefail
           # Resolve node-pty from apps/server (where it's a dependency) and build
-          # its native binary from source for Linux. node-addon-api resolves from
-          # node-pty's own dependency tree, so node-gyp has everything it needs.
+          # its native binary from source for Linux against an older glibc. node-
+          # addon-api resolves from node-pty's own dependency tree inside the
+          # mounted workspace, so node-gyp has everything it needs.
           pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
           pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$pty_dir" \
+            node:24.13.1-bullseye \
+            bash -lc 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential python3 >/dev/null && npx --yes node-gyp rebuild'
           mkdir -p wsl-prebuild
           cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
           file wsl-prebuild/pty.node
@@ -378,6 +385,12 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
+          # electron-builder walks large trees while packing; macOS runners often
+          # hit EMFILE without a higher soft limit.
+          if [[ "${{ matrix.platform }}" == "mac" ]]; then
+            ulimit -n 10240 || true
+          fi
+
           args=(
             --platform "${{ matrix.platform }}"
             --target "${{ matrix.target }}"

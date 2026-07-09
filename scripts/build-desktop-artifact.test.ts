@@ -461,6 +461,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(mac.protocols, [
         { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
       ]);
+      assert.deepStrictEqual(config.asarUnpack, [
+        "node_modules/@github/copilot*/**/*",
+        ...DESKTOP_ASAR_UNPACK,
+        "apps/server/dist/**",
+      ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
@@ -480,6 +485,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(win.icon, "icon.ico");
       assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
+      assert.deepStrictEqual(config.asarUnpack, [
+        "node_modules/@github/copilot*/**/*",
+        ...DESKTOP_ASAR_UNPACK,
+        "apps/server/dist/**",
+        "**/node_modules/**",
+      ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
