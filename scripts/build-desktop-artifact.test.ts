@@ -261,6 +261,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         supportedArchitectures: {
           os: ["linux"],
           cpu: ["x64"],
+          libc: ["glibc"],
         },
         allowBuilds: {
           electron: true,
