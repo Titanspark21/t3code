@@ -19,8 +19,8 @@ permissions:
   id-token: none
 
 env:
-  T3CODE_RELEASE_REPOSITORY: aaditagrawal/t3code
-  T3CODE_DESKTOP_UPDATE_REPOSITORY: aaditagrawal/t3code
+  T3CODE_RELEASE_REPOSITORY: Titanspark21/t3code
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: Titanspark21/t3code
 
 jobs:
   check_changes:
@@ -215,7 +215,12 @@ jobs:
   build_android_apk:
     name: Build Android APK
     needs: [preflight]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
+    # Fork: desktop-only release. The Android APK build needs Clerk config and
+    # Android signing secrets this fork does not set, so it is disabled to keep
+    # the desktop (.exe/.dmg/.AppImage) release reliable. Re-enable by restoring
+    # `if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}`
+    # and adding it back to the `release` job's `needs` once mobile secrets exist.
+    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production
@@ -638,7 +643,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [preflight, build, build_android_apk]
+    needs: [preflight, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -662,12 +667,6 @@ jobs:
         with:
           pattern: desktop-*
           merge-multiple: true
-          path: release-assets
-
-      - name: Download Android APK
-        uses: actions/download-artifact@v8
-        with:
-          name: android-apk
           path: release-assets
 
       - name: Merge macOS updater manifests
@@ -712,7 +711,6 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
-            release-assets/*.apk
           fail_on_unmatched_files: true
 
   deploy_web:
