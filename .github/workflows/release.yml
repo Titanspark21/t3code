@@ -212,6 +212,153 @@ jobs:
           path: wsl-prebuild/pty.node
           if-no-files-found: error
 
+  build_android_apk:
+    name: Build Android APK
+    needs: [preflight]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    permissions:
+      contents: read
+    env:
+      APP_VARIANT: production
+      EXPO_NO_GIT_STATUS: "1"
+      MOBILE_APP_VERSION: ${{ needs.preflight.outputs.version }}
+      MOBILE_ANDROID_VERSION_CODE: ${{ github.run_number }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_DOMAIN }}
+      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
+      EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: ${{ vars.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Prebuild and compile signed APK
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          signing_values=(
+            "$ANDROID_RELEASE_KEYSTORE_BASE64"
+            "$ANDROID_RELEASE_KEYSTORE_PASSWORD"
+            "$ANDROID_RELEASE_KEY_ALIAS"
+            "$ANDROID_RELEASE_KEY_PASSWORD"
+          )
+          configured=0
+          for value in "${signing_values[@]}"; do
+            if [[ -n "$value" ]]; then
+              configured=$((configured + 1))
+            fi
+          done
+
+          keystore="$RUNNER_TEMP/t3code-android-release.p12"
+          if [[ "$configured" -eq 4 ]]; then
+            printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            store_password="$ANDROID_RELEASE_KEYSTORE_PASSWORD"
+            key_alias="$ANDROID_RELEASE_KEY_ALIAS"
+            key_password="$ANDROID_RELEASE_KEY_PASSWORD"
+            echo "Using the configured persistent Android release key."
+          elif [[ "$configured" -eq 0 ]]; then
+            store_password="$(openssl rand -hex 32)"
+            key_password="$store_password"
+            key_alias="t3code-release"
+            keytool -genkeypair \
+              -keystore "$keystore" \
+              -storetype PKCS12 \
+              -storepass "$store_password" \
+              -alias "$key_alias" \
+              -keypass "$key_password" \
+              -keyalg RSA \
+              -keysize 4096 \
+              -validity 3650 \
+              -dname "CN=T3 Code CI, OU=Ephemeral Android Build, O=T3 Code"
+            echo "::warning::Android signing secrets are absent. This APK is installable, but its ephemeral key cannot upgrade APKs from another release. Configure the documented signing secrets before distributing production updates."
+          else
+            echo "Android release signing is only partially configured. Set all four ANDROID_RELEASE_* secrets or remove all four to use an ephemeral installable build." >&2
+            exit 1
+          fi
+
+          chmod 600 "$keystore"
+          export ORG_GRADLE_PROJECT_T3CODE_ANDROID_KEYSTORE_FILE="$keystore"
+          export ORG_GRADLE_PROJECT_T3CODE_ANDROID_KEYSTORE_PASSWORD="$store_password"
+          export ORG_GRADLE_PROJECT_T3CODE_ANDROID_KEY_ALIAS="$key_alias"
+          export ORG_GRADLE_PROJECT_T3CODE_ANDROID_KEY_PASSWORD="$key_password"
+
+          if [[ -z "${T3CODE_RELAY_URL:-}" && -n "${RELAY_API_ZONE_NAME:-}" ]]; then
+            export T3CODE_RELAY_URL="https://relay.${RELAY_API_ZONE_NAME}"
+          elif [[ -n "${T3CODE_RELAY_URL:-}" && ! "$T3CODE_RELAY_URL" =~ ^https?:// ]]; then
+            export T3CODE_RELAY_URL="https://${T3CODE_RELAY_URL}"
+          fi
+
+          vp exec --filter @t3tools/mobile -- expo prebuild --clean --platform android --no-install
+          apps/mobile/android/gradlew \
+            --project-dir apps/mobile/android \
+            :app:assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+          shopt -s nullglob
+          apks=(apps/mobile/android/app/build/outputs/apk/release/*.apk)
+          if [[ "${#apks[@]}" -ne 1 ]]; then
+            echo "Expected exactly one release APK, found ${#apks[@]}." >&2
+            exit 1
+          fi
+
+          mkdir -p release-publish
+          cp "${apks[0]}" "release-publish/T3-Code-${MOBILE_APP_VERSION}-android.apk"
+
+      - name: Verify APK signature and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="release-publish/T3-Code-${MOBILE_APP_VERSION}-android.apk"
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk"
+          badging="$($build_tools/aapt dump badging "$apk" | head -n 1)"
+          echo "$badging"
+          grep -Fq "package: name='com.t3tools.t3code'" <<< "$badging"
+          grep -Fq "versionCode='${MOBILE_ANDROID_VERSION_CODE}'" <<< "$badging"
+          grep -Fq "versionName='${MOBILE_APP_VERSION}'" <<< "$badging"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apk
+          path: release-publish/*.apk
+          if-no-files-found: error
+
   build:
     name: Build ${{ matrix.label }}
     # build_wsl_node_pty stays in `needs` so it runs first and its artifact is
@@ -491,7 +638,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [preflight, build]
+    needs: [preflight, build, build_android_apk]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -515,6 +662,12 @@ jobs:
         with:
           pattern: desktop-*
           merge-multiple: true
+          path: release-assets
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v8
+        with:
+          name: android-apk
           path: release-assets
 
       - name: Merge macOS updater manifests
@@ -559,6 +712,7 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/*.apk
           fail_on_unmatched_files: true
 
   deploy_web:

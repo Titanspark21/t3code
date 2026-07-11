@@ -120,3 +120,5 @@ vp run eas:android:dev
 vp run eas:android:preview:dev
 vp run eas:android:preview
 ```
+
+Stable and nightly GitHub releases also contain an installable Android APK built directly on the GitHub-hosted runner. This path is independent of EAS. Release maintainers should configure the persistent Android keystore secrets documented in [the release checklist](../../docs/operations/release.md#android-apk-release-signing); without them CI uses an ephemeral key and the resulting APK cannot upgrade a differently signed installation in place.

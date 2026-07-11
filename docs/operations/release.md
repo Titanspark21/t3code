@@ -1,6 +1,6 @@
 # Release Checklist
 
-This document covers the unified release workflow for stable and nightly desktop releases.
+This document covers the unified release workflow for stable and nightly desktop and Android releases.
 
 ## What the workflow does
 
@@ -11,11 +11,12 @@ This document covers the unified release workflow for stable and nightly desktop
   - manual `workflow_dispatch` for either channel
 - Runs quality gates first: lint, typecheck, test.
 - Reads the shared production T3 Connect relay URL and Clerk client configuration before packaging clients.
-- Builds four artifacts in parallel for both channels:
+- Builds five artifacts in parallel for both channels:
   - macOS `arm64` DMG
   - macOS `x64` DMG
   - Linux `x64` AppImage
   - Windows `x64` NSIS installer
+  - Android APK
 - Publishes one GitHub Release with all produced files.
   - Stable tags with a suffix after `X.Y.Z` (for example `1.2.3-alpha.1`) are published as GitHub prereleases.
   - Only plain stable `X.Y.Z` releases are marked as the repository's latest release.
@@ -28,7 +29,22 @@ This document covers the unified release workflow for stable and nightly desktop
 - Deploys the hosted web app to Vercel only after a release is published:
   - stable releases are aliased to the `latest` hosted app channel
   - nightly releases are aliased to the `nightly` hosted app channel
-- Signing is optional and auto-detected per platform from secrets.
+- Signing is auto-detected per platform from secrets. Android always produces a signed, installable APK; without a configured release keystore it uses a one-run key and warns that the artifact cannot update another release in place.
+
+## Android APK release signing
+
+The Android job runs Expo prebuild and Gradle on GitHub-hosted Ubuntu, verifies the APK signature and package/version metadata, and publishes `T3-Code-<version>-android.apk` with the desktop assets. It does not require `EXPO_TOKEN` or EAS.
+
+Configure all four secrets in the `production` GitHub environment to keep the signing identity stable across releases:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`: base64-encoded JKS or PKCS12 keystore.
+- `ANDROID_RELEASE_KEYSTORE_PASSWORD`: keystore password.
+- `ANDROID_RELEASE_KEY_ALIAS`: release key alias.
+- `ANDROID_RELEASE_KEY_PASSWORD`: release key password.
+
+The job fails on a partially configured secret set. When all four are absent, it creates an ephemeral signing key so CI can still publish an installable artifact. Ephemeral-key APKs are suitable for fresh installs and pipeline testing only; Android requires users to uninstall a build signed by a different key before installing it.
+
+The production job also reads `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, `RELAY_DOMAIN` (or `RELAY_API_ZONE_NAME`), and optional Clerk Google client IDs from GitHub environment variables and compiles them into the mobile app.
 
 ## T3 Connect relay deployment
 

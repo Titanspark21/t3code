@@ -8,6 +8,8 @@ const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const APP_VERSION = process.env.MOBILE_APP_VERSION?.trim() || "0.1.0";
+const ANDROID_VERSION_CODE = resolveAndroidVersionCode(process.env.MOBILE_ANDROID_VERSION_CODE);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
@@ -75,6 +77,23 @@ function resolveAppVariant(value: string | undefined): AppVariant {
   }
 }
 
+function resolveAndroidVersionCode(value: string | undefined): number | undefined {
+  if (value == null || value.trim() === "") {
+    return undefined;
+  }
+
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error("MOBILE_ANDROID_VERSION_CODE must be a positive integer.");
+  }
+
+  const versionCode = Number(value);
+  if (!Number.isSafeInteger(versionCode) || versionCode > 2_100_000_000) {
+    throw new Error("MOBILE_ANDROID_VERSION_CODE exceeds Android's supported range.");
+  }
+
+  return versionCode;
+}
+
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
@@ -115,7 +134,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "0.1.0",
+  version: APP_VERSION,
   runtimeVersion: {
     // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
     // project — native deps, config plugins, AND patches/ — matches the update.
@@ -155,6 +174,7 @@ const config: ExpoConfig = {
   android: {
     icon: "./assets/icon.png",
     package: variant.androidPackage,
+    ...(ANDROID_VERSION_CODE == null ? {} : { versionCode: ANDROID_VERSION_CODE }),
     adaptiveIcon: {
       backgroundColor: "#E6F4FE",
       foregroundImage: "./assets/android-icon-foreground.png",
@@ -260,6 +280,7 @@ const config: ExpoConfig = {
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
+    "./plugins/withAndroidReleaseSigning.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
