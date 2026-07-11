@@ -464,7 +464,11 @@ private class SelectionAwareEditText(context: Context) : EditText(context) {
         if (clip != null) {
           for (index in 0 until clip.itemCount) {
             clip.getItemAt(index).uri?.let { uri ->
-              val mimeType = context.contentResolver.getType(uri)
+              val mimeType = try {
+                context.contentResolver.getType(uri)
+              } catch (_: Exception) {
+                null
+              }
               if (mimeType?.startsWith("image/") == true) add(uri.toString())
             }
           }

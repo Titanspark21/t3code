@@ -4,13 +4,22 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
+import android.os.Bundle
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewConfiguration
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityNodeProvider
 import android.widget.OverScroller
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import expo.modules.kotlin.AppContext
@@ -85,12 +94,14 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   fun setTokensResetKey(value: String) {
     if (tokensResetKey == value) return
     tokensResetKey = value
+    tokensDecodeGeneration += 1
     canvasView.tokensByRowId = emptyMap()
   }
 
   fun setContentResetKey(value: String) {
     if (contentResetKey == value) return
     contentResetKey = value
+    rowsDecodeGeneration += 1
     tokensDecodeGeneration += 1
     canvasView.tokensByRowId = emptyMap()
     lastVisibleFileId = null
@@ -179,6 +190,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   }
 
   fun setTokensPatchJson(value: String) {
+    val generation = tokensDecodeGeneration
     payloadDecodeExecutor.execute {
       try {
         val payload = JSONObject(value)
@@ -187,6 +199,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
           payload.optJSONObject("tokensByRowId") ?: JSONObject(),
         )
         post {
+          if (generation != tokensDecodeGeneration) return@post
           if (resetKey.isNotEmpty() && resetKey != tokensResetKey) return@post
           if (decodedTokens.isNotEmpty()) {
             canvasView.tokensByRowId = canvasView.tokensByRowId + decodedTokens
@@ -601,6 +614,8 @@ private class DiffCanvasView(context: Context) : View(context) {
   private val boldTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
   }
+  private val commentTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+  private val accessibilityProvider = DiffAccessibilityNodeProvider()
   private val gestureDetector = GestureDetector(
     context,
     object : GestureDetector.SimpleOnGestureListener() {
@@ -620,11 +635,14 @@ private class DiffCanvasView(context: Context) : View(context) {
   private var verticalOffset = 0
   private var horizontalOffset = 0
   private var lastVisibleRange: Pair<Int, Int>? = null
+  private var commentLayouts: Map<String, CommentLayout> = emptyMap()
 
   var rows: List<DiffRow> = emptyList()
     set(value) {
       field = value
+      commentLayouts = emptyMap()
       rebuildOffsets()
+      accessibilityProvider.invalidateRoot()
     }
   var tokensByRowId: Map<String, List<DiffToken>> = emptyMap()
     set(value) {
@@ -635,21 +653,26 @@ private class DiffCanvasView(context: Context) : View(context) {
     set(value) {
       field = value
       invalidate()
+      accessibilityProvider.invalidateRoot()
     }
   var selectedRowIds: Set<String> = emptySet()
     set(value) {
       field = value
       invalidate()
+      accessibilityProvider.invalidateRoot()
     }
   var theme: DiffTheme = DiffTheme.fallback("light")
     set(value) {
       field = value
+      commentLayouts = emptyMap()
       invalidate()
     }
   var style: DiffStyle = DiffStyle.defaults(density)
     set(value) {
       field = value
+      commentLayouts = emptyMap()
       rebuildOffsets()
+      accessibilityProvider.invalidateRoot()
     }
   var contentWidthPx: Int = (1200 * density).toInt()
     set(value) {
@@ -660,6 +683,11 @@ private class DiffCanvasView(context: Context) : View(context) {
   var onRowTap: ((DiffRow, String) -> Unit)? = null
   var onVisibleRowsChanged: ((Int, Int) -> Unit)? = null
 
+  init {
+    importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    isFocusable = true
+  }
+
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     setMeasuredDimension(
       MeasureSpec.getSize(widthMeasureSpec),
@@ -669,8 +697,13 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
     super.onSizeChanged(width, height, oldWidth, oldHeight)
+    if (width != oldWidth) {
+      commentLayouts = emptyMap()
+      rebuildOffsets()
+    }
     setVerticalOffset(verticalOffset)
     setHorizontalOffset(horizontalOffset)
+    accessibilityProvider.invalidateRoot()
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -696,6 +729,11 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   override fun onTouchEvent(event: MotionEvent): Boolean = gestureDetector.onTouchEvent(event)
 
+  override fun getAccessibilityNodeProvider(): AccessibilityNodeProvider = accessibilityProvider
+
+  override fun dispatchHoverEvent(event: MotionEvent): Boolean =
+    accessibilityProvider.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+
   override fun canScrollVertically(direction: Int): Boolean = if (direction < 0) {
     verticalOffset > 0
   } else {
@@ -711,6 +749,7 @@ private class DiffCanvasView(context: Context) : View(context) {
     verticalOffset = nextOffset
     invalidate()
     emitVisibleRange()
+    accessibilityProvider.invalidateRoot()
   }
 
   fun scrollByVertical(delta: Int) {
@@ -748,7 +787,7 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   private fun rowHeight(row: DiffRow): Int = when (row.kind) {
     "file" -> style.fileHeaderHeightPx.toInt()
-    "comment" -> max((style.rowHeightPx * 3.2f).toInt(), (56 * density).toInt())
+    "comment" -> commentLayout(row).height
     else -> style.rowHeightPx.toInt()
   }.coerceAtLeast(1)
 
@@ -858,20 +897,66 @@ private class DiffCanvasView(context: Context) : View(context) {
       width.toFloat(),
       bottom.toFloat()
     )
+    val commentLayout = commentLayout(row)
     boldTextPaint.color = theme.text
     boldTextPaint.textSize = 12f * density
-    drawScrollableCode(canvas, top, bottom) { codeX ->
-      canvas.drawText(
-        row.commentSectionTitle.ifEmpty { row.commentRangeLabel.ifEmpty { "Comment" } },
-        codeX,
-        top + 20f * density,
-        boldTextPaint,
-      )
-      textPaint.color = theme.mutedText
-      textPaint.textSize = 12f * density
-      canvas.drawText(row.commentText, codeX, top + 42f * density, textPaint)
-    }
+    val gutterEnd = style.changeBarWidthPx + style.gutterWidthPx
+    val contentX = gutterEnd + COMMENT_HORIZONTAL_PADDING_DP * density
+    canvas.save()
+    canvas.clipRect(gutterEnd, top.toFloat(), width.toFloat(), bottom.toFloat())
+    canvas.drawText(
+      ellipsize(commentLayout.title, boldTextPaint, commentLayout.width.toFloat()),
+      contentX,
+      top + COMMENT_TOP_PADDING_DP * density - boldTextPaint.fontMetrics.ascent,
+      boldTextPaint,
+    )
+    canvas.translate(contentX, (top + commentLayout.bodyTop).toFloat())
+    commentLayout.body.draw(canvas)
+    canvas.restore()
     drawBottomBorder(canvas, bottom)
+  }
+
+  private fun commentLayout(row: DiffRow): CommentLayout {
+    val width = max(
+      1,
+      (
+        this.width - style.changeBarWidthPx - style.gutterWidthPx -
+          2f * COMMENT_HORIZONTAL_PADDING_DP * density
+        ).toInt(),
+    )
+    val title = row.commentSectionTitle.ifEmpty {
+      row.commentRangeLabel.ifEmpty { "Comment" }
+    }
+    val cacheKey =
+      "${row.id}\u0000${row.commentText}\u0000$title\u0000$width\u0000${theme.mutedText}"
+    commentLayouts[cacheKey]?.let { return it }
+
+    commentTextPaint.color = theme.mutedText
+    commentTextPaint.textSize = 12f * density
+    commentTextPaint.typeface = Typeface.DEFAULT
+    val body = StaticLayout.Builder
+      .obtain(row.commentText, 0, row.commentText.length, commentTextPaint, width)
+      .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+      .setIncludePad(false)
+      .setLineSpacing(0f, 1f)
+      .build()
+    boldTextPaint.textSize = 12f * density
+    val titleHeight = (boldTextPaint.fontMetrics.descent - boldTextPaint.fontMetrics.ascent).toInt()
+    val bodyTop = (
+      COMMENT_TOP_PADDING_DP * density + titleHeight + COMMENT_TITLE_GAP_DP * density
+      ).toInt()
+    val layout = CommentLayout(
+      title = title,
+      body = body,
+      bodyTop = bodyTop,
+      width = width,
+      height = max(
+        (56f * density).toInt(),
+        bodyTop + body.height + (COMMENT_BOTTOM_PADDING_DP * density).toInt(),
+      ),
+    )
+    commentLayouts = commentLayouts + (cacheKey to layout)
+    return layout
   }
 
   @Suppress("CyclomaticComplexMethod")
@@ -1061,11 +1146,229 @@ private class DiffCanvasView(context: Context) : View(context) {
     return value.substring(0, end) + suffix
   }
 
+  private fun accessibilityDescription(row: DiffRow): String = when (row.kind) {
+    "file" -> buildString {
+      append("File ${row.filePath.ifEmpty { row.resolvedFileId }}")
+      append(if (viewedFileIds.contains(row.resolvedFileId)) ", viewed" else ", not viewed")
+      append(", ${row.additions} additions, ${row.deletions} deletions")
+      append(". Double tap to expand or collapse. Long press to toggle viewed.")
+    }
+    "comment" -> buildString {
+      append(row.commentSectionTitle.ifEmpty { row.commentRangeLabel.ifEmpty { "Comment" } })
+      if (row.commentText.isNotEmpty()) append(": ${row.commentText}")
+      append(". Double tap to expand or collapse.")
+    }
+    "line" -> buildString {
+      append(
+        when (row.change) {
+          "add" -> "Added line"
+          "delete" -> "Deleted line"
+          else -> "Code line"
+        },
+      )
+      row.oldLineNumber?.let { append(", old $it") }
+      row.newLineNumber?.let { append(", new $it") }
+      if (row.content.isNotEmpty()) append(": ${row.content}")
+      append(". Double tap to select.")
+    }
+    else -> row.text.ifEmpty { row.content }
+  }
+
+  private fun boundsForRow(index: Int): Rect {
+    val sticky = stickyFileHeader(firstVisibleRow())
+    if (sticky?.index == index) return Rect(0, sticky.top, width, sticky.bottom)
+    return Rect(
+      0,
+      rowOffsets[index] - verticalOffset,
+      width,
+      rowOffsets[index + 1] - verticalOffset,
+    )
+  }
+
+  @Suppress("ComplexCondition")
+  private fun virtualViewAt(x: Float, y: Float): Int {
+    if (x < 0 || x >= width || y < 0 || y >= height || rows.isEmpty()) return INVALID_VIRTUAL_ID
+    val sticky = stickyFileHeader(firstVisibleRow())
+    val index = if (sticky != null && y >= sticky.top && y < sticky.bottom) {
+      sticky.index
+    } else {
+      rowIndexAt(verticalOffset + y.toInt())
+    }
+    return if (rows[index].kind in ACCESSIBLE_ROW_KINDS) index + 1 else INVALID_VIRTUAL_ID
+  }
+
+  private inner class DiffAccessibilityNodeProvider : AccessibilityNodeProvider() {
+    private var accessibilityFocusedId = INVALID_VIRTUAL_ID
+    private var hoveredId = INVALID_VIRTUAL_ID
+
+    @Suppress("ReturnCount")
+    override fun createAccessibilityNodeInfo(virtualViewId: Int): AccessibilityNodeInfo? {
+      if (virtualViewId == HOST_VIEW_ID) {
+        return AccessibilityNodeInfo.obtain(this@DiffCanvasView).apply {
+          this@DiffCanvasView.onInitializeAccessibilityNodeInfo(this)
+          className = DiffCanvasView::class.java.name
+          isScrollable = maxVerticalOffset() > 0
+          rows.indices
+            .filter { rows[it].kind in ACCESSIBLE_ROW_KINDS }
+            .forEach { addChild(this@DiffCanvasView, it + 1) }
+        }
+      }
+      val index = virtualViewId - 1
+      val row = rows.getOrNull(index) ?: return null
+      if (row.kind !in ACCESSIBLE_ROW_KINDS) return null
+      val localBounds = boundsForRow(index)
+      val visibleBounds = Rect(localBounds)
+      val visible = visibleBounds.intersect(0, 0, width, height)
+      val location = IntArray(2)
+      getLocationOnScreen(location)
+      val screenBounds = Rect(localBounds).apply { offset(location[0], location[1]) }
+      return AccessibilityNodeInfo.obtain(this@DiffCanvasView, virtualViewId).apply {
+        setSource(this@DiffCanvasView, virtualViewId)
+        setParent(this@DiffCanvasView)
+        className = "android.widget.Button"
+        packageName = context.packageName
+        contentDescription = accessibilityDescription(row)
+        isClickable = true
+        isLongClickable = row.kind == "file"
+        isFocusable = true
+        isVisibleToUser = visible
+        setBoundsInParent(localBounds)
+        setBoundsInScreen(screenBounds)
+        addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+        if (row.kind == "file") {
+          addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK)
+        }
+        if (accessibilityFocusedId == virtualViewId) {
+          isAccessibilityFocused = true
+          addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLEAR_ACCESSIBILITY_FOCUS)
+        } else {
+          addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_ACCESSIBILITY_FOCUS)
+        }
+      }
+    }
+
+    @Suppress("ReturnCount")
+    override fun performAction(virtualViewId: Int, action: Int, arguments: Bundle?): Boolean {
+      if (virtualViewId == HOST_VIEW_ID) {
+        return this@DiffCanvasView.performAccessibilityAction(action, arguments)
+      }
+      val row = rows.getOrNull(virtualViewId - 1) ?: return false
+      return when (action) {
+        AccessibilityNodeInfo.ACTION_CLICK -> {
+          onRowTap?.invoke(row, "tap")
+          sendEvent(virtualViewId, AccessibilityEvent.TYPE_VIEW_CLICKED)
+          true
+        }
+        AccessibilityNodeInfo.ACTION_LONG_CLICK -> if (row.kind == "file") {
+          onRowTap?.invoke(row, "longPress")
+          sendEvent(virtualViewId, AccessibilityEvent.TYPE_VIEW_LONG_CLICKED)
+          true
+        } else {
+          false
+        }
+        AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS -> {
+          if (accessibilityFocusedId == virtualViewId) return false
+          val previous = accessibilityFocusedId
+          accessibilityFocusedId = virtualViewId
+          if (previous != INVALID_VIRTUAL_ID) {
+            sendEvent(previous, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED)
+          }
+          sendEvent(virtualViewId, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)
+          invalidate()
+          true
+        }
+        AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS -> {
+          if (accessibilityFocusedId != virtualViewId) return false
+          accessibilityFocusedId = INVALID_VIRTUAL_ID
+          sendEvent(virtualViewId, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED)
+          invalidate()
+          true
+        }
+        else -> false
+      }
+    }
+
+    override fun findFocus(focus: Int): AccessibilityNodeInfo? = when (focus) {
+      AccessibilityNodeInfo.FOCUS_ACCESSIBILITY ->
+        accessibilityFocusedId
+          .takeIf { it != INVALID_VIRTUAL_ID }
+          ?.let(::createAccessibilityNodeInfo)
+      else -> null
+    }
+
+    @Suppress("ReturnCount")
+    fun dispatchHoverEvent(event: MotionEvent): Boolean {
+      val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+      if (!manager.isEnabled || !manager.isTouchExplorationEnabled) return false
+      when (event.action) {
+        MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+          val next = virtualViewAt(event.x, event.y)
+          if (next != hoveredId) {
+            if (hoveredId != INVALID_VIRTUAL_ID) {
+              sendEvent(hoveredId, AccessibilityEvent.TYPE_VIEW_HOVER_EXIT)
+            }
+            hoveredId = next
+            if (hoveredId != INVALID_VIRTUAL_ID) {
+              sendEvent(hoveredId, AccessibilityEvent.TYPE_VIEW_HOVER_ENTER)
+            }
+          }
+        }
+        MotionEvent.ACTION_HOVER_EXIT -> {
+          if (hoveredId != INVALID_VIRTUAL_ID) {
+            sendEvent(hoveredId, AccessibilityEvent.TYPE_VIEW_HOVER_EXIT)
+            hoveredId = INVALID_VIRTUAL_ID
+          }
+        }
+        else -> return false
+      }
+      return hoveredId != INVALID_VIRTUAL_ID
+    }
+
+    fun invalidateRoot() {
+      sendEvent(HOST_VIEW_ID, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+    }
+
+    private fun sendEvent(virtualViewId: Int, eventType: Int) {
+      val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+      if (!manager.isEnabled) return
+      val event = AccessibilityEvent.obtain(eventType).apply {
+        packageName = context.packageName
+        className = DiffCanvasView::class.java.name
+        isEnabled = this@DiffCanvasView.isEnabled
+        setSource(this@DiffCanvasView, virtualViewId)
+        if (virtualViewId != HOST_VIEW_ID) {
+          rows.getOrNull(virtualViewId - 1)?.let {
+            contentDescription = accessibilityDescription(it)
+          }
+        }
+      }
+      parent?.requestSendAccessibilityEvent(this@DiffCanvasView, event)
+    }
+  }
+
+  private data class CommentLayout(
+    val title: String,
+    val body: StaticLayout,
+    val bodyTop: Int,
+    val width: Int,
+    val height: Int
+  )
+
   private data class StickyFileHeader(
     val index: Int,
     val top: Int,
     val bottom: Int
   )
+
+  companion object {
+    private const val HOST_VIEW_ID = View.NO_ID
+    private const val INVALID_VIRTUAL_ID = Int.MIN_VALUE
+    private const val COMMENT_HORIZONTAL_PADDING_DP = 10f
+    private const val COMMENT_TOP_PADDING_DP = 10f
+    private const val COMMENT_TITLE_GAP_DP = 6f
+    private const val COMMENT_BOTTOM_PADDING_DP = 10f
+    private val ACCESSIBLE_ROW_KINDS = setOf("file", "comment", "line")
+  }
 }
 
 private fun withAlpha(color: Int, alpha: Int): Int =

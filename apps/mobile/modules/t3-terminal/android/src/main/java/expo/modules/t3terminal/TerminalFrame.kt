@@ -42,7 +42,13 @@ internal data class TerminalFrame(
       val foreground = buffer.int
       val background = buffer.int
       val cursorColor = buffer.int
-      val cellCount = cols * rows
+      val cellCountLong = cols.toLong() * rows.toLong()
+      if (cellCountLong > Int.MAX_VALUE ||
+        cellCountLong * CELL_HEADER_BYTES > buffer.remaining().toLong()
+      ) {
+        return null
+      }
+      val cellCount = cellCountLong.toInt()
       val foregrounds = IntArray(cellCount)
       val backgrounds = IntArray(cellCount)
       val flags = IntArray(cellCount)
@@ -79,4 +85,18 @@ internal data class TerminalFrame(
       )
     }
   }
+
+  fun visibleText(): String = buildString {
+    for (row in 0 until rows) {
+      var lastNonBlankColumn = -1
+      for (column in 0 until cols) {
+        val text = cellText[row * cols + column]
+        if (text.isNotBlank()) lastNonBlankColumn = column
+      }
+      for (column in 0..lastNonBlankColumn) {
+        append(cellText[row * cols + column])
+      }
+      if (row < rows - 1) append('\n')
+    }
+  }.trimEnd('\n')
 }

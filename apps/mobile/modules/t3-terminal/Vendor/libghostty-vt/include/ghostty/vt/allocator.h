@@ -12,6 +12,10 @@
 #include <stdint.h>
 #include <ghostty/vt/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** @defgroup allocator Memory Management
  *
  * libghostty-vt does require memory allocation for various operations,
@@ -251,5 +255,9 @@ GHOSTTY_API uint8_t* ghostty_alloc(const GhosttyAllocator* allocator, size_t len
 GHOSTTY_API void ghostty_free(const GhosttyAllocator* allocator, uint8_t* ptr, size_t len);
 
 /** @} */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* GHOSTTY_VT_ALLOCATOR_H */

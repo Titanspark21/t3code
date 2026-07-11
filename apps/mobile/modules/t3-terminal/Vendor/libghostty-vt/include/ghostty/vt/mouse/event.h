@@ -12,6 +12,10 @@
 #include <ghostty/vt/key/event.h>
 #include <ghostty/vt/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Opaque handle to a mouse event.
  *
@@ -191,5 +195,9 @@ GHOSTTY_API void ghostty_mouse_event_set_position(GhosttyMouseEvent event,
  * @ingroup mouse
  */
 GHOSTTY_API GhosttyMousePosition ghostty_mouse_event_get_position(GhosttyMouseEvent event);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* GHOSTTY_VT_MOUSE_EVENT_H */

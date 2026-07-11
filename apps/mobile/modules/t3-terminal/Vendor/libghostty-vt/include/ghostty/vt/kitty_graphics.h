@@ -604,9 +604,9 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_get_multi(
  * cell/pixel geometry to calculate the bounding rectangle. Virtual
  * placements (unicode placeholders) return GHOSTTY_NO_VALUE.
  *
- * @param terminal The terminal handle
- * @param image The image handle for this placement's image
  * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param terminal The terminal handle
  * @param[out] out_selection On success, receives the bounding rectangle
  *             as a selection with rectangle=true
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any handle

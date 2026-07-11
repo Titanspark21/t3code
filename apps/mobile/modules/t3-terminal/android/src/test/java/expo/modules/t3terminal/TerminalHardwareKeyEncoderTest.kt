@@ -40,7 +40,7 @@ class TerminalHardwareKeyEncoderTest {
     expected: String,
     keyCode: Int,
     isCtrlPressed: Boolean = false,
-    isShiftPressed: Boolean = false,
+    isShiftPressed: Boolean = false
   ) {
     assertEquals(
       expected,

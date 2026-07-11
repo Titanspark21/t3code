@@ -8,6 +8,8 @@ import android.graphics.Typeface
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -34,13 +36,15 @@ internal class TerminalCanvasView(context: Context) : View(context) {
   private var frame: TerminalFrame? = null
   private var scrollRemainder = 0f
   private var cursorOn = true
+  private var cursorBlinkScheduled = false
   private val cursorBlink = object : Runnable {
     override fun run() {
+      cursorBlinkScheduled = false
       val currentFrame = frame ?: return
       if (!currentFrame.cursorBlinking || !currentFrame.cursorVisible) return
       cursorOn = !cursorOn
       invalidate()
-      postDelayed(this, 500)
+      scheduleCursorBlink()
     }
   }
 
@@ -65,15 +69,24 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     isClickable = true
     isFocusable = true
     isFocusableInTouchMode = true
+    importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     paint.typeface = regularTypeface
     updateCellMetrics()
   }
 
   fun setFrame(value: TerminalFrame) {
+    val wasBlinking = frame?.let { it.cursorBlinking && it.cursorVisible } == true
+    val isBlinking = value.cursorBlinking && value.cursorVisible
     frame = value
-    cursorOn = true
-    removeCallbacks(cursorBlink)
-    if (value.cursorBlinking && value.cursorVisible) postDelayed(cursorBlink, 500)
+    when {
+      !isBlinking -> stopCursorBlink()
+      !wasBlinking -> {
+        cursorOn = true
+        scheduleCursorBlink()
+      }
+      else -> scheduleCursorBlink()
+    }
+    notifyAccessibilityContentChanged()
     invalidate()
   }
 
@@ -147,9 +160,76 @@ internal class TerminalCanvasView(context: Context) : View(context) {
     return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
   }
 
+  override fun performClick(): Boolean {
+    val handled = super.performClick()
+    requestFocus()
+    onRequestKeyboard?.invoke()
+    return handled || onRequestKeyboard != null
+  }
+
+  override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+    super.onInitializeAccessibilityNodeInfo(info)
+    val currentFrame = frame
+    info.className = "android.widget.EditText"
+    info.isMultiLine = true
+    info.isFocusable = true
+    info.isClickable = true
+    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+    if (currentFrame == null) {
+      info.text = "Terminal"
+      return
+    }
+
+    info.text = buildString {
+      append("Terminal\n")
+      append(currentFrame.visibleText().ifEmpty { "Empty terminal" })
+      if (currentFrame.cursorVisible &&
+        currentFrame.cursorX in 0 until currentFrame.cols &&
+        currentFrame.cursorY in 0 until currentFrame.rows
+      ) {
+        append("\nCursor row ")
+        append(currentFrame.cursorY + 1)
+        append(", column ")
+        append(currentFrame.cursorX + 1)
+      }
+    }
+  }
+
+  override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+    super.onSizeChanged(width, height, oldWidth, oldHeight)
+    if (width != oldWidth || height != oldHeight) notifyAccessibilityContentChanged()
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    scheduleCursorBlink()
+  }
+
   override fun onDetachedFromWindow() {
-    removeCallbacks(cursorBlink)
+    stopCursorBlink(resetCursor = false)
     super.onDetachedFromWindow()
+  }
+
+  private fun scheduleCursorBlink() {
+    val currentFrame = frame ?: return
+    val shouldBlink = currentFrame.cursorBlinking && currentFrame.cursorVisible
+    if (cursorBlinkScheduled || !isAttachedToWindow ||
+      !shouldBlink
+    ) {
+      return
+    }
+    cursorBlinkScheduled = postDelayed(cursorBlink, 500)
+  }
+
+  private fun stopCursorBlink(resetCursor: Boolean = true) {
+    removeCallbacks(cursorBlink)
+    cursorBlinkScheduled = false
+    if (resetCursor) cursorOn = true
+  }
+
+  private fun notifyAccessibilityContentChanged() {
+    if (!isAttachedToWindow) return
+    sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
   }
 
   private fun updateCellMetrics() {
@@ -219,10 +299,7 @@ internal class TerminalCanvasView(context: Context) : View(context) {
   }
 
   private inner class TerminalGestureListener : GestureDetector.SimpleOnGestureListener() {
-    override fun onDown(event: MotionEvent): Boolean {
-      onRequestKeyboard?.invoke()
-      return true
-    }
+    override fun onDown(event: MotionEvent): Boolean = true
 
     override fun onSingleTapUp(event: MotionEvent): Boolean {
       performClick()
