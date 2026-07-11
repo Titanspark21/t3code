@@ -107,10 +107,10 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
   },
   {
     value: ProviderDriverKind.make("geminiCli"),
-    label: "Gemini CLI",
+    label: "Antigravity (Gemini)",
     icon: GeminiCliIcon,
     settingsSchema: GeminiCliSettings,
-    badgeLabel: "Fork Extension",
+    badgeLabel: "agy",
   },
   {
     value: ProviderDriverKind.make("kilo"),

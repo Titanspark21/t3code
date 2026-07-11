@@ -224,6 +224,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "~", clearWhenEmpty: "omit" },
       }),
     ),
+    configDir: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Claude config directory",
+        description:
+          "Sets CLAUDE_CONFIG_DIR for this instance. Use this for independent Claude accounts such as ~/.claude-1 and ~/.claude-2.",
+        providerSettingsForm: { placeholder: "~/.claude-1", clearWhenEmpty: "omit" },
+      }),
+    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -241,7 +250,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "launchArgs"],
+    order: ["binaryPath", "configDir", "homePath", "launchArgs"],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
@@ -460,19 +469,30 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("gemini").pipe(
+    binaryPath: makeBinaryPathSetting("agy").pipe(
       Schema.annotateKey({
         title: "Binary path",
-        description: "Path to the `gemini` executable. Leave blank to resolve from PATH.",
-        providerSettingsForm: { placeholder: "gemini", clearWhenEmpty: "omit" },
+        description:
+          "Path to the `gemini` or Antigravity `agy` executable. Leave blank to resolve the selected CLI from PATH.",
+        providerSettingsForm: { placeholder: "agy", clearWhenEmpty: "omit" },
+      }),
+    ),
+    antigravity: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Use Antigravity CLI (agy)",
+        description:
+          "Use Google's Antigravity agent instead of the official Gemini CLI. Antigravity runs in print mode and T3 Code preserves conversation context between turns.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "omit" },
       }),
     ),
     configDir: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Config directory",
-        description: "Override `GEMINI_HOME` (Gemini CLI honours `~/.gemini` by default).",
-        providerSettingsForm: { placeholder: "~/.gemini", clearWhenEmpty: "omit" },
+        title: "Account profile directory",
+        description:
+          "For Gemini CLI this sets GEMINI_HOME. For Antigravity it sets HOME and USERPROFILE, enabling isolated profiles such as ~/.gemini-1 and ~/.gemini-2.",
+        providerSettingsForm: { placeholder: "~/.gemini-1", clearWhenEmpty: "omit" },
       }),
     ),
     customModels: Schema.Array(Schema.String).pipe(
@@ -481,7 +501,7 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "configDir"],
+    order: ["antigravity", "binaryPath", "configDir"],
   },
 );
 export type GeminiCliSettings = typeof GeminiCliSettings.Type;
@@ -655,6 +675,7 @@ const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
+  configDir: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
   launchArgs: Schema.optionalKey(TrimmedString),
 });
@@ -663,6 +684,14 @@ const GenericProviderSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   configDir: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
+const GeminiCliSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  configDir: Schema.optionalKey(TrimmedString),
+  antigravity: Schema.optionalKey(Schema.Boolean),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
@@ -717,7 +746,7 @@ export const ServerSettingsPatch = Schema.Struct({
       droid: Schema.optionalKey(DroidSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
-      geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
+      geminiCli: Schema.optionalKey(GeminiCliSettingsPatch),
       amp: Schema.optionalKey(GenericProviderSettingsPatch),
       kilo: Schema.optionalKey(GenericProviderSettingsPatch),
     }),

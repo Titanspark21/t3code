@@ -4,7 +4,7 @@ import * as NodeAssert from "node:assert/strict";
 import {
   ApprovalRequestId,
   EventId,
-  GenericProviderSettings,
+  GeminiCliSettings,
   RuntimeItemId,
   ThreadId,
   TurnId,
@@ -117,8 +117,8 @@ class FakeGeminiCliManager extends GeminiCliServerManager {
   }
 }
 
-const enabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: true });
-const disabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
+const enabledConfig = Schema.decodeSync(GeminiCliSettings)({ enabled: true });
+const disabledConfig = Schema.decodeSync(GeminiCliSettings)({ enabled: false });
 
 const makeAdapterLayer = (manager: FakeGeminiCliManager, config = enabledConfig) =>
   Layer.effect(GeminiCliAdapter, makeGeminiCliAdapter(config, { manager }));

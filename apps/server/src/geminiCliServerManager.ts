@@ -128,12 +128,16 @@ interface GeminiCliSession {
   model: string | undefined;
   cwd: string;
   binaryPath: string;
+  readonly antigravity: boolean;
   runtimeMode: string;
   status: "ready" | "running" | "closed";
   /** Gemini-native session ID for --resume. */
   geminiSessionId: string | undefined;
   activeTurnId: TurnId | undefined;
   activeProcess: NodeChildProcess.ChildProcess | undefined;
+  activePrompt: string | undefined;
+  activeResponse: string;
+  readonly conversationHistory: Array<{ role: "user" | "assistant"; text: string }>;
   interruptedTurnId: TurnId | undefined;
   /** Stable itemId for the current turn's assistant message (reused across content.delta events). */
   activeAssistantItemId: RuntimeItemId | undefined;
@@ -146,8 +150,46 @@ interface GeminiCliSession {
   updatedAt: string;
 }
 
-function defaultBinaryPath(): string {
-  return "gemini";
+function defaultBinaryPath(antigravity: boolean): string {
+  return antigravity ? "agy" : "gemini";
+}
+
+export function buildAntigravityPrompt(
+  history: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string }>,
+  prompt: string,
+): string {
+  if (history.length === 0) return prompt;
+
+  const transcript = history
+    .slice(-12)
+    .map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`)
+    .join("\n\n");
+  return [
+    "Continue the following conversation. Preserve its context and act on the newest user request.",
+    "",
+    transcript.slice(-60_000),
+    "",
+    `User: ${prompt}`,
+    "",
+    "Assistant:",
+  ].join("\n");
+}
+
+export function buildAntigravityArgs(input: {
+  readonly prompt: string;
+  readonly model?: string | undefined;
+  readonly runtimeMode: string;
+}): ReadonlyArray<string> {
+  const args = ["--print", input.prompt];
+  if (input.model && input.model !== "auto") {
+    args.push("--model", input.model);
+  }
+  if (input.runtimeMode === "full-access") {
+    args.push("--dangerously-skip-permissions");
+  } else {
+    args.push("--mode", input.runtimeMode === "plan" ? "plan" : "accept-edits");
+  }
+  return args;
 }
 
 export function buildGeminiSpawnOptions(input: {
@@ -335,10 +377,20 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
   private readonly sessions = new Map<ThreadId, GeminiCliSession>();
   private readonly usageAccumulator: GeminiUsageAccumulator = emptyUsageAccumulator();
   binaryPath: string | undefined;
+  environment: NodeJS.ProcessEnv;
+  antigravity: boolean;
 
-  constructor(options: { readonly binaryPath?: string | undefined } = {}) {
+  constructor(
+    options: {
+      readonly binaryPath?: string | undefined;
+      readonly environment?: NodeJS.ProcessEnv | undefined;
+      readonly antigravity?: boolean | undefined;
+    } = {},
+  ) {
     super();
     this.binaryPath = options.binaryPath;
+    this.environment = options.environment ?? process.env;
+    this.antigravity = options.antigravity ?? false;
   }
 
   /**
@@ -370,7 +422,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
       throw new Error(`Gemini CLI session already exists for thread ${threadId}`);
     }
 
-    const binaryPath = this.binaryPath?.trim() || defaultBinaryPath();
+    const binaryPath = this.binaryPath?.trim() || defaultBinaryPath(this.antigravity);
     const cwd = input.cwd ?? process.cwd();
     const resumeSessionId = readGeminiResumeSessionId(input.resumeCursor);
     const now = new Date().toISOString();
@@ -380,11 +432,15 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
       model: input.modelSelection?.model,
       cwd,
       binaryPath,
+      antigravity: this.antigravity,
       runtimeMode: input.runtimeMode ?? "full-access",
       status: "ready",
       geminiSessionId: resumeSessionId,
       activeTurnId: undefined,
       activeProcess: undefined,
+      activePrompt: undefined,
+      activeResponse: "",
+      conversationHistory: [],
       interruptedTurnId: undefined,
       activeAssistantItemId: undefined,
       activeToolItems: new Map(),
@@ -401,7 +457,9 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
       threadId,
       cwd,
       model: input.modelSelection?.model,
-      ...(resumeSessionId ? { resumeCursor: { sessionId: resumeSessionId } } : {}),
+      ...(!session.antigravity && resumeSessionId
+        ? { resumeCursor: { sessionId: resumeSessionId } }
+        : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -412,6 +470,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
         config: {
           provider: PROVIDER,
           binaryPath,
+          cli: session.antigravity ? "antigravity" : "gemini",
           cwd,
           runtimeMode: session.runtimeMode,
           ...(input.modelSelection?.model ? { model: input.modelSelection.model } : {}),
@@ -453,22 +512,29 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
     // Use per-turn model override if provided, otherwise fall back to session model.
     const effectiveModel = input.modelSelection?.model ?? session.model;
 
-    // Build args for headless mode with stream-json output.
-    const args: string[] = [
-      "-p",
-      prompt,
-      "--output-format",
-      "stream-json",
-      "--approval-mode",
-      resolveApprovalMode(session.runtimeMode),
-    ];
+    const args: string[] = session.antigravity
+      ? [
+          ...buildAntigravityArgs({
+            prompt: buildAntigravityPrompt(session.conversationHistory, prompt),
+            model: effectiveModel,
+            runtimeMode: session.runtimeMode,
+          }),
+        ]
+      : [
+          "-p",
+          prompt,
+          "--output-format",
+          "stream-json",
+          "--approval-mode",
+          resolveApprovalMode(session.runtimeMode),
+        ];
 
-    if (effectiveModel) {
+    if (!session.antigravity && effectiveModel) {
       args.push("--model", effectiveModel);
     }
 
-    // Resume previous Gemini session for follow-up turns.
-    if (session.geminiSessionId) {
+    // Resume previous official Gemini CLI session for follow-up turns.
+    if (!session.antigravity && session.geminiSessionId) {
       args.push("--resume", session.geminiSessionId);
     }
 
@@ -476,7 +542,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
       binaryPath: session.binaryPath,
       args,
       cwd: session.cwd,
-      env: { ...process.env },
+      env: { ...this.environment },
     });
 
     const child: NodeChildProcess.ChildProcessWithoutNullStreams = NodeChildProcess.spawn(
@@ -488,6 +554,8 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
     child.stdin.end();
 
     session.activeProcess = child;
+    session.activePrompt = prompt;
+    session.activeResponse = "";
 
     // Emit turn.started immediately.
     this.emitEvent(input.threadId, turnId, {
@@ -499,7 +567,11 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
     const rl = NodeReadline.createInterface({ input: child.stdout });
 
     rl.on("line", (line) => {
-      this.handleJsonLine(input.threadId, turnId, line);
+      if (session.antigravity) {
+        this.handleAntigravityLine(input.threadId, turnId, line);
+      } else {
+        this.handleJsonLine(input.threadId, turnId, line);
+      }
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
@@ -536,6 +608,15 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
         const wasInterrupted = s.interruptedTurnId === turnId || signal === "SIGINT";
         s.interruptedTurnId = undefined;
 
+        if (s.antigravity && code === 0 && s.activePrompt !== undefined) {
+          s.conversationHistory.push({ role: "user", text: s.activePrompt });
+          if (s.activeResponse.trim().length > 0) {
+            s.conversationHistory.push({ role: "assistant", text: s.activeResponse.trim() });
+          }
+        }
+        s.activePrompt = undefined;
+        s.activeResponse = "";
+
         // Flush any open assistant message or tool items that never received completion.
         this.finalizeOpenItems(input.threadId, turnId, s);
 
@@ -563,6 +644,8 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
         s.status = "ready";
         s.updatedAt = new Date().toISOString();
         s.interruptedTurnId = undefined;
+        s.activePrompt = undefined;
+        s.activeResponse = "";
 
         // Flush any open assistant message or tool items that never received completion.
         this.finalizeOpenItems(input.threadId, turnId, s);
@@ -638,7 +721,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
         threadId: session.threadId,
         cwd: session.cwd,
         model: session.model,
-        ...(session.geminiSessionId
+        ...(!session.antigravity && session.geminiSessionId
           ? { resumeCursor: { sessionId: session.geminiSessionId } }
           : {}),
         createdAt: session.createdAt,
@@ -672,6 +755,25 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
     for (const threadId of this.sessions.keys()) {
       this.stopSession(threadId);
     }
+  }
+
+  private handleAntigravityLine(threadId: ThreadId, turnId: TurnId, line: string): void {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+
+    const delta = `${line}\n`;
+    session.activeResponse += delta;
+    if (!session.activeAssistantItemId) {
+      session.activeAssistantItemId = RuntimeItemId.make(NodeCrypto.randomUUID());
+    }
+    this.emitEvent(threadId, turnId, {
+      type: "content.delta",
+      itemId: session.activeAssistantItemId,
+      payload: {
+        streamKind: "assistant_text",
+        delta,
+      },
+    });
   }
 
   private handleJsonLine(threadId: ThreadId, turnId: TurnId, line: string): void {

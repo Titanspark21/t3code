@@ -10,6 +10,8 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  buildAntigravityArgs,
+  buildAntigravityPrompt,
   buildGeminiSpawnOptions,
   GeminiCliServerManager,
   resolveGeminiSpawnPlan,
@@ -26,6 +28,50 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 // ---------------------------------------------------------------------------
 
 describe("GeminiCliServerManager", () => {
+  describe("Antigravity mode", () => {
+    it("maps T3 runtime modes to agy headless flags", () => {
+      expect(
+        buildAntigravityArgs({
+          prompt: "fix it",
+          model: "auto",
+          runtimeMode: "full-access",
+        }),
+      ).toEqual(["--print", "fix it", "--dangerously-skip-permissions"]);
+      expect(
+        buildAntigravityArgs({
+          prompt: "inspect it",
+          model: "gemini-3-pro",
+          runtimeMode: "plan",
+        }),
+      ).toEqual(["--print", "inspect it", "--model", "gemini-3-pro", "--mode", "plan"]);
+    });
+
+    it("carries prior turns into later agy print-mode prompts", () => {
+      const prompt = buildAntigravityPrompt(
+        [
+          { role: "user", text: "Remember alpha" },
+          { role: "assistant", text: "I will remember alpha" },
+        ],
+        "What should you remember?",
+      );
+
+      expect(prompt).toContain("User: Remember alpha");
+      expect(prompt).toContain("Assistant: I will remember alpha");
+      expect(prompt).toContain("User: What should you remember?");
+    });
+
+    it("stores the isolated account environment on the manager", () => {
+      const environment = {
+        HOME: "C:\\Users\\user\\.gemini-1",
+        USERPROFILE: "C:\\Users\\user\\.gemini-1",
+      };
+      const manager = new GeminiCliServerManager({ antigravity: true, environment });
+
+      expect(manager.antigravity).toBe(true);
+      expect(manager.environment).toBe(environment);
+    });
+  });
+
   describe("buildGeminiSpawnOptions", () => {
     it("uses piped stdio without a shell", () => {
       const options = buildGeminiSpawnOptions({

@@ -4,8 +4,8 @@
  * Mirrors `ClaudeDriver` / `OpenCodeDriver`: a plain value whose `create()`
  * returns one `ProviderInstance` bundling `snapshot` / `adapter` /
  * `textGeneration` closures captured over the per-instance
- * `GenericProviderSettings` payload (used as `GeminiCliSettings` until the
- * settings schema is split out).
+ * `GeminiCliSettings` payload. Antigravity is the default runtime; the
+ * historical official Gemini CLI remains available through a flavor switch.
  *
  * Two instances with different `binaryPath`s spawn fully independent
  * `gemini` subprocesses — there is no module-global session table or usage
@@ -13,11 +13,7 @@
  *
  * @module provider/Drivers/GeminiCliDriver
  */
-import {
-  GenericProviderSettings,
-  ProviderDriverKind,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import { GeminiCliSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -41,6 +37,7 @@ import {
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { makeGeminiCliEnvironment, makeGeminiContinuationGroupKey } from "./GeminiCliHome.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("geminiCli");
 const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
@@ -72,35 +69,42 @@ const withInstanceIdentity =
     continuation: { groupKey: input.continuationGroupKey },
   });
 
-export const GeminiCliDriver: ProviderDriver<GenericProviderSettings, GeminiCliDriverEnv> = {
+export const GeminiCliDriver: ProviderDriver<GeminiCliSettings, GeminiCliDriverEnv> = {
   driverKind: DRIVER_KIND,
   metadata: {
-    displayName: "Gemini CLI",
+    displayName: "Antigravity (Gemini)",
     supportsMultipleInstances: true,
   },
-  configSchema: GenericProviderSettings,
-  defaultConfig: (): GenericProviderSettings => Schema.decodeSync(GenericProviderSettings)({}),
+  configSchema: GeminiCliSettings,
+  defaultConfig: (): GeminiCliSettings => Schema.decodeSync(GeminiCliSettings)({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const path = yield* Path.Path;
       const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
-      const continuationIdentity = defaultProviderContinuationIdentity({
+      const envelopeEnvironment = mergeProviderInstanceEnvironment(environment);
+      const effectiveConfig = { ...config, enabled } satisfies GeminiCliSettings;
+      const processEnv = yield* makeGeminiCliEnvironment(effectiveConfig, envelopeEnvironment);
+      const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
       });
+      const continuationGroupKey = yield* makeGeminiContinuationGroupKey(effectiveConfig);
+      const continuationIdentity = {
+        ...fallbackContinuationIdentity,
+        continuationKey: continuationGroupKey,
+      };
       const stampIdentity = withInstanceIdentity({
         instanceId,
         displayName,
         accentColor,
-        continuationGroupKey: continuationIdentity.continuationKey,
+        continuationGroupKey,
       });
-      const effectiveConfig = { ...config, enabled } satisfies GenericProviderSettings;
 
       const adapter = yield* makeGeminiCliAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
+        antigravity: effectiveConfig.antigravity,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = yield* makeGeminiCliTextGeneration(effectiveConfig, processEnv);
@@ -111,7 +115,7 @@ export const GeminiCliDriver: ProviderDriver<GenericProviderSettings, GeminiCliD
         Effect.provideService(Path.Path, path),
       );
 
-      const snapshot = yield* makeManagedServerProvider<GenericProviderSettings>({
+      const snapshot = yield* makeManagedServerProvider<GeminiCliSettings>({
         maintenanceCapabilities: MAINTENANCE_CAPABILITIES,
         getSettings: Effect.succeed(effectiveConfig),
         streamSettings: Stream.never,

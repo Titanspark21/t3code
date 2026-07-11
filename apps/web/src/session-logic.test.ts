@@ -1739,7 +1739,7 @@ describe("PROVIDER_OPTIONS", () => {
       { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
       { value: "droid", label: "Droid", available: true, pickerSidebarBadge: "new" },
       { value: "grok", label: "Grok", available: true, pickerSidebarBadge: "new" },
-      { value: "geminiCli", label: "Gemini CLI", available: true },
+      { value: "geminiCli", label: "Antigravity (Gemini)", available: true },
       { value: "amp", label: "AMPcode", available: true },
       { value: "kilo", label: "Kilo", available: true },
     ]);
@@ -1773,7 +1773,7 @@ describe("PROVIDER_OPTIONS", () => {
     });
     expect(geminiCli).toEqual({
       value: "geminiCli",
-      label: "Gemini CLI",
+      label: "Antigravity (Gemini)",
       available: true,
     });
     expect(amp).toEqual({

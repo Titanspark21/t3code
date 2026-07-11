@@ -58,7 +58,11 @@ export const PROVIDER_OPTIONS: Array<{
     available: true,
     pickerSidebarBadge: "new",
   },
-  { value: ProviderDriverKind.make("geminiCli"), label: "Gemini CLI", available: true },
+  {
+    value: ProviderDriverKind.make("geminiCli"),
+    label: "Antigravity (Gemini)",
+    available: true,
+  },
   { value: ProviderDriverKind.make("amp"), label: "AMPcode", available: true },
   { value: ProviderDriverKind.make("kilo"), label: "Kilo", available: true },
 ];

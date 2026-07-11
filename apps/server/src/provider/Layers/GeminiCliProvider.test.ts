@@ -3,10 +3,10 @@ import * as NodeAssert from "node:assert/strict";
 import * as Schema from "effect/Schema";
 import { describe, it } from "vite-plus/test";
 
-import { GenericProviderSettings } from "@t3tools/contracts";
+import { GeminiCliSettings } from "@t3tools/contracts";
 import { makePendingGeminiCliProvider } from "./GeminiCliProvider.ts";
 
-const decodeSettings = Schema.decodeSync(GenericProviderSettings);
+const decodeSettings = Schema.decodeSync(GeminiCliSettings);
 
 /**
  * The Gemini "Thinking Budget" selector was inert — its value was never read

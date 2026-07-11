@@ -9,6 +9,7 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
+  resolveClaudeConfigDir,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 
@@ -20,7 +21,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         const resolved = path.resolve(NodeOS.homedir());
 
         expect(yield* resolveClaudeHomePath({ homePath: "" })).toBe(resolved);
-        expect(yield* makeClaudeEnvironment({ homePath: "" })).toBe(process.env);
+        expect(yield* makeClaudeEnvironment({ homePath: "", configDir: "" })).toBe(process.env);
       }),
     );
 
@@ -31,10 +32,38 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         const resolved = path.resolve(NodeOS.homedir(), ".claude-work");
 
         expect(yield* resolveClaudeHomePath({ homePath })).toBe(resolved);
-        expect((yield* makeClaudeEnvironment({ homePath })).HOME).toBe(resolved);
-        expect(yield* makeClaudeContinuationGroupKey({ homePath })).toBe(`claude:home:${resolved}`);
-        expect(yield* makeClaudeCapabilitiesCacheKey({ binaryPath: "claude", homePath })).toBe(
-          `claude\0${resolved}`,
+        expect((yield* makeClaudeEnvironment({ homePath, configDir: "" })).HOME).toBe(resolved);
+        expect(yield* makeClaudeContinuationGroupKey({ homePath, configDir: "" })).toBe(
+          `claude:home:${resolved}`,
+        );
+        expect(
+          yield* makeClaudeCapabilitiesCacheKey({
+            binaryPath: "claude",
+            homePath,
+            configDir: "",
+          }),
+        ).toBe(`claude\0claude:home:${resolved}`);
+      }),
+    );
+
+    it.effect("isolates direct CLAUDE_CONFIG_DIR profiles", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const configDir = "~/.claude-1";
+        const resolved = path.resolve(NodeOS.homedir(), ".claude-1");
+        const environment = yield* makeClaudeEnvironment(
+          { homePath: "", configDir },
+          { PATH: "test-path" },
+        );
+
+        expect(yield* resolveClaudeConfigDir({ configDir })).toBe(resolved);
+        expect(environment).toMatchObject({
+          PATH: "test-path",
+          CLAUDE_CONFIG_DIR: resolved,
+        });
+        expect(environment.HOME).toBeUndefined();
+        expect(yield* makeClaudeContinuationGroupKey({ homePath: "", configDir })).toBe(
+          `claude:config:${resolved}`,
         );
       }),
     );
@@ -44,7 +73,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         const path = yield* Path.Path;
         const resolved = path.resolve(NodeOS.homedir());
 
-        expect(yield* makeClaudeContinuationGroupKey({ homePath: "" })).toBe(
+        expect(yield* makeClaudeContinuationGroupKey({ homePath: "", configDir: "" })).toBe(
           `claude:home:${resolved}`,
         );
       }),

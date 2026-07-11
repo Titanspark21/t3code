@@ -13,7 +13,7 @@
  * @module provider/Layers/GeminiCliProvider
  */
 import {
-  type GenericProviderSettings,
+  type GeminiCliSettings,
   type ModelCapabilities,
   ProviderDriverKind,
   type ServerProviderModel,
@@ -40,6 +40,10 @@ import {
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 const GEMINI_PRESENTATION = {
   displayName: "Gemini CLI",
+  showInteractionModeToggle: true,
+} as const;
+const ANTIGRAVITY_PRESENTATION = {
+  displayName: "Antigravity (Gemini)",
   showInteractionModeToggle: true,
 } as const;
 
@@ -78,14 +82,35 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
+const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "auto",
+    name: "Antigravity (Automatic)",
+    isCustom: false,
+    capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
+  },
+];
+
+function presentationFor(config: GeminiCliSettings) {
+  return config.antigravity ? ANTIGRAVITY_PRESENTATION : GEMINI_PRESENTATION;
+}
+
+function builtInModelsFor(config: GeminiCliSettings): ReadonlyArray<ServerProviderModel> {
+  return config.antigravity ? ANTIGRAVITY_BUILT_IN_MODELS : BUILT_IN_MODELS;
+}
+
+function cliLabel(config: GeminiCliSettings): string {
+  return config.antigravity ? "Antigravity CLI" : "Gemini CLI";
+}
+
 /** Resolve the configured binary path, or fall back to `"gemini"`. */
-function resolveBinary(config: GenericProviderSettings): string {
+function resolveBinary(config: GeminiCliSettings): string {
   const trimmed = config.binaryPath.trim();
-  return trimmed.length > 0 ? trimmed : "gemini";
+  return trimmed.length > 0 ? trimmed : config.antigravity ? "agy" : "gemini";
 }
 
 const runGeminiCommand = Effect.fn("runGeminiCommand")(function* (
-  config: GenericProviderSettings,
+  config: GeminiCliSettings,
   args: ReadonlyArray<string>,
   environment: NodeJS.ProcessEnv = process.env,
 ) {
@@ -99,7 +124,7 @@ const runGeminiCommand = Effect.fn("runGeminiCommand")(function* (
 });
 
 export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* (
-  config: GenericProviderSettings,
+  config: GeminiCliSettings,
   environment: NodeJS.ProcessEnv = process.env,
 ): Effect.fn.Return<
   ServerProviderDraft,
@@ -108,7 +133,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
 > {
   const checkedAt = new Date().toISOString();
   const allModels = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    builtInModelsFor(config),
     PROVIDER,
     config.customModels,
     DEFAULT_GEMINI_MODEL_CAPABILITIES,
@@ -116,7 +141,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
 
   if (!config.enabled) {
     return buildServerProvider({
-      presentation: GEMINI_PRESENTATION,
+      presentation: presentationFor(config),
       enabled: false,
       checkedAt,
       models: allModels,
@@ -125,7 +150,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Gemini CLI is disabled in T3 Code settings.",
+        message: `${cliLabel(config)} is disabled in T3 Code settings.`,
       },
     });
   }
@@ -138,7 +163,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
   if (Result.isFailure(versionProbe)) {
     const error = versionProbe.failure;
     return buildServerProvider({
-      presentation: GEMINI_PRESENTATION,
+      presentation: presentationFor(config),
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -148,15 +173,15 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
         status: "error",
         auth: { status: "unknown" },
         message: isCommandMissingCause(error)
-          ? "Gemini CLI (`gemini`) is not installed or not on PATH."
-          : `Failed to execute Gemini CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
+          ? `${cliLabel(config)} (${config.antigravity ? "`agy`" : "`gemini`"}) is not installed or not on PATH.`
+          : `Failed to execute ${cliLabel(config)} health check: ${error instanceof Error ? error.message : String(error)}.`,
       },
     });
   }
 
   if (Option.isNone(versionProbe.success)) {
     return buildServerProvider({
-      presentation: GEMINI_PRESENTATION,
+      presentation: presentationFor(config),
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -165,7 +190,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "Gemini CLI is installed but failed to run. Timed out while running command.",
+        message: `${cliLabel(config)} is installed but failed to run. Timed out while running command.`,
       },
     });
   }
@@ -175,7 +200,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
   if (version.code !== 0) {
     const detail = detailFromResult(version);
     return buildServerProvider({
-      presentation: GEMINI_PRESENTATION,
+      presentation: presentationFor(config),
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -185,14 +210,14 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
         status: "error",
         auth: { status: "unknown" },
         message: detail
-          ? `Gemini CLI is installed but failed to run. ${detail}`
-          : "Gemini CLI is installed but failed to run.",
+          ? `${cliLabel(config)} is installed but failed to run. ${detail}`
+          : `${cliLabel(config)} is installed but failed to run.`,
       },
     });
   }
 
   return buildServerProvider({
-    presentation: GEMINI_PRESENTATION,
+    presentation: presentationFor(config),
     enabled: config.enabled,
     checkedAt,
     models: allModels,
@@ -203,18 +228,16 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
       auth: {
         status: "authenticated",
         type: "geminiCli",
-        label: "Gemini CLI",
+        label: cliLabel(config),
       },
     },
   });
 });
 
-export const makePendingGeminiCliProvider = (
-  config: GenericProviderSettings,
-): ServerProviderDraft => {
+export const makePendingGeminiCliProvider = (config: GeminiCliSettings): ServerProviderDraft => {
   const checkedAt = new Date().toISOString();
   const models = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    builtInModelsFor(config),
     PROVIDER,
     config.customModels,
     DEFAULT_GEMINI_MODEL_CAPABILITIES,
@@ -222,7 +245,7 @@ export const makePendingGeminiCliProvider = (
 
   if (!config.enabled) {
     return buildServerProvider({
-      presentation: GEMINI_PRESENTATION,
+      presentation: presentationFor(config),
       enabled: false,
       checkedAt,
       models,
@@ -231,13 +254,13 @@ export const makePendingGeminiCliProvider = (
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Gemini CLI is disabled in T3 Code settings.",
+        message: `${cliLabel(config)} is disabled in T3 Code settings.`,
       },
     });
   }
 
   return buildServerProvider({
-    presentation: GEMINI_PRESENTATION,
+    presentation: presentationFor(config),
     enabled: true,
     checkedAt,
     models,
@@ -246,9 +269,13 @@ export const makePendingGeminiCliProvider = (
       version: null,
       status: "warning",
       auth: { status: "unknown" },
-      message: "Gemini CLI provider status has not been checked in this session yet.",
+      message: `${cliLabel(config)} provider status has not been checked in this session yet.`,
     },
   });
 };
 
-export { BUILT_IN_MODELS as GEMINI_BUILT_IN_MODELS, DEFAULT_GEMINI_MODEL_CAPABILITIES };
+export {
+  ANTIGRAVITY_BUILT_IN_MODELS,
+  BUILT_IN_MODELS as GEMINI_BUILT_IN_MODELS,
+  DEFAULT_GEMINI_MODEL_CAPABILITIES,
+};

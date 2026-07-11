@@ -68,6 +68,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
 const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings => ({
   enabled: false,
   binaryPath: "claude",
+  configDir: "",
   homePath: "",
   customModels: [],
   launchArgs: "",

@@ -13,7 +13,7 @@
  * @module provider/Layers/GeminiCliAdapter
  */
 import {
-  type GenericProviderSettings,
+  type GeminiCliSettings,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRuntimeEvent,
@@ -38,6 +38,7 @@ export interface GeminiCliAdapterShape extends ProviderAdapterShape<ProviderAdap
 export interface GeminiCliAdapterOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly antigravity?: boolean;
   readonly nativeEventLogger?: EventNdjsonLogger;
   /**
    * Inject a pre-built manager. Test-only — the driver always constructs its
@@ -60,7 +61,7 @@ export interface GeminiCliAdapterOptions {
  * remaining session when the surrounding scope closes.
  */
 export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* (
-  config: GenericProviderSettings,
+  config: GeminiCliSettings,
   options: GeminiCliAdapterOptions = {},
 ) {
   const _boundInstanceId = options.instanceId ?? ProviderInstanceId.make("geminiCli");
@@ -68,13 +69,21 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* 
   const manager =
     options.manager ??
     options.makeManager?.() ??
-    new GeminiCliServerManager(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {});
+    new GeminiCliServerManager({
+      ...(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {}),
+      ...(options.environment ? { environment: options.environment } : {}),
+      antigravity: options.antigravity ?? config.antigravity,
+    });
   // Keep the manager's binary path in sync with the latest config — drivers
   // recreate the adapter when settings change, but tests may pass a manager
   // with an empty default that should pick up the config value.
   if (trimmedBinary.length > 0 && !manager.binaryPath) {
     manager.binaryPath = trimmedBinary;
   }
+  if (options.environment) {
+    manager.environment = options.environment;
+  }
+  manager.antigravity = options.antigravity ?? config.antigravity;
 
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
 
@@ -103,7 +112,7 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* 
           return yield* new ProviderAdapterValidationError({
             provider: "geminiCli",
             operation: "startSession",
-            issue: "Gemini CLI provider is disabled in server settings.",
+            issue: "Antigravity / Gemini provider is disabled in server settings.",
           });
         }
         return yield* Effect.tryPromise({
@@ -117,7 +126,7 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* 
           new ProviderAdapterValidationError({
             provider: "geminiCli",
             operation: "sendTurn",
-            issue: "Gemini CLI attachments are not supported yet.",
+            issue: "Antigravity / Gemini attachments are not supported yet.",
           }),
         );
       }

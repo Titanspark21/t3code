@@ -28,6 +28,7 @@ import { RadioGroup } from "../ui/radio-group";
 import { toastManager } from "../ui/toast";
 import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
 import { ProviderSettingsForm, deriveProviderSettingsFields } from "./ProviderSettingsForm";
+import { getProviderProfilePresets } from "./providerProfilePresets";
 import { AnimatedHeight } from "../AnimatedHeight";
 
 const PROVIDER_ACCENT_SWATCHES = [
@@ -140,6 +141,7 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
     () => deriveProviderSettingsFields(driverOption),
     [driverOption],
   );
+  const profilePresets = useMemo(() => getProviderProfilePresets(driver), [driver]);
   const instanceIdError = validateInstanceId(instanceId, existingIds);
   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
@@ -160,6 +162,15 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
       });
     },
     [driver],
+  );
+
+  const applyProfilePreset = useCallback(
+    (preset: ReturnType<typeof getProviderProfilePresets>[number]) => {
+      setLabel(preset.displayName);
+      setInstanceIdOverride(null);
+      setConfigDraft({ ...preset.config });
+    },
+    [setConfigDraft],
   );
 
   const handleSave = useCallback(() => {
@@ -417,6 +428,35 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
                   Optional marker shown in the picker.
                 </span>
               </div>
+
+              {profilePresets.length > 0 ? (
+                <div className={cn("grid gap-2", wizardStep !== 2 && "hidden")}>
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Account profile presets</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Choose a ready-made isolated local account, then review the paths below.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {profilePresets.map((preset) => (
+                      <Button
+                        key={preset.id}
+                        type="button"
+                        variant="outline"
+                        className="h-auto min-h-14 items-start justify-start px-3 py-2 text-left"
+                        onClick={() => applyProfilePreset(preset)}
+                      >
+                        <span className="grid gap-0.5">
+                          <span className="text-xs font-semibold">{preset.label}</span>
+                          <span className="whitespace-normal text-[10px] font-normal text-muted-foreground">
+                            {preset.description}
+                          </span>
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {driverSettingsFields.length > 0 ? (
                 <div className={cn("grid gap-4", wizardStep !== 2 && "hidden")}>

@@ -14,22 +14,38 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
   return path.resolve(homePath.length > 0 ? expandHomePath(homePath) : NodeOS.homedir());
 });
 
+export const resolveClaudeConfigDir = Effect.fn("resolveClaudeConfigDir")(function* (
+  config: Pick<ClaudeSettings, "configDir">,
+): Effect.fn.Return<string | undefined, never, Path.Path> {
+  const path = yield* Path.Path;
+  const configDir = config.configDir.trim();
+  return configDir.length > 0 ? path.resolve(expandHomePath(configDir)) : undefined;
+});
+
 export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function* (
-  config: Pick<ClaudeSettings, "homePath">,
+  config: Pick<ClaudeSettings, "homePath" | "configDir">,
   baseEnv?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
   const resolvedBaseEnv = baseEnv ?? process.env;
   const homePath = config.homePath.trim();
-  if (homePath.length === 0) return resolvedBaseEnv;
-  const resolvedHomePath = yield* resolveClaudeHomePath(config);
+  const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
+  if (homePath.length === 0 && resolvedConfigDir === undefined) return resolvedBaseEnv;
+  const resolvedHomePath = homePath.length > 0 ? yield* resolveClaudeHomePath(config) : undefined;
   return {
     ...resolvedBaseEnv,
-    HOME: resolvedHomePath,
+    ...(resolvedHomePath ? { HOME: resolvedHomePath } : {}),
+    ...(resolvedConfigDir ? { CLAUDE_CONFIG_DIR: resolvedConfigDir } : {}),
   };
 });
 
 export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
-  function* (config: Pick<ClaudeSettings, "homePath">): Effect.fn.Return<string, never, Path.Path> {
+  function* (
+    config: Pick<ClaudeSettings, "homePath" | "configDir">,
+  ): Effect.fn.Return<string, never, Path.Path> {
+    const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
+    if (resolvedConfigDir) {
+      return `claude:config:${resolvedConfigDir}`;
+    }
     const resolvedHomePath = yield* resolveClaudeHomePath(config);
     return `claude:home:${resolvedHomePath}`;
   },
@@ -37,9 +53,9 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
 
 export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesCacheKey")(
   function* (
-    config: Pick<ClaudeSettings, "binaryPath" | "homePath">,
+    config: Pick<ClaudeSettings, "binaryPath" | "homePath" | "configDir">,
   ): Effect.fn.Return<string, never, Path.Path> {
-    const resolvedHomePath = yield* resolveClaudeHomePath(config);
-    return `${config.binaryPath}\0${resolvedHomePath}`;
+    const continuationKey = yield* makeClaudeContinuationGroupKey(config);
+    return `${config.binaryPath}\0${continuationKey}`;
   },
 );
