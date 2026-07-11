@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewConfiguration
 import android.widget.OverScroller
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -24,12 +25,14 @@ import kotlin.math.min
 
 class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   private val canvasView = DiffCanvasView(context)
+  private val refreshLayout = SwipeRefreshLayout(context)
   private val onDebug by EventDispatcher()
   private val onVisibleFileChange by EventDispatcher()
   private val onToggleFile by EventDispatcher()
   private val onToggleViewedFile by EventDispatcher()
   private val onPressLine by EventDispatcher()
   private val onToggleComment by EventDispatcher()
+  private val onPullToRefresh by EventDispatcher()
   private var rows: List<DiffRow> = emptyList()
   private var visibleRows: List<DiffRow> = emptyList()
   private var collapsedFileIds: Set<String> = emptySet()
@@ -38,6 +41,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   private var collapsedCommentIds: Set<String> = emptySet()
   private var initialRowIndex = 0
   private var pendingInitialScroll = false
+  private var decodedRowsInstalled = false
   private var lastVisibleFileId: String? = null
   private var tokensResetKey = ""
   private var contentResetKey = ""
@@ -49,6 +53,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   private val verticalScroller = OverScroller(context)
   private val horizontalScroller = OverScroller(context)
   private var dragAxis: DragAxis? = null
+  private var delegatingPullToRefresh = false
   private var lastTouchX = 0f
   private var lastTouchY = 0f
   private var velocityTracker: VelocityTracker? = null
@@ -66,8 +71,13 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
       emitVisibleFile(first)
     }
 
-    addView(
+    refreshLayout.setOnRefreshListener { onPullToRefresh(emptyMap()) }
+    refreshLayout.addView(
       canvasView,
+      LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+    )
+    addView(
+      refreshLayout,
       LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
   }
@@ -85,9 +95,9 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     canvasView.tokensByRowId = emptyMap()
     lastVisibleFileId = null
     pendingInitialScroll = true
+    decodedRowsInstalled = false
     canvasView.setVerticalOffset(0)
     canvasView.setHorizontalOffset(0)
-    applyPendingInitialScroll()
   }
 
   fun setCollapsedFileIdsJson(value: String) {
@@ -136,14 +146,20 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
     applyPendingInitialScroll()
   }
 
+  fun setRefreshing(value: Boolean) {
+    refreshLayout.isRefreshing = value
+  }
+
   fun setRowsJson(value: String) {
     rowsDecodeGeneration += 1
+    decodedRowsInstalled = false
     val generation = rowsDecodeGeneration
     payloadDecodeExecutor.execute {
       val decodedRows = parseRows(value)
       post {
         if (generation != rowsDecodeGeneration) return@post
         rows = decodedRows
+        decodedRowsInstalled = true
         lastVisibleFileId = null
         rebuildVisibleRows()
       }
@@ -202,22 +218,41 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
         verticalScroller.forceFinished(true)
         horizontalScroller.forceFinished(true)
         dragAxis = null
+        delegatingPullToRefresh = false
         lastTouchX = event.x
         lastTouchY = event.y
         parent?.requestDisallowInterceptTouchEvent(true)
         return false
       }
       MotionEvent.ACTION_MOVE -> {
+        val deltaX = event.x - lastTouchX
+        val deltaY = event.y - lastTouchY
         if (dragAxis == null) {
-          val deltaX = event.x - lastTouchX
-          val deltaY = event.y - lastTouchY
           if (max(abs(deltaX), abs(deltaY)) > touchSlop) {
             dragAxis = if (abs(deltaY) >= abs(deltaX)) DragAxis.VERTICAL else DragAxis.HORIZONTAL
           }
         }
+        if (
+          dragAxis == DragAxis.VERTICAL &&
+          deltaY > 0 &&
+          canvasView.verticalOffset() == 0
+        ) {
+          delegatingPullToRefresh = true
+          return false
+        }
         return dragAxis != null
       }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> return dragAxis != null
+      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+        if (delegatingPullToRefresh) {
+          delegatingPullToRefresh = false
+          dragAxis = null
+          velocityTracker?.recycle()
+          velocityTracker = null
+          parent?.requestDisallowInterceptTouchEvent(false)
+          return false
+        }
+        return dragAxis != null
+      }
     }
     return false
   }
@@ -378,7 +413,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   }
 
   private fun applyPendingInitialScroll() {
-    if (!pendingInitialScroll || visibleRows.isEmpty()) return
+    if (!pendingInitialScroll || !decodedRowsInstalled || visibleRows.isEmpty()) return
     pendingInitialScroll = false
     val index = initialRowIndex.coerceIn(0, visibleRows.lastIndex)
     post { canvasView.setVerticalOffset(canvasView.rowTop(index)) }
@@ -422,12 +457,18 @@ private data class DiffRow(
   val change: String,
   val oldLineNumber: Int?,
   val newLineNumber: Int?,
+  val wordDiffRanges: List<WordDiffRange>,
   val commentText: String,
   val commentRangeLabel: String,
   val commentSectionTitle: String
 ) {
   val resolvedFileId: String get() = fileId.ifEmpty { id }
 }
+
+private data class WordDiffRange(
+  val start: Int,
+  val end: Int
+)
 
 private data class DiffToken(
   val content: String,
@@ -655,6 +696,12 @@ private class DiffCanvasView(context: Context) : View(context) {
 
   override fun onTouchEvent(event: MotionEvent): Boolean = gestureDetector.onTouchEvent(event)
 
+  override fun canScrollVertically(direction: Int): Boolean = if (direction < 0) {
+    verticalOffset > 0
+  } else {
+    verticalOffset < maxVerticalOffset()
+  }
+
   fun rowTop(index: Int): Int = rowOffsets[index.coerceIn(0, max(0, rowOffsets.size - 2))]
 
   fun setVerticalOffset(value: Int) {
@@ -761,7 +808,20 @@ private class DiffCanvasView(context: Context) : View(context) {
     textPaint.textSize = 11f * density
     val stats = "+${row.additions}  -${row.deletions}"
     val statsX = max(12f * density, width - textPaint.measureText(stats) - 16f * density)
-    val title = ellipsize(marker + row.filePath, boldTextPaint, statsX - 28f * density)
+    val displayPath = if (
+      row.previousPath != null && row.previousPath != row.filePath
+    ) {
+      "${row.previousPath} -> ${row.filePath}"
+    } else {
+      row.filePath
+    }
+    val status = when (row.changeType) {
+      "new" -> "A "
+      "deleted" -> "D "
+      "renamed", "rename-pure", "rename-changed" -> "R "
+      else -> ""
+    }
+    val title = ellipsize(marker + status + displayPath, boldTextPaint, statsX - 28f * density)
     canvas.drawText(title, 12f * density, baseline, boldTextPaint)
     canvas.drawText(stats, statsX, baseline, textPaint)
     drawBottomBorder(canvas, bottom)
@@ -844,6 +904,7 @@ private class DiffCanvasView(context: Context) : View(context) {
 
     val tokens = tokensByRowId[row.id]
     drawScrollableCode(canvas, top, bottom) { codeX ->
+      drawWordDiffRanges(canvas, row, top, bottom, codeX)
       if (tokens.isNullOrEmpty()) {
         textPaint.textSize = style.codeFontSizePx
         textPaint.color = when (row.change) {
@@ -881,6 +942,39 @@ private class DiffCanvasView(context: Context) : View(context) {
       baseline,
       textPaint
     )
+  }
+
+  private fun drawWordDiffRanges(
+    canvas: Canvas,
+    row: DiffRow,
+    top: Int,
+    bottom: Int,
+    codeX: Float
+  ) {
+    if (row.wordDiffRanges.isEmpty() || (row.change != "add" && row.change != "delete")) return
+    textPaint.textSize = style.codeFontSizePx
+    textPaint.typeface = Typeface.MONOSPACE
+    val characterWidth = textPaint.measureText("M")
+    val highlightHeight = max(4f * density, min((bottom - top - 4f), style.codeFontSizePx * 1.25f))
+    val highlightTop = (top + bottom - highlightHeight) / 2f
+    backgroundPaint.color = withAlpha(
+      if (row.change == "add") theme.addBar else theme.deleteBar,
+      71,
+    )
+    row.wordDiffRanges.forEach { range ->
+      if (range.end <= range.start) return@forEach
+      val left = codeX + range.start * characterWidth
+      val right = left + max(2f * density, (range.end - range.start) * characterWidth)
+      canvas.drawRoundRect(
+        left,
+        highlightTop,
+        right,
+        highlightTop + highlightHeight,
+        3f * density,
+        3f * density,
+        backgroundPaint,
+      )
+    }
   }
 
   private fun drawScrollableCode(
@@ -995,6 +1089,12 @@ private fun parseRows(value: String): List<DiffRow> = try {
       change = row.optString("change", "context"),
       oldLineNumber = row.optNullableInt("oldLineNumber"),
       newLineNumber = row.optNullableInt("newLineNumber"),
+      wordDiffRanges = row.optJSONArray("wordDiffRanges")?.let { ranges ->
+        List(ranges.length()) { rangeIndex ->
+          val range = ranges.getJSONObject(rangeIndex)
+          WordDiffRange(start = range.optInt("start"), end = range.optInt("end"))
+        }
+      }.orEmpty(),
       commentText = row.optString("commentText"),
       commentRangeLabel = row.optString("commentRangeLabel"),
       commentSectionTitle = row.optString("commentSectionTitle"),

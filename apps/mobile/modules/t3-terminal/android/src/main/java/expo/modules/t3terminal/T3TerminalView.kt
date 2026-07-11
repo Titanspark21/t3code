@@ -17,6 +17,23 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import kotlin.math.max
 
+internal object TerminalHardwareKeyEncoder {
+  fun sequence(keyCode: Int, isCtrlPressed: Boolean, isShiftPressed: Boolean): String? = when {
+    keyCode == KeyEvent.KEYCODE_ESCAPE -> "\u001B"
+    keyCode == KeyEvent.KEYCODE_TAB -> if (isShiftPressed) "\u001B[Z" else "\t"
+    keyCode == KeyEvent.KEYCODE_DPAD_UP -> "\u001B[A"
+    keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> "\u001B[B"
+    keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> "\u001B[C"
+    keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> "\u001B[D"
+    !isCtrlPressed -> null
+    keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z ->
+      (keyCode - KeyEvent.KEYCODE_A + 1).toChar().toString()
+    keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> "\u001B"
+    keyCode == KeyEvent.KEYCODE_SLASH && isShiftPressed -> "\u007F"
+    else -> null
+  }
+}
+
 class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   private val container = FrameLayout(context)
   private val terminalCanvas = TerminalCanvasView(context)
@@ -182,20 +199,18 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     }
     inputView.setOnKeyListener { _, keyCode, event ->
       if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-      when {
-        keyCode == KeyEvent.KEYCODE_DEL -> {
-          onInput(mapOf("data" to "\u007F"))
-          true
-        }
-        // Hardware keyboard Ctrl+A..Z -> control bytes 0x01..0x1A (Ctrl+C, Ctrl+Z, ...).
-        event.isCtrlPressed && keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
-          onInput(
-            mapOf("data" to (keyCode - KeyEvent.KEYCODE_A + 1).toChar().toString()),
-          )
-          true
-        }
-        else -> false
+      val sequence = if (keyCode == KeyEvent.KEYCODE_DEL) {
+        "\u007F"
+      } else {
+        TerminalHardwareKeyEncoder.sequence(
+          keyCode = keyCode,
+          isCtrlPressed = event.isCtrlPressed,
+          isShiftPressed = event.isShiftPressed,
+        )
       }
+      if (sequence == null) return@setOnKeyListener false
+      onInput(mapOf("data" to sequence))
+      true
     }
     inputView.addTextChangedListener(
       object : TextWatcher {
