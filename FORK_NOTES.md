@@ -47,11 +47,27 @@ Two ways:
   toolchain. (This fork's release workflow is desktop-only; the Android APK job
   is disabled because it needs mobile signing secrets.)
 - **Local build:** `pnpm install` then `pnpm dist:desktop:win:x64`. The
-  installer lands in `release/`.
+  installer lands in `release/`. **Run this from Git Bash** (or otherwise have
+  Git's `pwd` on your PATH) — electron-builder's dependency step shells out to
+  `pwd`, which PowerShell/cmd don't provide, and without it the packaged app is
+  silently missing modules. The cloud build already runs under bash, so this
+  only matters for local builds.
 
 The build is **unsigned**, so Windows SmartScreen shows "Windows protected your
 PC" on first run → click **More info → Run anyway**. This is expected for a
 personal build.
+
+### Packaging fix (why builds work here)
+
+electron-builder v26's pnpm dependency collector drops ~150 transitive
+dependencies (`debug`, `express`, `cross-spawn`, `ajv`, …) from the packaged
+app, so a stock build crashes on launch with _"Cannot find module 'debug'"_ —
+this is almost certainly why upstream-built `.exe`s failed to open. This fork
+fixes it in `scripts/build-desktop-artifact.ts`: the staged install is hoisted
+(flat `node_modules`), an `afterPack` hook copies back any dropped dependency,
+and the Windows app ships without asar so every module resolves from the real
+filesystem. If you merge upstream and the app starts failing to open again,
+that fix is what to re-check.
 
 ## Keeping your changes when upstream updates
 
