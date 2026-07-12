@@ -42,10 +42,11 @@ Two ways:
 
 - **Cloud build (recommended for updates):** enable **Actions** on this repo
   once (Actions tab → enable), then **Actions → "Release Desktop" → Run
-  workflow**, enter a version like `1.0.0`. GitHub builds the Windows `.exe`
-  (plus macOS/Linux) and publishes it under **Releases**. Free, no local
-  toolchain. (This fork's release workflow is desktop-only; the Android APK job
-  is disabled because it needs mobile signing secrets.)
+  workflow**, enter a version like `1.0.0`. GitHub builds **Windows, macOS,
+  Linux, and an Android APK** and publishes them under **Releases**. Free, no
+  local toolchain. (The Android APK is built with an ephemeral key and the cloud
+  "T3 Connect" features off; it still works via **local pairing** — scan the
+  desktop's QR or enter its host + pairing code over your LAN or Tailscale.)
 - **Local build:** `pnpm install` then `pnpm dist:desktop:win:x64`. The
   installer lands in `release/`. **Run this from Git Bash** (or otherwise have
   Git's `pwd` on your PATH) — electron-builder's dependency step shells out to

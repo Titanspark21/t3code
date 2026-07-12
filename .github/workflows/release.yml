@@ -215,15 +215,15 @@ jobs:
   build_android_apk:
     name: Build Android APK
     needs: [preflight]
-    # Fork: desktop-only release. The Android APK build needs Clerk config and
-    # Android signing secrets this fork does not set, so it is disabled to keep
-    # the desktop (.exe/.dmg/.AppImage) release reliable. Re-enable by restoring
-    # `if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}`
-    # and adding it back to the `release` job's `needs` once mobile secrets exist.
-    if: false
+    # Fork: enabled. No Clerk/relay vars and no Android signing secrets are set,
+    # so the job builds an installable APK with an ephemeral key and the cloud
+    # (T3 Connect) features disabled — the app still works via LOCAL pairing
+    # (scan the desktop's QR / enter its host + code over LAN or Tailscale), which
+    # is what most people use. `environment: production` is dropped so the job is
+    # never gated on an environment that doesn't exist on the fork.
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: production
     permissions:
       contents: read
     env:
@@ -643,7 +643,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [preflight, build]
+    needs: [preflight, build, build_android_apk]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -667,6 +667,12 @@ jobs:
         with:
           pattern: desktop-*
           merge-multiple: true
+          path: release-assets
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v8
+        with:
+          name: android-apk
           path: release-assets
 
       - name: Merge macOS updater manifests
@@ -711,6 +717,7 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/*.apk
           fail_on_unmatched_files: true
 
   deploy_web:
