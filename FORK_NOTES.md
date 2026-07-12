@@ -69,17 +69,42 @@ and the Windows app ships without asar so every module resolves from the real
 filesystem. If you merge upstream and the app starts failing to open again,
 that fix is what to re-check.
 
-## Keeping your changes when upstream updates
+## Keeping your changes up to date
 
-Your changes live on `main`. To pull in improvements from the original project:
+Your changes live on `main`. Remotes:
+
+- `origin` = your fork (`Titanspark21/t3code`).
+- `upstream` = **`aaditagrawal/t3code`** — the fork this is based on (it added the
+  Gemini/Antigravity foundation). This is the **only clean-merge source**.
+- `pingdotgg` = **`pingdotgg/t3code`** — the original project. Reference only,
+  see the caveat below.
+
+**Normal update (from `upstream` / aaditagrawal):**
 
 ```bash
 git fetch upstream
-git merge upstream/main      # resolve any conflicts (likely only in this
-                             # workflow file's repo name + the gemini files)
+git merge upstream/main      # resolve conflicts (likely release.yml repo name,
+                             # the geminiCli files, build-desktop-artifact.ts)
 git push origin main
 ```
 
-Then rebuild (cloud or local) to get an updated `.exe`.
+Then rebuild (cloud or local) to get updated installers.
 
-`origin` = your fork (Titanspark21/t3code) · `upstream` = aaditagrawal/t3code.
+**Why you can't cleanly pull from the original (`pingdotgg`).** aaditagrawal
+**squashed the entire project into a single commit** when they forked, so this
+fork shares **no git history** with `pingdotgg` (`git merge-base HEAD
+pingdotgg/main` is empty; a plain merge would treat them as _unrelated
+histories_ and conflict on essentially every file). The Antigravity/Gemini and
+multi-provider features you rely on only exist in aaditagrawal's line, not in
+`pingdotgg`. So to bring in a specific fix from the original, **cherry-pick it**
+rather than merge:
+
+```bash
+git fetch pingdotgg
+git log pingdotgg/main            # find the commit you want
+git cherry-pick <commit-sha>      # apply just that change (resolve conflicts)
+```
+
+A full re-base onto `pingdotgg` is possible but is a large one-time re-port of
+all the fork's changes — only worth it if you want to abandon aaditagrawal's line
+entirely.

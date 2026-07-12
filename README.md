@@ -1,3 +1,20 @@
+# T3 Code — Titanspark21 fork
+
+> **This fork adds Antigravity support and support for running multiple CLI accounts of any provider.**
+> e.g. two Claude logins and two Antigravity logins side by side, each fully isolated (its own login, history, and rate limits).
+
+**What this fork adds on top of the base app:**
+
+- **Antigravity (Gemini).** The Gemini provider now drives Google's **Antigravity (`agy`)** CLI — the old `gemini` CLI is deprecated for individuals — with all of its models (Gemini 3.5 Flash, Gemini 3.1 Pro, Claude/GPT models it exposes).
+- **Multiple accounts of any provider.** Every provider already supports multiple instances; this fork adds one‑click **account presets** and **per‑account isolation** (Claude via `CLAUDE_CONFIG_DIR`, Antigravity via an isolated home directory) so you can be logged into several accounts of the same provider at once.
+- **Working Windows build.** Fixes an electron‑builder + pnpm packaging bug that made the upstream `.exe` crash on launch (_"Cannot find module 'debug'"_).
+- **Claude auth fix.** Uses the Claude Agent SDK's bundled native binary so Claude accounts authenticate even when `claude` was installed via npm.
+
+See **[`SPEC.md`](./SPEC.md)** for architecture and **[`FORK_NOTES.md`](./FORK_NOTES.md)** for build/update instructions.
+Lineage: [pingdotgg/t3code](https://github.com/pingdotgg/t3code) (original) → [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code) (added Gemini) → **this fork**.
+
+---
+
 # T3 Code
 
 T3 Code is a minimal web GUI for coding agents made by [Pingdotgg](https://github.com/pingdotgg). This project is a downstream fork of the original [T3 Code](https://github.com/pingdotgg/t3code), maintained in [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code).
