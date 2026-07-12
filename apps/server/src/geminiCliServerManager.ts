@@ -26,6 +26,12 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import type { ProviderThreadSnapshot } from "./provider/Services/ProviderAdapter.ts";
 import { resolveCommandPath } from "./commandPath.ts";
 import { ANTIGRAVITY_EFFORT_OPTION_ID, resolveAntigravityCliModel } from "./antigravityModels.ts";
+import {
+  isNativeGeminiSlashCommand,
+  parseSlashCommand,
+  renderNativeSlashCommandResponse,
+  type ParsedSlashCommand,
+} from "./geminiSlashCommands.ts";
 
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 
@@ -511,6 +517,14 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
 
     const prompt = input.input ?? "";
 
+    // Intercept native slash commands (/help, /clear, /stats). T3 runs these
+    // itself so they work regardless of what the installed CLI supports in
+    // print mode; the CLI is never spawned for them.
+    const slashCommand = parseSlashCommand(prompt);
+    if (slashCommand && isNativeGeminiSlashCommand(slashCommand.name)) {
+      return this.handleNativeSlashCommand(session, input.threadId, turnId, slashCommand);
+    }
+
     // Use per-turn model override if provided, otherwise fall back to session
     // model. For Antigravity, expand the base model + selected reasoning effort
     // into the labeled `agy --model "<Base> (<Effort>)"` the CLI expects.
@@ -522,10 +536,16 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
         )
       : requestedModel;
 
+    // Non-native slash commands are handed to the CLI verbatim (no transcript
+    // wrapper) so a CLI that honors them in print mode can act on them.
+    const antigravityPrompt = slashCommand
+      ? prompt.trim()
+      : buildAntigravityPrompt(session.conversationHistory, prompt);
+
     const args: string[] = session.antigravity
       ? [
           ...buildAntigravityArgs({
-            prompt: buildAntigravityPrompt(session.conversationHistory, prompt),
+            prompt: antigravityPrompt,
             model: effectiveModel,
             runtimeMode: session.runtimeMode,
           }),
@@ -677,6 +697,72 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
       threadId: input.threadId,
       turnId,
     });
+  }
+
+  /**
+   * Execute a T3-native slash command (`/help`, `/clear`, `/stats`) without
+   * spawning the CLI. Emits the standard turn lifecycle so the reply renders
+   * like any assistant message; the exchange is intentionally kept out of
+   * `conversationHistory` so meta commands never pollute the transcript replayed
+   * to future turns.
+   */
+  private handleNativeSlashCommand(
+    session: GeminiCliSession,
+    threadId: ThreadId,
+    turnId: TurnId,
+    command: ParsedSlashCommand,
+  ): Promise<ProviderTurnStartResult> {
+    if (command.name === "clear") {
+      session.conversationHistory.length = 0;
+      session.geminiSessionId = undefined;
+    }
+
+    const responseText =
+      renderNativeSlashCommandResponse(command, {
+        messageCount: session.conversationHistory.length,
+        turnCount: this.usageAccumulator.turnCount,
+        inputTokens: this.usageAccumulator.inputTokens,
+        outputTokens: this.usageAccumulator.outputTokens,
+        totalTokens: this.usageAccumulator.totalTokens,
+      }) ?? "";
+
+    // turn.started synchronously (matches the spawned path); the reply and
+    // terminal events fire on the next tick so the caller receives the turn id
+    // first, mirroring the async subprocess lifecycle.
+    this.emitEvent(threadId, turnId, {
+      type: "turn.started",
+      payload: { model: session.model },
+    });
+
+    setImmediate(() => {
+      const active = this.sessions.get(threadId);
+      if (!active || active.activeTurnId !== turnId) return;
+
+      const itemId = RuntimeItemId.make(NodeCrypto.randomUUID());
+      this.emitEvent(threadId, turnId, {
+        type: "content.delta",
+        itemId,
+        payload: { streamKind: "assistant_text", delta: responseText },
+      });
+      this.emitEvent(threadId, turnId, {
+        type: "item.completed",
+        itemId,
+        payload: { itemType: "assistant_message", status: "completed" },
+      });
+
+      active.status = "ready";
+      active.activeTurnId = undefined;
+      active.activePrompt = undefined;
+      active.activeResponse = "";
+      active.updatedAt = new Date().toISOString();
+
+      this.emitEvent(threadId, turnId, {
+        type: "turn.completed",
+        payload: { state: "completed" },
+      });
+    });
+
+    return Promise.resolve({ threadId, turnId });
   }
 
   interruptTurn(threadId: ThreadId): Promise<void> {

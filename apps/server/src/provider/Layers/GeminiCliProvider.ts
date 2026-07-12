@@ -42,6 +42,7 @@ import {
   ANTIGRAVITY_MODEL_DEFS,
   type AntigravityModelDef,
 } from "../../antigravityModels.ts";
+import { GEMINI_SLASH_COMMANDS } from "../../geminiSlashCommands.ts";
 
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 const GEMINI_PRESENTATION = {
@@ -181,6 +182,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
   if (!config.enabled) {
     return buildServerProvider({
       presentation: presentationFor(config),
+      slashCommands: GEMINI_SLASH_COMMANDS,
       enabled: false,
       checkedAt,
       models: allModels,
@@ -203,6 +205,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
     const error = versionProbe.failure;
     return buildServerProvider({
       presentation: presentationFor(config),
+      slashCommands: GEMINI_SLASH_COMMANDS,
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -221,6 +224,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
   if (Option.isNone(versionProbe.success)) {
     return buildServerProvider({
       presentation: presentationFor(config),
+      slashCommands: GEMINI_SLASH_COMMANDS,
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -240,6 +244,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* 
     const detail = detailFromResult(version);
     return buildServerProvider({
       presentation: presentationFor(config),
+      slashCommands: GEMINI_SLASH_COMMANDS,
       enabled: config.enabled,
       checkedAt,
       models: allModels,
@@ -285,6 +290,7 @@ export const makePendingGeminiCliProvider = (config: GeminiCliSettings): ServerP
   if (!config.enabled) {
     return buildServerProvider({
       presentation: presentationFor(config),
+      slashCommands: GEMINI_SLASH_COMMANDS,
       enabled: false,
       checkedAt,
       models,
