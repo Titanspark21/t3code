@@ -353,6 +353,10 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Set when this thread was forked from another: the source thread's id. Powers
+  // the fork link indicator. Null for normal threads. Decodes default null so
+  // pre-fork persisted/serialized threads round-trip.
+  forkedFromThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -399,6 +403,10 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Set when this thread was forked from another: the source thread's id. Powers
+  // the fork link indicator. Null for normal threads. Decodes default null so
+  // pre-fork persisted/serialized threads round-trip.
+  forkedFromThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -525,6 +533,9 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Source thread id when creating a forked thread; null otherwise. Decodes
+  // default null so older clients that omit it still produce valid commands.
+  forkedFromThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
 });
 
@@ -870,6 +881,8 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Source thread id when this thread was created as a fork; null otherwise.
+  forkedFromThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

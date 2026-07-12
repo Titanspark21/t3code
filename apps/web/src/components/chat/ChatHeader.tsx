@@ -6,8 +6,10 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { GitForkIcon } from "lucide-react";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
+import { Button } from "../ui/button";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, {
@@ -38,6 +40,10 @@ interface ChatHeaderProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  /** Fork the current chat into a new thread using the composer's selected model. */
+  onForkThread?: () => void;
+  /** Whether forking is currently possible (server thread with history, not busy). */
+  canForkThread?: boolean;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -69,6 +75,8 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onForkThread,
+  canForkThread,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const showOpenInPicker = shouldShowOpenInPicker({
@@ -118,6 +126,28 @@ export const ChatHeader = memo(function ChatHeader({
             availableEditors={availableEditors}
             openInCwd={openInCwd}
           />
+        )}
+        {onForkThread && canForkThread && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Fork chat"
+                  data-chat-fork-thread
+                  className="shrink-0 px-2 text-muted-foreground/80 hover:text-foreground"
+                  onClick={onForkThread}
+                >
+                  <GitForkIcon aria-hidden="true" className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">
+              Fork chat — continue in a new thread with the model selected below
+            </TooltipPopup>
+          </Tooltip>
         )}
         {activeProjectName && (
           <GitActionsControl

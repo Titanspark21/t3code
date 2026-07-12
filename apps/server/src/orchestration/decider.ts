@@ -239,6 +239,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          forkedFromThreadId: command.forkedFromThreadId ?? null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

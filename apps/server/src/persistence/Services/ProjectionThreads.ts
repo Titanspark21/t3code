@@ -32,6 +32,9 @@ export const ProjectionThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  // Optional so a SELECT (or legacy row) that omits the column decodes to
+  // `undefined` instead of failing; readers coalesce to null.
+  forkedFromThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
