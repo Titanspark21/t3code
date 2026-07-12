@@ -82,6 +82,22 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
+// Antigravity models. The `slug` is passed verbatim to `agy --model`, which
+// resolves models by their display label (verified against the CLI: `agy models`
+// lists these, and the CLI logs `Propagating selected model override ...
+// label="Gemini 3.1 Pro (High)"`). `auto` is special-cased in
+// buildAntigravityArgs to omit `--model` and use the CLI's default.
+const ANTIGRAVITY_MODEL_LABELS = [
+  "Gemini 3.5 Flash (Low)",
+  "Gemini 3.5 Flash (Medium)",
+  "Gemini 3.5 Flash (High)",
+  "Gemini 3.1 Pro (Low)",
+  "Gemini 3.1 Pro (High)",
+  "Claude Sonnet 4.6 (Thinking)",
+  "Claude Opus 4.6 (Thinking)",
+  "GPT-OSS 120B (Medium)",
+] as const;
+
 const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "auto",
@@ -89,6 +105,14 @@ const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     isCustom: false,
     capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
   },
+  ...ANTIGRAVITY_MODEL_LABELS.map(
+    (label): ServerProviderModel => ({
+      slug: label,
+      name: label,
+      isCustom: false,
+      capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
+    }),
+  ),
 ];
 
 function presentationFor(config: GeminiCliSettings) {

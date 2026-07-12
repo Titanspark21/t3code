@@ -70,7 +70,7 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { makeClaudeEnvironment, resolveClaudeExecutablePath } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
   isClaudeSonnet5ConstrainedContextEnvironment,
@@ -3415,7 +3415,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
-      const claudeBinaryPath = claudeSettings.binaryPath;
+      const claudeBinaryPath = resolveClaudeExecutablePath(claudeSettings.binaryPath);
       const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
@@ -3453,7 +3453,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
-        pathToClaudeCodeExecutable: claudeBinaryPath,
+        ...(claudeBinaryPath ? { pathToClaudeCodeExecutable: claudeBinaryPath } : {}),
         systemPrompt: { type: "preset", preset: "claude_code" },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
@@ -3512,7 +3512,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
         "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
-        "claude.query.path_to_executable": claudeBinaryPath,
+        "claude.query.path_to_executable": claudeBinaryPath ?? "(bundled)",
       });
 
       const queryRuntime = yield* Effect.try({

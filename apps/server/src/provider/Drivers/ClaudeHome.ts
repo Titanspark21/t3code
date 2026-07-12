@@ -14,6 +14,25 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
   return path.resolve(homePath.length > 0 ? expandHomePath(homePath) : NodeOS.homedir());
 });
 
+/**
+ * Resolve the Claude Agent SDK's `pathToClaudeCodeExecutable`, or `undefined` to
+ * use the SDK's own bundled native binary.
+ *
+ * The SDK requires a NATIVE Claude Code binary. The default `binaryPath`
+ * ("claude") resolves on many machines to the npm CLI shim
+ * (`claude.ps1`/`claude.cmd`), which the SDK rejects with "native binary not
+ * found" — that breaks the auth-status probe (and sessions) for every account,
+ * showing "Could not verify Claude authentication status". Returning `undefined`
+ * for the default makes the SDK fall back to its bundled native binary, which
+ * still honours the per-instance `CLAUDE_CONFIG_DIR`. Only an explicit custom
+ * path (something other than the bare default) is passed through.
+ */
+export function resolveClaudeExecutablePath(binaryPath: string): string | undefined {
+  const trimmed = binaryPath.trim();
+  if (trimmed.length === 0 || trimmed === "claude") return undefined;
+  return trimmed;
+}
+
 export const resolveClaudeConfigDir = Effect.fn("resolveClaudeConfigDir")(function* (
   config: Pick<ClaudeSettings, "configDir">,
 ): Effect.fn.Return<string | undefined, never, Path.Path> {
