@@ -68,6 +68,7 @@ import {
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { readDroppedFilesAsBlocks } from "../../composerFileDrop";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -1784,16 +1785,51 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     removeComposerImageFromDraft(imageId);
   };
 
+  // Inline non-image files (Markdown, source, logs, …) into the prompt as fenced
+  // blocks. Unlike images these need no attachment transport, so they work for
+  // every provider — including Antigravity/Gemini, whose adapter rejects binary
+  // attachments.
+  const addComposerTextFiles = async (files: File[]) => {
+    if (!activeThreadId || files.length === 0) return;
+    if (pendingUserInputs.length > 0) {
+      toastManager.add({
+        type: "error",
+        title: "Add files after answering plan questions.",
+      });
+      return;
+    }
+    const { blocks, error } = await readDroppedFilesAsBlocks(files);
+    if (blocks.length > 0) {
+      const rangeEnd = promptRef.current.length;
+      applyPromptReplacement(rangeEnd, rangeEnd, blocks.join(""));
+    }
+    if (error) {
+      setThreadError(activeThreadId, error);
+    }
+  };
+
+  // Route dropped/pasted files: images use the attachment path, everything else
+  // is inlined as text.
+  const addComposerFiles = (files: File[]) => {
+    if (files.length === 0) return;
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    const others = files.filter((file) => !file.type.startsWith("image/"));
+    if (images.length > 0) {
+      addComposerImages(images);
+    }
+    if (others.length > 0) {
+      void addComposerTextFiles(others);
+    }
+  };
+
   // ------------------------------------------------------------------
   // Callbacks: paste / drag
   // ------------------------------------------------------------------
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
     if (files.length === 0) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
     event.preventDefault();
-    addComposerImages(imageFiles);
+    addComposerFiles(files);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -1827,7 +1863,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     const files = Array.from(event.dataTransfer.files);
-    addComposerImages(files);
+    addComposerFiles(files);
     focusComposer();
   };
   const handleInterruptPrimaryAction = useCallback(() => {
