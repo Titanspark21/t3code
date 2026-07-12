@@ -27,6 +27,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
 import {
+  buildSelectOptionDescriptor,
   buildServerProvider,
   DEFAULT_TIMEOUT_MS,
   detailFromResult,
@@ -36,6 +37,11 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import {
+  ANTIGRAVITY_EFFORT_OPTION_ID,
+  ANTIGRAVITY_MODEL_DEFS,
+  type AntigravityModelDef,
+} from "../../antigravityModels.ts";
 
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 const GEMINI_PRESENTATION = {
@@ -82,38 +88,47 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
-// Antigravity models. The `slug` is passed verbatim to `agy --model`, which
-// resolves models by their display label (verified against the CLI: `agy models`
-// lists these, and the CLI logs `Propagating selected model override ...
-// label="Gemini 3.1 Pro (High)"`). `auto` is special-cased in
-// buildAntigravityArgs to omit `--model` and use the CLI's default.
-const ANTIGRAVITY_MODEL_LABELS = [
-  "Gemini 3.5 Flash (Low)",
-  "Gemini 3.5 Flash (Medium)",
-  "Gemini 3.5 Flash (High)",
-  "Gemini 3.1 Pro (Low)",
-  "Gemini 3.1 Pro (High)",
-  "Claude Sonnet 4.6 (Thinking)",
-  "Claude Opus 4.6 (Thinking)",
-  "GPT-OSS 120B (Medium)",
-] as const;
-
-const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
-  {
-    slug: "auto",
-    name: "Antigravity (Automatic)",
-    isCustom: false,
-    capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
-  },
-  ...ANTIGRAVITY_MODEL_LABELS.map(
-    (label): ServerProviderModel => ({
-      slug: label,
-      name: label,
+// Antigravity models. Effort-capable models (`Gemini 3.5 Flash`, `Gemini 3.1
+// Pro`) are stored by their base slug and pair with a reasoning-effort trait;
+// the manager expands `base + effort` into the labeled `agy --model "<Base>
+// (<Effort>)"` argument the CLI resolves (verified against `agy models`, and the
+// CLI logs `Propagating selected model override ... label="Gemini 3.1 Pro
+// (High)"`). Non-effort entries pass their slug to `agy --model` verbatim, and
+// `auto` is special-cased in buildAntigravityArgs to omit `--model`. The catalog
+// lives in `antigravityModels.ts` so this list and the manager's label
+// resolution never drift apart.
+function antigravityModelToServerModel(def: AntigravityModelDef): ServerProviderModel {
+  if (!def.efforts || def.efforts.length === 0) {
+    return {
+      slug: def.slug,
+      name: def.name,
       isCustom: false,
       capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
+    };
+  }
+  return {
+    slug: def.slug,
+    name: def.name,
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: ANTIGRAVITY_EFFORT_OPTION_ID,
+          label: "Reasoning",
+          options: def.efforts.map((effort) => ({
+            value: effort.value,
+            label: effort.label,
+            ...(effort.isDefault ? { isDefault: true } : {}),
+          })),
+        }),
+      ],
     }),
-  ),
-];
+  };
+}
+
+const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = ANTIGRAVITY_MODEL_DEFS.map(
+  antigravityModelToServerModel,
+);
 
 function presentationFor(config: GeminiCliSettings) {
   return config.antigravity ? ANTIGRAVITY_PRESENTATION : GEMINI_PRESENTATION;

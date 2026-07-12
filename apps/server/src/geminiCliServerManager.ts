@@ -22,8 +22,10 @@ import {
   type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
 import type { ProviderSessionUsage, ProviderUsageResult } from "@t3tools/contracts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import type { ProviderThreadSnapshot } from "./provider/Services/ProviderAdapter.ts";
 import { resolveCommandPath } from "./commandPath.ts";
+import { ANTIGRAVITY_EFFORT_OPTION_ID, resolveAntigravityCliModel } from "./antigravityModels.ts";
 
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 
@@ -509,8 +511,16 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
 
     const prompt = input.input ?? "";
 
-    // Use per-turn model override if provided, otherwise fall back to session model.
-    const effectiveModel = input.modelSelection?.model ?? session.model;
+    // Use per-turn model override if provided, otherwise fall back to session
+    // model. For Antigravity, expand the base model + selected reasoning effort
+    // into the labeled `agy --model "<Base> (<Effort>)"` the CLI expects.
+    const requestedModel = input.modelSelection?.model ?? session.model;
+    const effectiveModel = session.antigravity
+      ? resolveAntigravityCliModel(
+          requestedModel,
+          getModelSelectionStringOptionValue(input.modelSelection, ANTIGRAVITY_EFFORT_OPTION_ID),
+        )
+      : requestedModel;
 
     const args: string[] = session.antigravity
       ? [
