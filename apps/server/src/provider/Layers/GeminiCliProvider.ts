@@ -27,7 +27,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
 import {
-  buildServerProvider,
+  buildServerProvider as buildServerProviderBase,
   DEFAULT_TIMEOUT_MS,
   detailFromResult,
   isCommandMissingCause,
@@ -36,6 +36,18 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { GEMINI_CLI_SLASH_COMMANDS } from "../providerSlashCommandPresets.ts";
+
+/**
+ * Local wrapper that stamps the Gemini/Antigravity slash-command preset onto
+ * every snapshot this module builds. Gemini's CLI does not report its command
+ * list over the wire, so we inject the static catalog here for the composer
+ * command menu.
+ */
+const buildServerProvider = (
+  input: Omit<Parameters<typeof buildServerProviderBase>[0], "slashCommands">,
+): ServerProviderDraft =>
+  buildServerProviderBase({ ...input, slashCommands: GEMINI_CLI_SLASH_COMMANDS });
 
 const PROVIDER = ProviderDriverKind.make("geminiCli");
 const GEMINI_PRESENTATION = {

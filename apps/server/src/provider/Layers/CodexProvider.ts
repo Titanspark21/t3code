@@ -28,10 +28,22 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   AUTH_PROBE_TIMEOUT_MS,
-  buildServerProvider,
+  buildServerProvider as buildServerProviderBase,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { CODEX_SLASH_COMMANDS } from "../providerSlashCommandPresets.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+
+/**
+ * Local wrapper that stamps the Codex slash-command preset onto every snapshot.
+ * Codex's app-server transport does not report a command list, so we inject the
+ * static catalog here for the composer command menu. `/status` and `/usage` are
+ * intercepted by the web client to open the usage popup.
+ */
+const buildServerProvider = (
+  input: Omit<Parameters<typeof buildServerProviderBase>[0], "slashCommands">,
+): ServerProviderDraft =>
+  buildServerProviderBase({ ...input, slashCommands: CODEX_SLASH_COMMANDS });
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 

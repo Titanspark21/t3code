@@ -34,6 +34,7 @@ import {
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
+  getModelSelectionStringOptionValue,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
@@ -149,7 +150,13 @@ import {
   projectScriptIdFromCommand,
 } from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
-import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
+import {
+  getProviderDisplayName,
+  getProviderModelCapabilities,
+  resolveSelectableProvider,
+} from "../providerModels";
+import { buildForkContextPrompt, serializeThreadTranscript } from "../lib/forkConversation";
+import { useForkLinkStore } from "../forkLinkStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
@@ -205,6 +212,7 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import { ForkedFromBanner } from "./chat/ForkedFromBanner";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -4852,6 +4860,188 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const setForkLink = useForkLinkStore((store) => store.setForkLink);
+  const handleFork = useCallback(
+    async (params: {
+      modelSelection: ModelSelection;
+      provider: ProviderDriverKind;
+      instanceId: ProviderInstanceId;
+      model: string;
+    }) => {
+      if (
+        !activeThread ||
+        !activeProject ||
+        !isServerThread ||
+        isSendBusy ||
+        isConnecting ||
+        activeEnvironmentUnavailable ||
+        sendInFlightRef.current
+      ) {
+        return;
+      }
+
+      const transcript = serializeThreadTranscript(activeThread.messages ?? []);
+      if (!transcript.trim()) {
+        toastManager.add({
+          type: "error",
+          title: "Nothing to fork yet",
+          description: "Send at least one message before forking this conversation.",
+        });
+        return;
+      }
+
+      const sourceModelSelection = activeThread.modelSelection;
+      const sourceProviderEntry = sourceModelSelection
+        ? providerStatuses.find((p) => p.instanceId === sourceModelSelection.instanceId)
+        : undefined;
+      const sourceProviderDisplayName = sourceProviderEntry
+        ? getProviderDisplayName(providerStatuses, sourceProviderEntry.driver)
+        : null;
+      const targetProviderDisplayName = getProviderDisplayName(providerStatuses, params.provider);
+
+      const forkPrompt = buildForkContextPrompt({
+        transcript,
+        sourceTitle: activeThread.title ?? null,
+        sourceProviderDisplayName,
+      });
+      const targetModels =
+        providerStatuses.find((p) => p.instanceId === params.instanceId)?.models ?? [];
+      const targetEffort = getModelSelectionStringOptionValue(
+        params.modelSelection,
+        "reasoningEffort",
+      );
+      const outgoingForkPrompt = formatOutgoingPrompt({
+        provider: params.provider,
+        model: params.model,
+        models: targetModels,
+        effort: targetEffort ?? null,
+        text: forkPrompt,
+      });
+
+      const createdAt = new Date().toISOString();
+      const nextThreadId = newThreadId();
+      const nextThreadTitle = truncate(`Fork · ${activeThread.title ?? "Conversation"}`);
+
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      const finish = () => {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      };
+
+      const createResult = await createThread({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          projectId: activeProject.id,
+          title: nextThreadTitle,
+          modelSelection: params.modelSelection,
+          runtimeMode,
+          interactionMode: "default",
+          branch: activeThreadBranch,
+          worktreePath: activeThread.worktreePath,
+          createdAt,
+        },
+      });
+      let failure: AtomCommandResult<unknown, unknown> | null =
+        createResult._tag === "Failure" ? createResult : null;
+
+      if (failure === null) {
+        const startResult = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: nextThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: outgoingForkPrompt,
+              attachments: [],
+            },
+            modelSelection: params.modelSelection,
+            titleSeed: nextThreadTitle,
+            runtimeMode,
+            interactionMode: "default",
+            createdAt,
+          },
+        });
+        failure = startResult._tag === "Failure" ? startResult : null;
+      }
+
+      if (failure === null) {
+        const startedResult = await settlePromise(() =>
+          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+        );
+        failure = startedResult._tag === "Failure" ? startedResult : null;
+      }
+
+      if (failure === null) {
+        setForkLink(scopedThreadKey(scopeThreadRef(activeThread.environmentId, nextThreadId)), {
+          sourceEnvironmentId: activeThread.environmentId,
+          sourceThreadId: activeThread.id,
+          sourceTitle: activeThread.title ?? null,
+          targetProviderDisplayName,
+          createdAt,
+        });
+        const navigateResult = await settlePromise(() =>
+          navigate({
+            to: "/$environmentId/$threadId",
+            params: {
+              environmentId: activeThread.environmentId,
+              threadId: nextThreadId,
+            },
+          }),
+        );
+        failure = navigateResult._tag === "Failure" ? navigateResult : null;
+      }
+
+      if (failure !== null) {
+        const cleanupResult = await deleteThread({
+          environmentId,
+          input: { threadId: nextThreadId },
+        });
+        if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+          console.warn(
+            "Failed to clean up forked thread after start failure.",
+            squashAtomCommandFailure(cleanupResult),
+          );
+        }
+        if (!isAtomCommandInterrupted(failure)) {
+          const error = squashAtomCommandFailure(failure);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not fork conversation",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "An error occurred while creating the forked thread.",
+            }),
+          );
+        }
+      }
+      finish();
+    },
+    [
+      activeProject,
+      activeThread,
+      activeThreadBranch,
+      activeEnvironmentUnavailable,
+      beginLocalDispatch,
+      createThread,
+      deleteThread,
+      environmentId,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      navigate,
+      providerStatuses,
+      resetLocalDispatch,
+      runtimeMode,
+      setForkLink,
+      startThreadTurn,
+    ],
+  );
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -5171,6 +5361,15 @@ function ChatViewContent(props: ChatViewProps) {
           error={threadError}
           onDismiss={() => setThreadError(activeThread.id, null)}
         />
+        <ForkedFromBanner
+          threadKey={activeThreadKey}
+          onOpenSource={(sourceEnvironmentId, sourceThreadId) => {
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId: sourceEnvironmentId, threadId: sourceThreadId },
+            });
+          }}
+        />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}
@@ -5301,6 +5500,7 @@ function ChatViewContent(props: ChatViewProps) {
                       onSend={onSend}
                       onInterrupt={onInterrupt}
                       onImplementPlanInNewThread={onImplementPlanInNewThread}
+                      onFork={handleFork}
                       onRespondToApproval={onRespondToApproval}
                       onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
                       onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}

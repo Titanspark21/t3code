@@ -84,6 +84,13 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import { UsageIndicator } from "./UsageIndicator";
+import { ForkComposerButton } from "./ForkComposerButton";
+import { deriveProviderUsageModel } from "../../lib/usageModel";
+import {
+  parseStandaloneUsageCommand,
+  resolveProviderSlashCommandAction,
+} from "../../lib/providerSlashCommandActions";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -483,6 +490,12 @@ export interface ChatComposerProps {
   onSend: (e?: { preventDefault: () => void }) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onFork: (params: {
+    modelSelection: ModelSelection;
+    provider: ProviderDriverKind;
+    instanceId: ProviderInstanceId;
+    model: string;
+  }) => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -567,6 +580,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
+    onFork,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
@@ -839,8 +853,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [providerStatuses, activeThreadModelSelection]);
 
   // ------------------------------------------------------------------
+  // Usage indicator / popup
+  // ------------------------------------------------------------------
+  const usageModel = useMemo(
+    () => deriveProviderUsageModel(activeThreadActivities),
+    [activeThreadActivities],
+  );
+  const selectedProviderDisplayName = useMemo(
+    () => getProviderDisplayName(providerStatuses, selectedProvider),
+    [providerStatuses, selectedProvider],
+  );
+
+  // ------------------------------------------------------------------
   // Composer-local state
   // ------------------------------------------------------------------
+  const [isUsagePopupOpen, setIsUsagePopupOpen] = useState(false);
   const [composerCursor, setComposerCursor] = useState(() =>
     collapseExpandedComposerCursor(prompt, prompt.length),
   );
@@ -1569,7 +1596,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "provider-slash-command") {
-        const replacement = `/${item.command.name} `;
+        const action = resolveProviderSlashCommandAction(item.provider, item.command.name);
+        // Usage/status commands open the non-blocking usage popup instead of
+        // being dispatched as a turn; some Codex commands expand to a concrete
+        // instruction because its transport ignores TUI slash text.
+        const replacement =
+          action?.kind === "prompt" ? `${action.text} ` : `/${item.command.name} `;
+        if (action?.kind === "usage") {
+          const cleared = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            focusEditorAfterReplace: false,
+          });
+          if (cleared) {
+            setComposerHighlightedItemId(null);
+            setIsUsagePopupOpen(true);
+          }
+          return;
+        }
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -1666,12 +1709,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }) => {
+      // A standalone `/usage` (or Codex `/status`) opens the usage popup rather
+      // than dispatching a turn, so checking usage never interrupts work.
+      if (parseStandaloneUsageCommand(promptRef.current, selectedProvider)) {
+        event?.preventDefault?.();
+        promptRef.current = "";
+        setPrompt("");
+        setComposerCursor(0);
+        setComposerTrigger(null);
+        setComposerHighlightedItemId(null);
+        setIsUsagePopupOpen(true);
+        return;
+      }
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
     },
-    [blurMobileComposerAfterSend, onSend, shouldBlurMobileComposerOnSubmit],
+    [
+      blurMobileComposerAfterSend,
+      onSend,
+      promptRef,
+      selectedProvider,
+      setPrompt,
+      shouldBlurMobileComposerOnSubmit,
+    ],
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
@@ -2504,6 +2566,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   </>
                 )}
+
+                <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                <UsageIndicator
+                  usage={usageModel}
+                  providerDisplayName={selectedProviderDisplayName}
+                  open={isUsagePopupOpen}
+                  onOpenChange={setIsUsagePopupOpen}
+                />
+                <ForkComposerButton
+                  instanceEntries={providerInstanceEntries}
+                  defaultInstanceId={selectedInstanceId}
+                  defaultModel={selectedModel}
+                  compact={isComposerFooterCompact}
+                  disabled={routeKind !== "server"}
+                  onFork={onFork}
+                />
               </div>
 
               {/* Right side: send / stop button */}
