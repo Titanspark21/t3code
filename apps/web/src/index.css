@@ -668,13 +668,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     outline: none;
   }
 
-  [data-preview-panel-mode="inline"] [data-right-panel-surface-content] [data-surface-subheader] {
-    height: calc(var(--spacing) * 7);
-    min-height: calc(var(--spacing) * 7);
-    margin-bottom: calc(var(--spacing) * 3);
-    border-bottom-color: transparent;
-  }
-
   .chat-composer-glass-shell {
     --chat-composer-glass-surface: var(--card);
     --chat-composer-outline: rgb(0 0 0 / 8%);
