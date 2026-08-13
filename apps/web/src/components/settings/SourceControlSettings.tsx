@@ -19,7 +19,7 @@ import {
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { Badge } from "../ui/badge";
@@ -492,7 +492,15 @@ function EmptySourceControlDiscovery({
 }
 
 export function SourceControlSettingsPanel() {
-  const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
+  const { environments } = useEnvironments();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const fallbackEnvironment =
+    environments.find((environment) => environment.connection.phase === "connected") ??
+    environments[0] ??
+    null;
+  const environmentId =
+    primaryEnvironment?.environmentId ?? fallbackEnvironment?.environmentId ?? null;
+  const isPrimaryEnvironment = environmentId === primaryEnvironment?.environmentId;
   const discovery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -544,7 +552,9 @@ export function SourceControlSettingsPanel() {
             >
               {result.versionControlSystems.map((item) => (
                 <DiscoveryItemRow key={`vcs:${item.kind}`} item={item}>
-                  {item.kind === "git" ? <GitFetchIntervalSettings /> : undefined}
+                  {item.kind === "git" && isPrimaryEnvironment ? (
+                    <GitFetchIntervalSettings />
+                  ) : undefined}
                 </DiscoveryItemRow>
               ))}
             </SettingsSection>
@@ -570,7 +580,7 @@ export function SourceControlSettingsPanel() {
         />
       )}
 
-      {environmentId !== null ? <SourceControlWritingSettingsSection /> : null}
+      {isPrimaryEnvironment ? <SourceControlWritingSettingsSection /> : null}
     </SettingsPageContainer>
   );
 }
