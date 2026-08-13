@@ -89,13 +89,9 @@ export function PolicyTooltip({ children }: { readonly children: string }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <button
-            type="button"
-            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-            aria-label="Background policy details"
-          >
+          <Button size="icon-micro" variant="ghost-muted" aria-label="Background policy details">
             <InfoIcon className="size-3.5" />
-          </button>
+          </Button>
         }
       />
       <TooltipPopup side="top" className="max-w-72">

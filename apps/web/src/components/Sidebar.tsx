@@ -3263,9 +3263,9 @@ export default function Sidebar() {
                 {isSearchingThreads ? (
                   <Button
                     type="button"
-                    size="icon-xs"
+                    size="icon-micro"
                     variant="ghost"
-                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                    className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
                     aria-label="Clear thread search"
                     onClick={() => {
                       clearThreadSearch();

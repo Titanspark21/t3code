@@ -1837,24 +1837,6 @@ code {
   background: color-mix(in srgb, var(--border) 78%, transparent);
 }
 
-.markdown-file-link-tooltip-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--border) 78%, transparent) transparent;
-}
-
-.markdown-file-link-tooltip-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-
-.markdown-file-link-tooltip-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.markdown-file-link-tooltip-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--border) 78%, transparent);
-}
-
 .chat-markdown .chat-markdown-codeblock {
   margin: 0.65rem 0;
   overflow: hidden;
@@ -2001,11 +1983,6 @@ code {
   animation: provider-update-pill-countdown var(--provider-update-pill-dismiss-ms) linear forwards;
 }
 
-/* Diffs theme bridge (match diff surfaces to app palette) */
-.diff-panel-viewport {
-  background: var(--background);
-}
-
 /* Diffs live directly on the panel canvas. Normal chat code blocks may use a
    raised code surface, but carrying that fill into the diff creates a card-like
    rectangle that does not belong in the panel. */
@@ -2013,7 +1990,6 @@ code {
   --code-background: var(--background);
 }
 
-.diff-render-file,
 .diff-render-surface diffs-container {
   border: 0;
   border-radius: 0;
@@ -2093,31 +2069,6 @@ code {
 
 .ultrathink-chroma {
   animation: ultrathink-chroma-shift 10s linear infinite;
-}
-
-.ultrathink-pill {
-  background:
-    linear-gradient(var(--card), var(--card)) padding-box,
-    var(--ultrathink-spectrum) border-box;
-  background-size:
-    100% 100%,
-    220% 220%;
-  background-position:
-    0 0,
-    0% 50%;
-  animation: ultrathink-rainbow 10s linear infinite;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card) 82%, transparent);
-}
-
-.ultrathink-word {
-  display: inline-block;
-  color: transparent;
-  background-image: var(--ultrathink-spectrum);
-  background-size: 220% 220%;
-  background-position: 0% 50%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: ultrathink-rainbow 10s linear infinite;
 }
 
 /* Composer chips are non-editable decorators, so the browser skips them when

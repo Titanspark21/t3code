@@ -245,9 +245,9 @@ export function ProviderModelsSection({
                     <TooltipTrigger
                       render={
                         <Button
-                          size="icon-xs"
+                          size="icon-micro"
                           variant="ghost"
-                          className="size-5 rounded-sm p-0 text-muted-foreground/60 hover:text-muted-foreground"
+                          className="text-muted-foreground/60 hover:text-muted-foreground"
                           aria-label={`Details for ${model.name}`}
                         />
                       }
