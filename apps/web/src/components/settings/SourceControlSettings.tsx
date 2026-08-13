@@ -529,9 +529,8 @@ export function SourceControlSettingsPanel() {
       <TooltipTrigger
         render={
           <Button
-            size="icon-xs"
-            variant="ghost"
-            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+            size="icon-micro"
+            variant="ghost-muted"
             onClick={handleScan}
             disabled={discovery.isPending}
             aria-label="Rescan server environment"

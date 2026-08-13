@@ -923,10 +923,11 @@ export function PullRequestCodeTab({
         ) : (
           // Bottom-right, clear of the vertical scrollbar the diff view keeps to its own right
           // edge.
-          <button
-            type="button"
-            className="surface-glass pointer-events-auto absolute bottom-3 right-4 flex cursor-pointer items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-xs font-medium shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          <Button
+            className="pointer-events-auto absolute right-4 bottom-3 rounded-full shadow-lg"
             onClick={() => setReviewOpen(true)}
+            size="compact"
+            variant="glass"
           >
             <MessageSquareIcon className="size-3.5" />
             Review
@@ -935,7 +936,7 @@ export function PullRequestCodeTab({
                 {pendingComments.length}
               </span>
             ) : null}
-          </button>
+          </Button>
         )}
       </div>
     );

@@ -6263,16 +6263,17 @@ function ChatViewContent(props: ChatViewProps) {
                   className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
                   style={{ bottom: composerOverlayHeight + 4 }}
                 >
-                  <button
-                    type="button"
+                  <Button
                     aria-label="Scroll to end"
                     title="Scroll to end"
                     onClick={() => scrollToEnd(true)}
-                    className="surface-glass pointer-events-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                    className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
+                    size="xs"
+                    variant="glass"
                   >
                     <ChevronDownIcon className="size-3.5" />
                     Scroll to end
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
