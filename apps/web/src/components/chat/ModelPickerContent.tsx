@@ -781,7 +781,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   onLayout={updateModelListScrollFades}
                   onScroll={updateModelListScrollFades}
                   className={cn(
-                    "model-picker-list scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [--fade-size:1.5rem]",
+                    "scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [--fade-size:1.5rem] [&::-webkit-scrollbar-track]:my-2",
                     showTopScrollFade && "model-picker-list-scroll-fade-top",
                     showBottomScrollFade && "model-picker-list-scroll-fade-bottom",
                   )}

@@ -1747,13 +1747,12 @@ function ComposerPromptEditorInner({
 
   return (
     <ComposerTerminalContextActionsContext value={terminalContextActions}>
-      <div className="composer-editor-surface relative">
+      <div className="relative [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]">
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
               className={cn(
-                // The size comes from .composer-editor-surface so Settings -> Appearance
-                // can drive it; keep everything else here.
+                // The wrapper owns the appearance preference; keep everything else here.
                 "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
                 className,
               )}

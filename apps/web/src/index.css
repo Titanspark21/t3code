@@ -1577,28 +1577,6 @@ code {
   background: var(--app-scrollbar-thumb-hover);
 }
 
-/* Settings -> Appearance can point the composer at its own face (for example a
-   mono font); default follows the sans stack. Applied on the surface wrapper so
-   the editor and its placeholder inherit together. */
-.composer-editor-surface {
-  font-family: var(--font-composer, var(--font-sans));
-  font-size: var(--font-size-prompt, 0.875rem);
-}
-
-/* Touch browsers zoom the page when a focused field is under 16px, so keep
-   the floor there regardless of the preference. Gated on a coarse pointer:
-   the zoom quirk does not exist on desktop, where a narrow window must not
-   silently override a smaller chosen prompt size. */
-@media (max-width: 39.999rem) and (pointer: coarse) {
-  .composer-editor-surface {
-    font-size: max(var(--font-size-prompt, 1rem), 16px);
-  }
-}
-
-.model-picker-list::-webkit-scrollbar-track {
-  margin-block: 0.5rem;
-}
-
 .model-picker-list-scroll-fade-top,
 .model-picker-list-scroll-fade-bottom {
   -webkit-mask-image: var(--model-picker-list-scroll-mask), linear-gradient(black, black);
@@ -1635,29 +1613,6 @@ code {
     black calc(100% - var(--fade-size)),
     transparent
   );
-}
-
-.turn-chip-strip {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  overscroll-behavior-x: contain;
-}
-
-.turn-chip-strip::-webkit-scrollbar {
-  display: none;
-}
-
-/* Reasoning select -- clickable label surface */
-label:has(> select#reasoning-effort) {
-  position: relative;
-}
-label:has(> select#reasoning-effort) select {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
 }
 
 /* Chat markdown rendering */
