@@ -907,10 +907,11 @@ export default function DiffPanel({
                       <Tooltip>
                         <TooltipTrigger
                           render={
-                            <button
-                              type="button"
+                            <Button
+                              size="icon-micro"
+                              variant="ghost"
                               className={cn(
-                                "-ms-0.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden",
+                                "-ms-0.5 [--control-icon-color:currentColor] bg-transparent hover:bg-foreground/10",
                                 getDiffCollapseIconClassName(fileDiff),
                               )}
                               aria-label={collapsed ? `Expand ${filePath}` : `Collapse ${filePath}`}

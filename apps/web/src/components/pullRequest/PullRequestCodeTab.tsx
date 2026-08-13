@@ -668,13 +668,12 @@ export function PullRequestCodeTab({
       // chevron follows it rather than recomputing the default here.
       const collapsed = item.collapsed === true;
       return (
-        <button
-          type="button"
+        <Button
+          size="icon-micro"
+          variant="ghost-muted"
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand diff" : "Collapse diff"}
-          className={cn(
-            "mr-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground",
-          )}
+          className="mr-1 rounded hover:bg-transparent"
           onClick={(event) => {
             event.stopPropagation();
             toggleFile(item.id);
@@ -685,7 +684,7 @@ export function PullRequestCodeTab({
           ) : (
             <ChevronDownIcon className="size-4" />
           )}
-        </button>
+        </Button>
       );
     },
     [toggleFile],
