@@ -80,7 +80,7 @@ export function PullRequestSearchInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <InputGroup className="min-w-0 flex-1">
+    <InputGroup className="min-w-0 flex-1 **:[input]:h-9 sm:**:[input]:h-8">
       <InputGroupAddon>
         {busy ? <LoaderIcon aria-hidden className="animate-spin" /> : <SearchIcon aria-hidden />}
       </InputGroupAddon>
