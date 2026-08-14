@@ -33,7 +33,12 @@ export const make = Effect.gen(function* () {
   const resolveTargets = Effect.gen(function* () {
     // No local sshd means no name can work; advertise nothing so clients
     // render a clear "no SSH route" state instead of links that hang.
-    const sshdListening = yield* net.hasListenerOnHost(SSH_PORT, "127.0.0.1");
+    // Check both loopback families: sshd can be bound IPv6-only.
+    const sshdListening = yield* Effect.zipWith(
+      net.hasListenerOnHost(SSH_PORT, "127.0.0.1"),
+      net.hasListenerOnHost(SSH_PORT, "::1"),
+      (ipv4, ipv6) => ipv4 || ipv6,
+    );
     if (!sshdListening) {
       return [];
     }

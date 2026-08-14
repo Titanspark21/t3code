@@ -53,6 +53,8 @@ export function resolveRemoteOpenState(input: {
   readonly sshAlias: string | null;
   /** Server-advertised hosts; undefined on servers that predate the feature. */
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
+  /** True when running inside the desktop app's renderer. */
+  readonly isDesktopRenderer: boolean;
 }): RemoteOpenState {
   const { target } = input;
   // No catalog entry: keep today's exec behavior rather than guessing.
@@ -60,10 +62,14 @@ export function resolveRemoteOpenState(input: {
     return LOCAL_EXEC;
   }
   if (target._tag === "PrimaryConnectionTarget") {
+    // The desktop app manages its own primary backend, so it is always on
+    // this machine even when its URL is not loopback (wsl-only mode binds
+    // the WSL2 NAT address). In a browser, a loopback primary means the
+    // browser runs on the serving machine; a tailnet/LAN URL means remote.
+    if (input.isDesktopRenderer) {
+      return LOCAL_EXEC;
+    }
     const hostname = parseHostname(target.httpBaseUrl);
-    // A loopback primary means the browser (or desktop renderer) runs on the
-    // machine that serves it. A tailnet/LAN URL means we are remote even
-    // though the target is "primary".
     if (hostname !== null && isLoopbackHostname(hostname)) {
       return LOCAL_EXEC;
     }
@@ -95,6 +101,7 @@ export function useRemoteOpenState(environmentId: EnvironmentId | null): RemoteO
       target: presentation.entry.target,
       sshAlias,
       remoteOpenTargets: presentation.serverConfig?.remoteOpenTargets,
+      isDesktopRenderer: window.desktopBridge !== undefined,
     });
   }, [presentation]);
 }
@@ -151,14 +158,22 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
  * shell so the OS handler opens without navigating the renderer; in a
  * browser, assign the location — unlike window.open this does not leave a
  * blank tab behind.
+ *
+ * Resolves false when the desktop shell refused the URL (e.g. an older
+ * build whose protocol allowlist predates editor schemes) so callers do not
+ * record a successful open that never happened.
  */
-export function openRemoteEditorUrl(url: string): void {
+export async function openRemoteEditorUrl(url: string): Promise<boolean> {
   const bridge = window.desktopBridge;
   if (bridge !== undefined) {
-    void bridge.openExternal(url);
-    return;
+    try {
+      return await bridge.openExternal(url);
+    } catch {
+      return false;
+    }
   }
   window.location.assign(url);
+  return true;
 }
 
 /**

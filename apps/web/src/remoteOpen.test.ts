@@ -30,6 +30,7 @@ describe("resolveRemoteOpenState", () => {
       resolveRemoteOpenState({
         target: primaryTarget("http://127.0.0.1:8000"),
         sshAlias: null,
+        isDesktopRenderer: false,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "local-exec" });
@@ -40,12 +41,26 @@ describe("resolveRemoteOpenState", () => {
       resolveRemoteOpenState({
         target: primaryTarget("https://sol.tail1234.ts.net"),
         sshAlias: null,
+        isDesktopRenderer: false,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({
       mode: "remote-links",
       host: { kind: "tailscale", host: "sol.tail1234.ts.net" },
     });
+  });
+
+  it("keeps exec behavior for the desktop app's own primary even on a NAT URL", () => {
+    // wsl-only mode binds the primary to the WSL2 NAT address; it is still
+    // this machine because the desktop app manages its own primary backend.
+    expect(
+      resolveRemoteOpenState({
+        target: primaryTarget("http://172.29.112.1:14369"),
+        sshAlias: null,
+        isDesktopRenderer: true,
+        remoteOpenTargets: TAILSCALE_TARGETS,
+      }),
+    ).toEqual({ mode: "local-exec" });
   });
 
   it("keeps exec behavior for desktop-local secondary backends", () => {
@@ -57,6 +72,7 @@ describe("resolveRemoteOpenState", () => {
           connectionId: "local:wsl-1",
         }),
         sshAlias: null,
+        isDesktopRenderer: false,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "local-exec" });
@@ -71,6 +87,7 @@ describe("resolveRemoteOpenState", () => {
           connectionId: "ssh-1",
         }),
         sshAlias: "sol",
+        isDesktopRenderer: true,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "remote-links", host: { kind: "ssh-alias", host: "sol" } });
@@ -82,6 +99,7 @@ describe("resolveRemoteOpenState", () => {
         resolveRemoteOpenState({
           target: new RelayConnectionTarget({ environmentId, label: "sol" }),
           sshAlias: null,
+          isDesktopRenderer: false,
           remoteOpenTargets,
         }),
       ).toEqual({ mode: "remote-unavailable" });
@@ -93,6 +111,7 @@ describe("resolveRemoteOpenState", () => {
       resolveRemoteOpenState({
         target: null,
         sshAlias: null,
+        isDesktopRenderer: false,
         remoteOpenTargets: undefined,
       }),
     ).toEqual({ mode: "local-exec" });

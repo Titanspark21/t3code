@@ -238,9 +238,13 @@ export const OpenInPicker = memo(function OpenInPicker({
           absolutePath: openInCwd,
         });
         if (url === undefined) return;
-        openRemoteEditorUrl(url);
-        markRemoteHintSeen();
-        setPreferredEditor(editor);
+        // Only record hint-seen/preferred when the shell actually accepted
+        // the URL (an older desktop build can refuse the editor scheme).
+        void openRemoteEditorUrl(url).then((opened) => {
+          if (!opened) return;
+          markRemoteHintSeen();
+          setPreferredEditor(editor);
+        });
         return;
       }
       const result = openInEditorMutation({
