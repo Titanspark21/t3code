@@ -112,13 +112,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
-[data-slot="sidebar-wrapper"] {
-  --workspace-titlebar-content-left: calc(
-    var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
-      var(--workspace-titlebar-control-gap)
-  );
-}
-
 .wco {
   --workspace-topbar-height: env(titlebar-area-height, 52px);
   --workspace-controls-top: env(titlebar-area-y, 0px);
@@ -395,6 +388,24 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* Virtualizers own their native scroll element, so they cannot use ScrollArea's
+   viewport fade. Keep the scrollbar lane opaque while sharing the same fade
+   contract across those lists. */
+@utility virtualized-scroll-fade {
+  -webkit-mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
+  mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
+  -webkit-mask-position: left, right;
+  mask-position: left, right;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+  mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+}
+
 /* Stage-channel art needs a mask and pseudo-element gradient, so keep the
    behavior composable without tying it to the global components layer. */
 @utility sidebar-stage-backdrop {
@@ -467,12 +478,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   ):focus-visible {
     @apply outline-none ring-0;
   }
-  html {
+  html,
+  body {
     background-color: var(--app-chrome-background);
   }
   body {
     @apply text-foreground relative;
-    background-color: var(--app-chrome-background);
   }
 }
 
@@ -1277,14 +1288,6 @@ html[data-theme-id="t3-chat"] .chat-composer-glass-shell {
   }
 }
 
-html[data-theme-id] {
-  color-scheme: light;
-
-  @variant dark {
-    color-scheme: dark;
-  }
-}
-
 html[data-theme-id] body {
   background-color: var(--app-chrome-background);
   color: var(--foreground);
@@ -1609,44 +1612,6 @@ code {
   background: var(--app-scrollbar-thumb-hover);
 }
 
-.model-picker-list-scroll-fade-top,
-.model-picker-list-scroll-fade-bottom {
-  -webkit-mask-image: var(--model-picker-list-scroll-mask), linear-gradient(black, black);
-  -webkit-mask-position: left, right;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
-  mask-image: var(--model-picker-list-scroll-mask), linear-gradient(black, black);
-  mask-position: left, right;
-  mask-repeat: no-repeat;
-  mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
-}
-
-.model-picker-list-scroll-fade-top {
-  --model-picker-list-scroll-mask: linear-gradient(to bottom, transparent, black var(--fade-size));
-}
-
-.model-picker-list-scroll-fade-bottom {
-  --model-picker-list-scroll-mask: linear-gradient(
-    to bottom,
-    black calc(100% - var(--fade-size)),
-    transparent
-  );
-}
-
-.model-picker-list-scroll-fade-top.model-picker-list-scroll-fade-bottom {
-  --model-picker-list-scroll-mask: linear-gradient(
-    to bottom,
-    transparent,
-    black var(--fade-size),
-    black calc(100% - var(--fade-size)),
-    transparent
-  );
-}
-
 /* Chat markdown rendering */
 
 .chat-markdown > :first-child {
@@ -1803,11 +1768,7 @@ code {
   font-size: 0.75rem;
 }
 
-.chat-markdown a.chat-markdown-file-link {
-  color: var(--foreground);
-  text-decoration: none;
-}
-
+.chat-markdown a.chat-markdown-file-link,
 .chat-markdown a.chat-markdown-file-link:hover {
   color: var(--foreground);
   text-decoration: none;
@@ -1825,26 +1786,18 @@ code {
   border-radius: 0.75rem;
   background: var(--muted);
   padding: 0.8rem 0.9rem;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border) 78%, transparent) transparent;
 }
 
 .chat-markdown pre code {
   border: none;
   background: transparent;
   padding: 0;
-  font-size: 0.75rem;
-}
-
-.chat-markdown pre {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--border) 78%, transparent) transparent;
 }
 
 .chat-markdown pre::-webkit-scrollbar {
   height: 7px;
-}
-
-.chat-markdown pre::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .chat-markdown pre::-webkit-scrollbar-thumb {
@@ -1852,10 +1805,7 @@ code {
   background: color-mix(in srgb, var(--border) 78%, transparent);
 }
 
-.chat-markdown .chat-markdown-codeblock-header {
-  color: color-mix(in srgb, var(--foreground) 72%, transparent);
-}
-
+.chat-markdown .chat-markdown-codeblock-header,
 .chat-markdown .chat-markdown-chrome-action {
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
 }
@@ -1945,12 +1895,6 @@ code {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-slot="skeleton"]::after {
-    content: none;
-  }
-}
-
 @keyframes provider-update-pill-countdown {
   from {
     transform: scaleX(1);
@@ -1958,13 +1902,6 @@ code {
   to {
     transform: scaleX(0);
   }
-}
-
-/* Diffs live directly on the panel canvas. Normal chat code blocks may use a
-   raised code surface, but carrying that fill into the diff creates a card-like
-   rectangle that does not belong in the panel. */
-.diff-render-surface {
-  --code-background: var(--background);
 }
 
 .diff-render-surface diffs-container {
@@ -2046,16 +1983,4 @@ code {
 
 .ultrathink-chroma {
   animation: ultrathink-chroma-shift 10s linear infinite;
-}
-
-/* Composer chips are non-editable decorators, so the browser skips them when
-   painting text selection; this overlay stands in for the native highlight. */
-.composer-inline-chip[data-composer-chip-selected]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 6px;
-  background-color: Highlight;
-  opacity: 0.3;
-  pointer-events: none;
 }

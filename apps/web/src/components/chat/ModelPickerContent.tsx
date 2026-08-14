@@ -33,6 +33,7 @@ import {
 } from "../../keybindings";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
+import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import {
   isProviderInstancePickerReady,
@@ -781,9 +782,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   onLayout={updateModelListScrollFades}
                   onScroll={updateModelListScrollFades}
                   className={cn(
-                    "scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [--fade-size:1.5rem] [&::-webkit-scrollbar-track]:my-2",
-                    showTopScrollFade && "model-picker-list-scroll-fade-top",
-                    showBottomScrollFade && "model-picker-list-scroll-fade-bottom",
+                    "scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [&::-webkit-scrollbar-track]:my-2",
+                    getVirtualizedScrollFadeClassName({
+                      top: showTopScrollFade,
+                      bottom: showBottomScrollFade,
+                    }),
                   )}
                 />
               </ComboboxListVirtualized>
