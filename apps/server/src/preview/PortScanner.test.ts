@@ -62,6 +62,7 @@ const makeProbeFailureLayer = (
         Layer.succeed(Net.NetService, {
           canListenOnHost: () => Effect.succeed(true),
           isPortAvailableOnLoopback: () => Effect.succeed(true),
+          hasListenerOnHost: () => Effect.succeed(false),
           reserveLoopbackPort: () => Effect.succeed(40_000),
           findAvailablePort: (preferred) => Effect.succeed(preferred),
         }),
