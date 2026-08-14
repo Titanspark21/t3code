@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark, .dark *));
+@custom-variant light (&:not(.dark, .dark *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
@@ -744,6 +745,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
     @variant dark {
       box-shadow: none;
+
+      &::after {
+        box-shadow: inset 0 1px var(--chat-composer-highlight);
+      }
     }
   }
 
@@ -755,10 +760,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     border: 1px solid var(--chat-composer-outline);
     border-radius: inherit;
     content: "";
-  }
-
-  html.dark .chat-composer-glass-host::after {
-    box-shadow: inset 0 1px var(--chat-composer-highlight);
   }
 
   .chat-composer-glass-shell-with-context .chat-composer-glass-host::after {
@@ -778,6 +779,21 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   .chat-composer-context-strip {
     position: relative;
     isolation: isolate;
+
+    @variant dark {
+      &::before {
+        border-color: rgb(255 255 255 / 7%);
+        background:
+          linear-gradient(
+            to bottom,
+            transparent 0 1rem,
+            rgb(0 0 0 / 18%) 1rem,
+            transparent calc(1rem + 10px)
+          ),
+          rgb(255 255 255 / 2%);
+        box-shadow: 0 14px 32px -18px rgb(0 0 0 / 75%);
+      }
+    }
   }
 
   .chat-composer-context-strip::before {
@@ -791,19 +807,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     mask-image: linear-gradient(to bottom, transparent 0 1rem, black 1rem);
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
     content: "";
-  }
-
-  html.dark .chat-composer-context-strip::before {
-    border-color: rgb(255 255 255 / 7%);
-    background:
-      linear-gradient(
-        to bottom,
-        transparent 0 1rem,
-        rgb(0 0 0 / 18%) 1rem,
-        transparent calc(1rem + 10px)
-      ),
-      rgb(255 255 255 / 2%);
-    box-shadow: 0 14px 32px -18px rgb(0 0 0 / 75%);
   }
 
   @supports not (clip-path: shape(from 0 0, line to 1px 1px)) {
@@ -823,16 +826,20 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
     }
 
-    html.dark .chat-composer-context-strip::before {
-      background:
-        linear-gradient(
-          to bottom,
-          transparent 0 1rem,
-          rgb(0 0 0 / 18%) 1rem,
-          transparent calc(1rem + 10px)
-        ),
-        linear-gradient(rgb(255 255 255 / 2%), rgb(255 255 255 / 2%)),
-        color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent);
+    .chat-composer-context-strip {
+      @variant dark {
+        &::before {
+          background:
+            linear-gradient(
+              to bottom,
+              transparent 0 1rem,
+              rgb(0 0 0 / 18%) 1rem,
+              transparent calc(1rem + 10px)
+            ),
+            linear-gradient(rgb(255 255 255 / 2%), rgb(255 255 255 / 2%)),
+            color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent);
+        }
+      }
     }
   }
 
@@ -1425,19 +1432,23 @@ html[data-theme-id] .chat-markdown .chat-markdown-chrome-action {
 /* T3 Chat renders inline code and compact chat artifacts with its translucent
    secondary surface flattened over the light chat canvas. The raw muted and
    secondary tokens are substantially darker than those visible pixels. */
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code,
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-state],
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-header] {
-  background-color: var(--message-surface);
-}
+html[data-theme-id="t3-chat"] {
+  @variant light {
+    & .chat-markdown :not(pre) > code,
+    & [data-changed-files-state],
+    & [data-changed-files-header] {
+      background-color: var(--message-surface);
+    }
 
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code,
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-state] {
-  border-color: transparent;
-}
+    & .chat-markdown :not(pre) > code,
+    & [data-changed-files-state] {
+      border-color: transparent;
+    }
 
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code {
-  color: var(--message-foreground);
+    & .chat-markdown :not(pre) > code {
+      color: var(--message-foreground);
+    }
+  }
 }
 
 html[data-theme-id] .chat-markdown .chat-markdown-chrome-action:hover,
