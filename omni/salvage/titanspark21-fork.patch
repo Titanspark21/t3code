@@ -1,0 +1,2015 @@
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 76422feb..8d77503d 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -19,8 +19,8 @@ permissions:
+   id-token: none
+ 
+ env:
+-  T3CODE_RELEASE_REPOSITORY: aaditagrawal/t3code
+-  T3CODE_DESKTOP_UPDATE_REPOSITORY: aaditagrawal/t3code
++  T3CODE_RELEASE_REPOSITORY: Titanspark21/t3code
++  T3CODE_DESKTOP_UPDATE_REPOSITORY: Titanspark21/t3code
+ 
+ jobs:
+   check_changes:
+@@ -215,10 +215,15 @@ jobs:
+   build_android_apk:
+     name: Build Android APK
+     needs: [preflight]
++    # Fork: enabled. No Clerk/relay vars and no Android signing secrets are set,
++    # so the job builds an installable APK with an ephemeral key and the cloud
++    # (T3 Connect) features disabled — the app still works via LOCAL pairing
++    # (scan the desktop's QR / enter its host + code over LAN or Tailscale), which
++    # is what most people use. `environment: production` is dropped so the job is
++    # never gated on an environment that doesn't exist on the fork.
+     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
+     runs-on: ubuntu-24.04
+     timeout-minutes: 45
+-    environment: production
+     permissions:
+       contents: read
+     env:
+diff --git a/FORK_NOTES.md b/FORK_NOTES.md
+new file mode 100644
+index 00000000..ca7dddf6
+--- /dev/null
++++ b/FORK_NOTES.md
+@@ -0,0 +1,111 @@
++# T3 Code — Titanspark21 fork
++
++This is a personal fork of [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code)
++(itself a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code)).
++
++## What this fork adds
++
++Run **multiple Claude and Gemini/Antigravity CLI accounts** inside one T3 Code
++install, each fully isolated (separate login, history, and rate limits).
++
++- **Claude** provider gained a **Config directory** field. It sets
++  `CLAUDE_CONFIG_DIR` for that instance, so pointing one instance at
++  `~/.claude-1` and another at `~/.claude-2` gives you two independent Anthropic
++  logins side by side.
++- **Gemini** provider now drives Google **Antigravity (`agy`)** by default
++  (toggle in its settings; the old official `gemini` CLI stays available behind
++  the switch). Its **Account profile directory** field sets `HOME`/`USERPROFILE`
++  for that instance, so `~/.gemini-1` and `~/.gemini-2` are two independent
++  Antigravity logins.
++- The **Add Provider** dialog has one-click presets: **Claude 1**, **Claude 2**,
++  **Antigravity 1**, **Antigravity 2** — each fills the right directory for you.
++
++## One-time setup on your machine
++
++These must already exist and be logged in (the app just points at them; it does
++not create or authenticate them):
++
++1. `claude` CLI on your PATH, with two logged-in config dirs:
++   - `CLAUDE_CONFIG_DIR=~/.claude-1 claude` → log in as account 1
++   - `CLAUDE_CONFIG_DIR=~/.claude-2 claude` → log in as account 2
++2. `agy` (Antigravity) CLI on your PATH, with two logged-in profiles:
++   - launch `agy` with `USERPROFILE` pointed at `~/.gemini-1` → log in as account 1
++   - same with `~/.gemini-2` → log in as account 2
++
++Then in T3 Code: **Settings → Add Provider →** pick **Claude** or
++**Antigravity (Gemini)** → click a preset (Claude 1/2, Antigravity 1/2) → Save.
++Add all four to have every account available.
++
++## Getting the desktop app (.exe)
++
++Two ways:
++
++- **Cloud build (recommended for updates):** enable **Actions** on this repo
++  once (Actions tab → enable), then **Actions → "Release Desktop" → Run
++  workflow**, enter a version like `1.0.0`. GitHub builds **Windows, macOS,
++  Linux, and an Android APK** and publishes them under **Releases**. Free, no
++  local toolchain. (The Android APK is built with an ephemeral key and the cloud
++  "T3 Connect" features off; it still works via **local pairing** — scan the
++  desktop's QR or enter its host + pairing code over your LAN or Tailscale.)
++- **Local build:** `pnpm install` then `pnpm dist:desktop:win:x64`. The
++  installer lands in `release/`. **Run this from Git Bash** (or otherwise have
++  Git's `pwd` on your PATH) — electron-builder's dependency step shells out to
++  `pwd`, which PowerShell/cmd don't provide, and without it the packaged app is
++  silently missing modules. The cloud build already runs under bash, so this
++  only matters for local builds.
++
++The build is **unsigned**, so Windows SmartScreen shows "Windows protected your
++PC" on first run → click **More info → Run anyway**. This is expected for a
++personal build.
++
++### Packaging fix (why builds work here)
++
++electron-builder v26's pnpm dependency collector drops ~150 transitive
++dependencies (`debug`, `express`, `cross-spawn`, `ajv`, …) from the packaged
++app, so a stock build crashes on launch with _"Cannot find module 'debug'"_ —
++this is almost certainly why upstream-built `.exe`s failed to open. This fork
++fixes it in `scripts/build-desktop-artifact.ts`: the staged install is hoisted
++(flat `node_modules`), an `afterPack` hook copies back any dropped dependency,
++and the Windows app ships without asar so every module resolves from the real
++filesystem. If you merge upstream and the app starts failing to open again,
++that fix is what to re-check.
++
++## Keeping your changes up to date
++
++Your changes live on `main`. Remotes:
++
++- `origin` = your fork (`Titanspark21/t3code`).
++- `upstream` = **`aaditagrawal/t3code`** — the fork this is based on (it added the
++  Gemini/Antigravity foundation). This is the **only clean-merge source**.
++- `pingdotgg` = **`pingdotgg/t3code`** — the original project. Reference only,
++  see the caveat below.
++
++**Normal update (from `upstream` / aaditagrawal):**
++
++```bash
++git fetch upstream
++git merge upstream/main      # resolve conflicts (likely release.yml repo name,
++                             # the geminiCli files, build-desktop-artifact.ts)
++git push origin main
++```
++
++Then rebuild (cloud or local) to get updated installers.
++
++**Why you can't cleanly pull from the original (`pingdotgg`).** aaditagrawal
++**squashed the entire project into a single commit** when they forked, so this
++fork shares **no git history** with `pingdotgg` (`git merge-base HEAD
++pingdotgg/main` is empty; a plain merge would treat them as _unrelated
++histories_ and conflict on essentially every file). The Antigravity/Gemini and
++multi-provider features you rely on only exist in aaditagrawal's line, not in
++`pingdotgg`. So to bring in a specific fix from the original, **cherry-pick it**
++rather than merge:
++
++```bash
++git fetch pingdotgg
++git log pingdotgg/main            # find the commit you want
++git cherry-pick <commit-sha>      # apply just that change (resolve conflicts)
++```
++
++A full re-base onto `pingdotgg` is possible but is a large one-time re-port of
++all the fork's changes — only worth it if you want to abandon aaditagrawal's line
++entirely.
+diff --git a/README.md b/README.md
+index cbe014f9..24f86e48 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,20 @@
++# T3 Code — Titanspark21 fork
++
++> **This fork adds Antigravity support and support for running multiple CLI accounts of any provider.**
++> e.g. two Claude logins and two Antigravity logins side by side, each fully isolated (its own login, history, and rate limits).
++
++**What this fork adds on top of the base app:**
++
++- **Antigravity (Gemini).** The Gemini provider now drives Google's **Antigravity (`agy`)** CLI — the old `gemini` CLI is deprecated for individuals — with all of its models (Gemini 3.5 Flash, Gemini 3.1 Pro, Claude/GPT models it exposes).
++- **Multiple accounts of any provider.** Every provider already supports multiple instances; this fork adds one‑click **account presets** and **per‑account isolation** (Claude via `CLAUDE_CONFIG_DIR`, Antigravity via an isolated home directory) so you can be logged into several accounts of the same provider at once.
++- **Working Windows build.** Fixes an electron‑builder + pnpm packaging bug that made the upstream `.exe` crash on launch (_"Cannot find module 'debug'"_).
++- **Claude auth fix.** Uses the Claude Agent SDK's bundled native binary so Claude accounts authenticate even when `claude` was installed via npm.
++
++See **[`SPEC.md`](./SPEC.md)** for architecture and **[`FORK_NOTES.md`](./FORK_NOTES.md)** for build/update instructions.
++Lineage: [pingdotgg/t3code](https://github.com/pingdotgg/t3code) (original) → [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code) (added Gemini) → **this fork**.
++
++---
++
+ # T3 Code
+ 
+ T3 Code is a minimal web GUI for coding agents made by [Pingdotgg](https://github.com/pingdotgg). This project is a downstream fork of the original [T3 Code](https://github.com/pingdotgg/t3code), maintained in [aaditagrawal/t3code](https://github.com/aaditagrawal/t3code).
+diff --git a/SPEC.md b/SPEC.md
+new file mode 100644
+index 00000000..4aa9f517
+--- /dev/null
++++ b/SPEC.md
+@@ -0,0 +1,112 @@
++# T3 Code — Fork Spec
++
++A handoff document for any developer or AI agent picking up this fork. It
++describes **what this fork is, what it's for, and how the changes are built** so
++you can extend it without re-deriving everything. For build/update mechanics see
++[`FORK_NOTES.md`](./FORK_NOTES.md); this file is the design/architecture spec.
++
++## 1. What the base app is
++
++**T3 Code** is an Electron desktop app (plus a mobile app, not used here) that
++puts several terminal AI coding agents behind one UI. Each "provider" (Claude,
++Codex, Cursor, Gemini, Amp, …) is a local CLI the app drives as a subprocess.
++
++- Monorepo, **pnpm** workspace, TypeScript, **Effect** (effect-ts) throughout.
++- `apps/server` — the backend that spawns and talks to each provider CLI.
++- `apps/web` — the React UI (also bundled into the desktop app).
++- `apps/desktop` — the Electron shell.
++- `packages/contracts` — shared schemas/types (settings, provider models, …).
++- Providers live in `apps/server/src/provider/` as **Driver** (lifecycle) +
++  **Adapter** (session I/O) + **Provider** (status/health) + a manager.
++- Lineage: `pingdotgg/t3code` → `aaditagrawal/t3code` (added Gemini) → **this
++  fork** (`Titanspark21/t3code`).
++
++## 2. What this fork is for
++
++Run **multiple Claude accounts and multiple Google Antigravity accounts** inside
++one install, each fully isolated (own login, history, rate limits), and make the
++Antigravity integration real (not the deprecated Gemini CLI).
++
++### 2a. Multiple isolated accounts per provider
++
++The app already supports multiple _instances_ of a provider. This fork adds the
++per-instance isolation knobs and one-click presets:
++
++- **Claude** gained a **`configDir`** setting → exported as `CLAUDE_CONFIG_DIR`
++  for that instance's subprocess. Point instance A at `~/.claude-1` and B at
++  `~/.claude-2` → two independent Anthropic logins side by side.
++- **Gemini/Antigravity** gained an **account profile dir** (`configDir`) →
++  exported as `HOME` + `USERPROFILE` for the `agy` subprocess, because the
++  Antigravity CLI has no config-dir flag and keys its identity off the home
++  directory. `~/.gemini-1` / `~/.gemini-2` → two independent Antigravity logins.
++- The **Add Provider** dialog offers presets that fill these in: _Claude 1/2_,
++  _Antigravity 1/2_ (`apps/web/src/components/settings/providerProfilePresets.ts`).
++
++### 2b. Gemini CLI → Antigravity (`agy`)
++
++The old `gemini` CLI is deprecated for individuals; Antigravity (`agy`) replaces
++it. The `geminiCli` provider now drives `agy` by default:
++
++- An **`antigravity`** boolean setting (default **on**) switches the flavor. The
++  legacy official Gemini CLI stays available when it's off.
++- Antigravity runs in `--print` headless mode. It is **stateless per invocation**,
++  so the manager reconstructs conversation context by replaying a compact
++  transcript into each prompt (`buildAntigravityPrompt`), and maps T3 runtime
++  modes to `agy` flags (`buildAntigravityArgs`: `--mode plan|accept-edits`, or
++  `--dangerously-skip-permissions` for full access).
++- Provider is surfaced as **"Antigravity (Gemini)"** with an `agy` badge.
++- Built-in model list = what `agy models` reports (Gemini 3.5 Flash Low/Medium/
++  High, Gemini 3.1 Pro Low/High, Claude Sonnet/Opus 4.6, GPT-OSS 120B). The
++  model **slug is the display label** — `agy --model` resolves models by label,
++  not by an id. `auto` is special-cased to omit `--model`.
++
++## 3. Where the changes live (file map)
++
++| Concern                                                                  | File(s)                                                                                                  |
++| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
++| Claude `configDir`, Antigravity `antigravity`+`configDir`, patch schemas | `packages/contracts/src/settings.ts`                                                                     |
++| Claude env (`CLAUDE_CONFIG_DIR`) + Claude executable resolution          | `apps/server/src/provider/Drivers/ClaudeHome.ts`                                                         |
++| Antigravity env (`HOME`/`USERPROFILE` isolation)                         | `apps/server/src/provider/Drivers/GeminiCliHome.ts`                                                      |
++| `agy` retarget, print-mode args, transcript replay, per-instance env     | `apps/server/src/geminiCliServerManager.ts`                                                              |
++| geminiCli driver/adapter/provider wired to `agy` + models                | `apps/server/src/provider/{Drivers/GeminiCliDriver,Layers/GeminiCliAdapter,Layers/GeminiCliProvider}.ts` |
++| Account-profile presets in Add-Provider dialog                           | `apps/web/src/components/settings/providerProfilePresets.ts`, `AddProviderInstanceDialog.tsx`            |
++| Provider labels ("Antigravity (Gemini)")                                 | `providerDriverMeta.ts`, `session-logic.ts`                                                              |
++| Claude auth-probe fix (use SDK bundled native binary)                    | `ClaudeHome.ts` (`resolveClaudeExecutablePath`), `ClaudeProvider.ts`, `ClaudeAdapter.ts`                 |
++| **Desktop packaging fix** (see §4)                                       | `scripts/build-desktop-artifact.ts`                                                                      |
++| Fork release workflow (retargeted, desktop-only)                         | `.github/workflows/release.yml`                                                                          |
++
++## 4. Critical gotchas / non-obvious decisions
++
++- **Windows packaging fix (why the app launches at all).** electron-builder v26's
++  pnpm dependency collector drops ~150 duplicate/multi-version transitive deps
++  (debug, express, cross-spawn, ajv, cors, …) → the app crashed on launch with
++  _"Cannot find module 'debug'"_. This affects upstream builds too. Fix in
++  `scripts/build-desktop-artifact.ts`: hoist the staged install
++  (`nodeLinker: hoisted`), an **`afterPack` hook** copies dropped deps back in,
++  and the Windows app ships **without asar** (`asar: false`) so modules resolve
++  from the real filesystem (Electron's asar `require` never consults a file with
++  no asar index entry, so restored-but-unindexed modules would stay invisible).
++  If the app ever fails to open after a build, start here.
++- **Local Windows builds need `pwd` on PATH** (run from Git Bash) — electron-
++  builder shells out to `pwd`; without it the build is silently broken. Cloud CI
++  runs under bash so it's fine there.
++- **Claude auth "Could not verify authentication status".** The Claude Agent SDK
++  requires a _native_ Claude binary. The default `binaryPath` ("claude") is an
++  npm shim (`claude.ps1`/`.cmd`), which the SDK rejects. Fix: pass
++  `pathToClaudeCodeExecutable` only for an explicit custom path; otherwise omit
++  it so the SDK uses its own bundled native binary (`resolveClaudeExecutablePath`).
++- **`gemini.ts` must not import the store** (load-order cycle) — Antigravity/Groq
++  config is injected via a getter. (Inherited from the upstream Gemini work.)
++- **Per-instance env must reach the subprocess.** The Gemini adapter used to drop
++  the injected environment before spawning; account isolation depends on it now
++  being propagated (`geminiCliServerManager` `environment`).
++
++## 5. Working on this fork
++
++- `origin` = your fork (`Titanspark21/t3code`), `main` = your line of changes.
++- `upstream` = `aaditagrawal/t3code`. Pull updates with
++  `git fetch upstream && git merge upstream/main`; conflicts are most likely in
++  `release.yml` (repo name), the geminiCli files, and `build-desktop-artifact.ts`.
++- Verify: `pnpm tc` (typecheck), `pnpm test`. Build a Windows installer from Git
++  Bash with `pnpm dist:desktop:win:x64` (lands in `release/`), or use the cloud
++  release workflow.
+diff --git a/apps/server/src/geminiCliServerManager.test.ts b/apps/server/src/geminiCliServerManager.test.ts
+index c9a916ac..03fcb383 100644
+--- a/apps/server/src/geminiCliServerManager.test.ts
++++ b/apps/server/src/geminiCliServerManager.test.ts
+@@ -10,6 +10,8 @@ import {
+ } from "@t3tools/contracts";
+ 
+ import {
++  buildAntigravityArgs,
++  buildAntigravityPrompt,
+   buildGeminiSpawnOptions,
+   GeminiCliServerManager,
+   resolveGeminiSpawnPlan,
+@@ -26,6 +28,50 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
+ // ---------------------------------------------------------------------------
+ 
+ describe("GeminiCliServerManager", () => {
++  describe("Antigravity mode", () => {
++    it("maps T3 runtime modes to agy headless flags", () => {
++      expect(
++        buildAntigravityArgs({
++          prompt: "fix it",
++          model: "auto",
++          runtimeMode: "full-access",
++        }),
++      ).toEqual(["--print", "fix it", "--dangerously-skip-permissions"]);
++      expect(
++        buildAntigravityArgs({
++          prompt: "inspect it",
++          model: "gemini-3-pro",
++          runtimeMode: "plan",
++        }),
++      ).toEqual(["--print", "inspect it", "--model", "gemini-3-pro", "--mode", "plan"]);
++    });
++
++    it("carries prior turns into later agy print-mode prompts", () => {
++      const prompt = buildAntigravityPrompt(
++        [
++          { role: "user", text: "Remember alpha" },
++          { role: "assistant", text: "I will remember alpha" },
++        ],
++        "What should you remember?",
++      );
++
++      expect(prompt).toContain("User: Remember alpha");
++      expect(prompt).toContain("Assistant: I will remember alpha");
++      expect(prompt).toContain("User: What should you remember?");
++    });
++
++    it("stores the isolated account environment on the manager", () => {
++      const environment = {
++        HOME: "C:\\Users\\user\\.gemini-1",
++        USERPROFILE: "C:\\Users\\user\\.gemini-1",
++      };
++      const manager = new GeminiCliServerManager({ antigravity: true, environment });
++
++      expect(manager.antigravity).toBe(true);
++      expect(manager.environment).toBe(environment);
++    });
++  });
++
+   describe("buildGeminiSpawnOptions", () => {
+     it("uses piped stdio without a shell", () => {
+       const options = buildGeminiSpawnOptions({
+diff --git a/apps/server/src/geminiCliServerManager.ts b/apps/server/src/geminiCliServerManager.ts
+index 08fd6e6f..a4dde945 100644
+--- a/apps/server/src/geminiCliServerManager.ts
++++ b/apps/server/src/geminiCliServerManager.ts
+@@ -128,12 +128,16 @@ interface GeminiCliSession {
+   model: string | undefined;
+   cwd: string;
+   binaryPath: string;
++  readonly antigravity: boolean;
+   runtimeMode: string;
+   status: "ready" | "running" | "closed";
+   /** Gemini-native session ID for --resume. */
+   geminiSessionId: string | undefined;
+   activeTurnId: TurnId | undefined;
+   activeProcess: NodeChildProcess.ChildProcess | undefined;
++  activePrompt: string | undefined;
++  activeResponse: string;
++  readonly conversationHistory: Array<{ role: "user" | "assistant"; text: string }>;
+   interruptedTurnId: TurnId | undefined;
+   /** Stable itemId for the current turn's assistant message (reused across content.delta events). */
+   activeAssistantItemId: RuntimeItemId | undefined;
+@@ -146,8 +150,46 @@ interface GeminiCliSession {
+   updatedAt: string;
+ }
+ 
+-function defaultBinaryPath(): string {
+-  return "gemini";
++function defaultBinaryPath(antigravity: boolean): string {
++  return antigravity ? "agy" : "gemini";
++}
++
++export function buildAntigravityPrompt(
++  history: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string }>,
++  prompt: string,
++): string {
++  if (history.length === 0) return prompt;
++
++  const transcript = history
++    .slice(-12)
++    .map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`)
++    .join("\n\n");
++  return [
++    "Continue the following conversation. Preserve its context and act on the newest user request.",
++    "",
++    transcript.slice(-60_000),
++    "",
++    `User: ${prompt}`,
++    "",
++    "Assistant:",
++  ].join("\n");
++}
++
++export function buildAntigravityArgs(input: {
++  readonly prompt: string;
++  readonly model?: string | undefined;
++  readonly runtimeMode: string;
++}): ReadonlyArray<string> {
++  const args = ["--print", input.prompt];
++  if (input.model && input.model !== "auto") {
++    args.push("--model", input.model);
++  }
++  if (input.runtimeMode === "full-access") {
++    args.push("--dangerously-skip-permissions");
++  } else {
++    args.push("--mode", input.runtimeMode === "plan" ? "plan" : "accept-edits");
++  }
++  return args;
+ }
+ 
+ export function buildGeminiSpawnOptions(input: {
+@@ -335,10 +377,20 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+   private readonly sessions = new Map<ThreadId, GeminiCliSession>();
+   private readonly usageAccumulator: GeminiUsageAccumulator = emptyUsageAccumulator();
+   binaryPath: string | undefined;
+-
+-  constructor(options: { readonly binaryPath?: string | undefined } = {}) {
++  environment: NodeJS.ProcessEnv;
++  antigravity: boolean;
++
++  constructor(
++    options: {
++      readonly binaryPath?: string | undefined;
++      readonly environment?: NodeJS.ProcessEnv | undefined;
++      readonly antigravity?: boolean | undefined;
++    } = {},
++  ) {
+     super();
+     this.binaryPath = options.binaryPath;
++    this.environment = options.environment ?? process.env;
++    this.antigravity = options.antigravity ?? false;
+   }
+ 
+   /**
+@@ -370,7 +422,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+       throw new Error(`Gemini CLI session already exists for thread ${threadId}`);
+     }
+ 
+-    const binaryPath = this.binaryPath?.trim() || defaultBinaryPath();
++    const binaryPath = this.binaryPath?.trim() || defaultBinaryPath(this.antigravity);
+     const cwd = input.cwd ?? process.cwd();
+     const resumeSessionId = readGeminiResumeSessionId(input.resumeCursor);
+     const now = new Date().toISOString();
+@@ -380,11 +432,15 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+       model: input.modelSelection?.model,
+       cwd,
+       binaryPath,
++      antigravity: this.antigravity,
+       runtimeMode: input.runtimeMode ?? "full-access",
+       status: "ready",
+       geminiSessionId: resumeSessionId,
+       activeTurnId: undefined,
+       activeProcess: undefined,
++      activePrompt: undefined,
++      activeResponse: "",
++      conversationHistory: [],
+       interruptedTurnId: undefined,
+       activeAssistantItemId: undefined,
+       activeToolItems: new Map(),
+@@ -401,7 +457,9 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+       threadId,
+       cwd,
+       model: input.modelSelection?.model,
+-      ...(resumeSessionId ? { resumeCursor: { sessionId: resumeSessionId } } : {}),
++      ...(!session.antigravity && resumeSessionId
++        ? { resumeCursor: { sessionId: resumeSessionId } }
++        : {}),
+       createdAt: now,
+       updatedAt: now,
+     };
+@@ -412,6 +470,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+         config: {
+           provider: PROVIDER,
+           binaryPath,
++          cli: session.antigravity ? "antigravity" : "gemini",
+           cwd,
+           runtimeMode: session.runtimeMode,
+           ...(input.modelSelection?.model ? { model: input.modelSelection.model } : {}),
+@@ -453,22 +512,29 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+     // Use per-turn model override if provided, otherwise fall back to session model.
+     const effectiveModel = input.modelSelection?.model ?? session.model;
+ 
+-    // Build args for headless mode with stream-json output.
+-    const args: string[] = [
+-      "-p",
+-      prompt,
+-      "--output-format",
+-      "stream-json",
+-      "--approval-mode",
+-      resolveApprovalMode(session.runtimeMode),
+-    ];
+-
+-    if (effectiveModel) {
++    const args: string[] = session.antigravity
++      ? [
++          ...buildAntigravityArgs({
++            prompt: buildAntigravityPrompt(session.conversationHistory, prompt),
++            model: effectiveModel,
++            runtimeMode: session.runtimeMode,
++          }),
++        ]
++      : [
++          "-p",
++          prompt,
++          "--output-format",
++          "stream-json",
++          "--approval-mode",
++          resolveApprovalMode(session.runtimeMode),
++        ];
++
++    if (!session.antigravity && effectiveModel) {
+       args.push("--model", effectiveModel);
+     }
+ 
+-    // Resume previous Gemini session for follow-up turns.
+-    if (session.geminiSessionId) {
++    // Resume previous official Gemini CLI session for follow-up turns.
++    if (!session.antigravity && session.geminiSessionId) {
+       args.push("--resume", session.geminiSessionId);
+     }
+ 
+@@ -476,7 +542,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+       binaryPath: session.binaryPath,
+       args,
+       cwd: session.cwd,
+-      env: { ...process.env },
++      env: { ...this.environment },
+     });
+ 
+     const child: NodeChildProcess.ChildProcessWithoutNullStreams = NodeChildProcess.spawn(
+@@ -488,6 +554,8 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+     child.stdin.end();
+ 
+     session.activeProcess = child;
++    session.activePrompt = prompt;
++    session.activeResponse = "";
+ 
+     // Emit turn.started immediately.
+     this.emitEvent(input.threadId, turnId, {
+@@ -499,7 +567,11 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+     const rl = NodeReadline.createInterface({ input: child.stdout });
+ 
+     rl.on("line", (line) => {
+-      this.handleJsonLine(input.threadId, turnId, line);
++      if (session.antigravity) {
++        this.handleAntigravityLine(input.threadId, turnId, line);
++      } else {
++        this.handleJsonLine(input.threadId, turnId, line);
++      }
+     });
+ 
+     child.stderr.on("data", (chunk: Buffer) => {
+@@ -536,6 +608,15 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+         const wasInterrupted = s.interruptedTurnId === turnId || signal === "SIGINT";
+         s.interruptedTurnId = undefined;
+ 
++        if (s.antigravity && code === 0 && s.activePrompt !== undefined) {
++          s.conversationHistory.push({ role: "user", text: s.activePrompt });
++          if (s.activeResponse.trim().length > 0) {
++            s.conversationHistory.push({ role: "assistant", text: s.activeResponse.trim() });
++          }
++        }
++        s.activePrompt = undefined;
++        s.activeResponse = "";
++
+         // Flush any open assistant message or tool items that never received completion.
+         this.finalizeOpenItems(input.threadId, turnId, s);
+ 
+@@ -563,6 +644,8 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+         s.status = "ready";
+         s.updatedAt = new Date().toISOString();
+         s.interruptedTurnId = undefined;
++        s.activePrompt = undefined;
++        s.activeResponse = "";
+ 
+         // Flush any open assistant message or tool items that never received completion.
+         this.finalizeOpenItems(input.threadId, turnId, s);
+@@ -638,7 +721,7 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+         threadId: session.threadId,
+         cwd: session.cwd,
+         model: session.model,
+-        ...(session.geminiSessionId
++        ...(!session.antigravity && session.geminiSessionId
+           ? { resumeCursor: { sessionId: session.geminiSessionId } }
+           : {}),
+         createdAt: session.createdAt,
+@@ -674,6 +757,25 @@ export class GeminiCliServerManager extends NodeEvents.EventEmitter<{
+     }
+   }
+ 
++  private handleAntigravityLine(threadId: ThreadId, turnId: TurnId, line: string): void {
++    const session = this.sessions.get(threadId);
++    if (!session) return;
++
++    const delta = `${line}\n`;
++    session.activeResponse += delta;
++    if (!session.activeAssistantItemId) {
++      session.activeAssistantItemId = RuntimeItemId.make(NodeCrypto.randomUUID());
++    }
++    this.emitEvent(threadId, turnId, {
++      type: "content.delta",
++      itemId: session.activeAssistantItemId,
++      payload: {
++        streamKind: "assistant_text",
++        delta,
++      },
++    });
++  }
++
+   private handleJsonLine(threadId: ThreadId, turnId: TurnId, line: string): void {
+     const trimmed = line.trim();
+     if (!trimmed || !trimmed.startsWith("{")) return;
+diff --git a/apps/server/src/provider/Drivers/ClaudeHome.test.ts b/apps/server/src/provider/Drivers/ClaudeHome.test.ts
+index 87298f80..301389e7 100644
+--- a/apps/server/src/provider/Drivers/ClaudeHome.test.ts
++++ b/apps/server/src/provider/Drivers/ClaudeHome.test.ts
+@@ -9,6 +9,7 @@ import {
+   makeClaudeCapabilitiesCacheKey,
+   makeClaudeContinuationGroupKey,
+   makeClaudeEnvironment,
++  resolveClaudeConfigDir,
+   resolveClaudeHomePath,
+ } from "./ClaudeHome.ts";
+ 
+@@ -20,7 +21,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
+         const resolved = path.resolve(NodeOS.homedir());
+ 
+         expect(yield* resolveClaudeHomePath({ homePath: "" })).toBe(resolved);
+-        expect(yield* makeClaudeEnvironment({ homePath: "" })).toBe(process.env);
++        expect(yield* makeClaudeEnvironment({ homePath: "", configDir: "" })).toBe(process.env);
+       }),
+     );
+ 
+@@ -31,10 +32,38 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
+         const resolved = path.resolve(NodeOS.homedir(), ".claude-work");
+ 
+         expect(yield* resolveClaudeHomePath({ homePath })).toBe(resolved);
+-        expect((yield* makeClaudeEnvironment({ homePath })).HOME).toBe(resolved);
+-        expect(yield* makeClaudeContinuationGroupKey({ homePath })).toBe(`claude:home:${resolved}`);
+-        expect(yield* makeClaudeCapabilitiesCacheKey({ binaryPath: "claude", homePath })).toBe(
+-          `claude\0${resolved}`,
++        expect((yield* makeClaudeEnvironment({ homePath, configDir: "" })).HOME).toBe(resolved);
++        expect(yield* makeClaudeContinuationGroupKey({ homePath, configDir: "" })).toBe(
++          `claude:home:${resolved}`,
++        );
++        expect(
++          yield* makeClaudeCapabilitiesCacheKey({
++            binaryPath: "claude",
++            homePath,
++            configDir: "",
++          }),
++        ).toBe(`claude\0claude:home:${resolved}`);
++      }),
++    );
++
++    it.effect("isolates direct CLAUDE_CONFIG_DIR profiles", () =>
++      Effect.gen(function* () {
++        const path = yield* Path.Path;
++        const configDir = "~/.claude-1";
++        const resolved = path.resolve(NodeOS.homedir(), ".claude-1");
++        const environment = yield* makeClaudeEnvironment(
++          { homePath: "", configDir },
++          { PATH: "test-path" },
++        );
++
++        expect(yield* resolveClaudeConfigDir({ configDir })).toBe(resolved);
++        expect(environment).toMatchObject({
++          PATH: "test-path",
++          CLAUDE_CONFIG_DIR: resolved,
++        });
++        expect(environment.HOME).toBeUndefined();
++        expect(yield* makeClaudeContinuationGroupKey({ homePath: "", configDir })).toBe(
++          `claude:config:${resolved}`,
+         );
+       }),
+     );
+@@ -44,7 +73,7 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
+         const path = yield* Path.Path;
+         const resolved = path.resolve(NodeOS.homedir());
+ 
+-        expect(yield* makeClaudeContinuationGroupKey({ homePath: "" })).toBe(
++        expect(yield* makeClaudeContinuationGroupKey({ homePath: "", configDir: "" })).toBe(
+           `claude:home:${resolved}`,
+         );
+       }),
+diff --git a/apps/server/src/provider/Drivers/ClaudeHome.ts b/apps/server/src/provider/Drivers/ClaudeHome.ts
+index 65c74f97..f0637927 100644
+--- a/apps/server/src/provider/Drivers/ClaudeHome.ts
++++ b/apps/server/src/provider/Drivers/ClaudeHome.ts
+@@ -14,22 +14,57 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
+   return path.resolve(homePath.length > 0 ? expandHomePath(homePath) : NodeOS.homedir());
+ });
+ 
++/**
++ * Resolve the Claude Agent SDK's `pathToClaudeCodeExecutable`, or `undefined` to
++ * use the SDK's own bundled native binary.
++ *
++ * The SDK requires a NATIVE Claude Code binary. The default `binaryPath`
++ * ("claude") resolves on many machines to the npm CLI shim
++ * (`claude.ps1`/`claude.cmd`), which the SDK rejects with "native binary not
++ * found" — that breaks the auth-status probe (and sessions) for every account,
++ * showing "Could not verify Claude authentication status". Returning `undefined`
++ * for the default makes the SDK fall back to its bundled native binary, which
++ * still honours the per-instance `CLAUDE_CONFIG_DIR`. Only an explicit custom
++ * path (something other than the bare default) is passed through.
++ */
++export function resolveClaudeExecutablePath(binaryPath: string): string | undefined {
++  const trimmed = binaryPath.trim();
++  if (trimmed.length === 0 || trimmed === "claude") return undefined;
++  return trimmed;
++}
++
++export const resolveClaudeConfigDir = Effect.fn("resolveClaudeConfigDir")(function* (
++  config: Pick<ClaudeSettings, "configDir">,
++): Effect.fn.Return<string | undefined, never, Path.Path> {
++  const path = yield* Path.Path;
++  const configDir = config.configDir.trim();
++  return configDir.length > 0 ? path.resolve(expandHomePath(configDir)) : undefined;
++});
++
+ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function* (
+-  config: Pick<ClaudeSettings, "homePath">,
++  config: Pick<ClaudeSettings, "homePath" | "configDir">,
+   baseEnv?: NodeJS.ProcessEnv,
+ ): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
+   const resolvedBaseEnv = baseEnv ?? process.env;
+   const homePath = config.homePath.trim();
+-  if (homePath.length === 0) return resolvedBaseEnv;
+-  const resolvedHomePath = yield* resolveClaudeHomePath(config);
++  const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
++  if (homePath.length === 0 && resolvedConfigDir === undefined) return resolvedBaseEnv;
++  const resolvedHomePath = homePath.length > 0 ? yield* resolveClaudeHomePath(config) : undefined;
+   return {
+     ...resolvedBaseEnv,
+-    HOME: resolvedHomePath,
++    ...(resolvedHomePath ? { HOME: resolvedHomePath } : {}),
++    ...(resolvedConfigDir ? { CLAUDE_CONFIG_DIR: resolvedConfigDir } : {}),
+   };
+ });
+ 
+ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationGroupKey")(
+-  function* (config: Pick<ClaudeSettings, "homePath">): Effect.fn.Return<string, never, Path.Path> {
++  function* (
++    config: Pick<ClaudeSettings, "homePath" | "configDir">,
++  ): Effect.fn.Return<string, never, Path.Path> {
++    const resolvedConfigDir = yield* resolveClaudeConfigDir(config);
++    if (resolvedConfigDir) {
++      return `claude:config:${resolvedConfigDir}`;
++    }
+     const resolvedHomePath = yield* resolveClaudeHomePath(config);
+     return `claude:home:${resolvedHomePath}`;
+   },
+@@ -37,9 +72,9 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
+ 
+ export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesCacheKey")(
+   function* (
+-    config: Pick<ClaudeSettings, "binaryPath" | "homePath">,
++    config: Pick<ClaudeSettings, "binaryPath" | "homePath" | "configDir">,
+   ): Effect.fn.Return<string, never, Path.Path> {
+-    const resolvedHomePath = yield* resolveClaudeHomePath(config);
+-    return `${config.binaryPath}\0${resolvedHomePath}`;
++    const continuationKey = yield* makeClaudeContinuationGroupKey(config);
++    return `${config.binaryPath}\0${continuationKey}`;
+   },
+ );
+diff --git a/apps/server/src/provider/Drivers/GeminiCliDriver.ts b/apps/server/src/provider/Drivers/GeminiCliDriver.ts
+index 393c3ba5..2966760c 100644
+--- a/apps/server/src/provider/Drivers/GeminiCliDriver.ts
++++ b/apps/server/src/provider/Drivers/GeminiCliDriver.ts
+@@ -4,8 +4,8 @@
+  * Mirrors `ClaudeDriver` / `OpenCodeDriver`: a plain value whose `create()`
+  * returns one `ProviderInstance` bundling `snapshot` / `adapter` /
+  * `textGeneration` closures captured over the per-instance
+- * `GenericProviderSettings` payload (used as `GeminiCliSettings` until the
+- * settings schema is split out).
++ * `GeminiCliSettings` payload. Antigravity is the default runtime; the
++ * historical official Gemini CLI remains available through a flavor switch.
+  *
+  * Two instances with different `binaryPath`s spawn fully independent
+  * `gemini` subprocesses — there is no module-global session table or usage
+@@ -13,11 +13,7 @@
+  *
+  * @module provider/Drivers/GeminiCliDriver
+  */
+-import {
+-  GenericProviderSettings,
+-  ProviderDriverKind,
+-  type ServerProvider,
+-} from "@t3tools/contracts";
++import { GeminiCliSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import * as FileSystem from "effect/FileSystem";
+@@ -41,6 +37,7 @@ import {
+ } from "../ProviderDriver.ts";
+ import type { ServerProviderDraft } from "../providerSnapshot.ts";
+ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
++import { makeGeminiCliEnvironment, makeGeminiContinuationGroupKey } from "./GeminiCliHome.ts";
+ 
+ const DRIVER_KIND = ProviderDriverKind.make("geminiCli");
+ const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
+@@ -72,35 +69,42 @@ const withInstanceIdentity =
+     continuation: { groupKey: input.continuationGroupKey },
+   });
+ 
+-export const GeminiCliDriver: ProviderDriver<GenericProviderSettings, GeminiCliDriverEnv> = {
++export const GeminiCliDriver: ProviderDriver<GeminiCliSettings, GeminiCliDriverEnv> = {
+   driverKind: DRIVER_KIND,
+   metadata: {
+-    displayName: "Gemini CLI",
++    displayName: "Antigravity (Gemini)",
+     supportsMultipleInstances: true,
+   },
+-  configSchema: GenericProviderSettings,
+-  defaultConfig: (): GenericProviderSettings => Schema.decodeSync(GenericProviderSettings)({}),
++  configSchema: GeminiCliSettings,
++  defaultConfig: (): GeminiCliSettings => Schema.decodeSync(GeminiCliSettings)({}),
+   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+     Effect.gen(function* () {
+       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+       const path = yield* Path.Path;
+       const eventLoggers = yield* ProviderEventLoggers;
+-      const processEnv = mergeProviderInstanceEnvironment(environment);
+-      const continuationIdentity = defaultProviderContinuationIdentity({
++      const envelopeEnvironment = mergeProviderInstanceEnvironment(environment);
++      const effectiveConfig = { ...config, enabled } satisfies GeminiCliSettings;
++      const processEnv = yield* makeGeminiCliEnvironment(effectiveConfig, envelopeEnvironment);
++      const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
+         driverKind: DRIVER_KIND,
+         instanceId,
+       });
++      const continuationGroupKey = yield* makeGeminiContinuationGroupKey(effectiveConfig);
++      const continuationIdentity = {
++        ...fallbackContinuationIdentity,
++        continuationKey: continuationGroupKey,
++      };
+       const stampIdentity = withInstanceIdentity({
+         instanceId,
+         displayName,
+         accentColor,
+-        continuationGroupKey: continuationIdentity.continuationKey,
++        continuationGroupKey,
+       });
+-      const effectiveConfig = { ...config, enabled } satisfies GenericProviderSettings;
+ 
+       const adapter = yield* makeGeminiCliAdapter(effectiveConfig, {
+         instanceId,
+         environment: processEnv,
++        antigravity: effectiveConfig.antigravity,
+         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+       });
+       const textGeneration = yield* makeGeminiCliTextGeneration(effectiveConfig, processEnv);
+@@ -111,7 +115,7 @@ export const GeminiCliDriver: ProviderDriver<GenericProviderSettings, GeminiCliD
+         Effect.provideService(Path.Path, path),
+       );
+ 
+-      const snapshot = yield* makeManagedServerProvider<GenericProviderSettings>({
++      const snapshot = yield* makeManagedServerProvider<GeminiCliSettings>({
+         maintenanceCapabilities: MAINTENANCE_CAPABILITIES,
+         getSettings: Effect.succeed(effectiveConfig),
+         streamSettings: Stream.never,
+diff --git a/apps/server/src/provider/Drivers/GeminiCliHome.test.ts b/apps/server/src/provider/Drivers/GeminiCliHome.test.ts
+new file mode 100644
+index 00000000..8f1e3c32
+--- /dev/null
++++ b/apps/server/src/provider/Drivers/GeminiCliHome.test.ts
+@@ -0,0 +1,46 @@
++import * as NodeOS from "node:os";
++
++import * as NodeServices from "@effect/platform-node/NodeServices";
++import { describe, expect, it } from "@effect/vitest";
++import * as Effect from "effect/Effect";
++import * as Path from "effect/Path";
++
++import {
++  makeGeminiCliEnvironment,
++  makeGeminiContinuationGroupKey,
++  resolveGeminiProfileDir,
++} from "./GeminiCliHome.ts";
++
++it.layer(NodeServices.layer)("GeminiCliHome", (it) => {
++  describe("Antigravity profile isolation", () => {
++    it.effect("maps a profile directory to HOME and USERPROFILE", () =>
++      Effect.gen(function* () {
++        const path = yield* Path.Path;
++        const resolved = path.resolve(NodeOS.homedir(), ".gemini-1");
++        const config = { antigravity: true, configDir: "~/.gemini-1" } as const;
++        const environment = yield* makeGeminiCliEnvironment(config, { PATH: "test-path" });
++
++        expect(yield* resolveGeminiProfileDir(config)).toBe(resolved);
++        expect(environment).toEqual({
++          PATH: "test-path",
++          HOME: resolved,
++          USERPROFILE: resolved,
++        });
++        expect(yield* makeGeminiContinuationGroupKey(config)).toBe(
++          `antigravity:profile:${resolved}`,
++        );
++      }),
++    );
++
++    it.effect("keeps official Gemini CLI compatibility behind the flavor switch", () =>
++      Effect.gen(function* () {
++        const path = yield* Path.Path;
++        const resolved = path.resolve(NodeOS.homedir(), ".gemini-official");
++        const config = { antigravity: false, configDir: "~/.gemini-official" } as const;
++
++        expect(yield* makeGeminiCliEnvironment(config, {})).toEqual({ GEMINI_HOME: resolved });
++        expect(yield* makeGeminiContinuationGroupKey(config)).toBe(`gemini:profile:${resolved}`);
++      }),
++    );
++  });
++});
+diff --git a/apps/server/src/provider/Drivers/GeminiCliHome.ts b/apps/server/src/provider/Drivers/GeminiCliHome.ts
+new file mode 100644
+index 00000000..860354be
+--- /dev/null
++++ b/apps/server/src/provider/Drivers/GeminiCliHome.ts
+@@ -0,0 +1,43 @@
++import * as NodeOS from "node:os";
++
++import type { GeminiCliSettings } from "@t3tools/contracts";
++import * as Effect from "effect/Effect";
++import * as Path from "effect/Path";
++
++import { expandHomePath } from "../../pathExpansion.ts";
++
++type GeminiProfileSettings = Pick<GeminiCliSettings, "antigravity" | "configDir">;
++
++export const resolveGeminiProfileDir = Effect.fn("resolveGeminiProfileDir")(function* (
++  config: GeminiProfileSettings,
++): Effect.fn.Return<string | undefined, never, Path.Path> {
++  const path = yield* Path.Path;
++  const configDir = config.configDir.trim();
++  return configDir.length > 0 ? path.resolve(expandHomePath(configDir)) : undefined;
++});
++
++export const makeGeminiCliEnvironment = Effect.fn("makeGeminiCliEnvironment")(function* (
++  config: GeminiProfileSettings,
++  baseEnv: NodeJS.ProcessEnv = process.env,
++): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
++  const profileDir = yield* resolveGeminiProfileDir(config);
++  if (!profileDir) return baseEnv;
++
++  return config.antigravity
++    ? {
++        ...baseEnv,
++        HOME: profileDir,
++        USERPROFILE: profileDir,
++      }
++    : {
++        ...baseEnv,
++        GEMINI_HOME: profileDir,
++      };
++});
++
++export const makeGeminiContinuationGroupKey = Effect.fn("makeGeminiContinuationGroupKey")(
++  function* (config: GeminiProfileSettings): Effect.fn.Return<string, never, Path.Path> {
++    const profileDir = (yield* resolveGeminiProfileDir(config)) ?? NodeOS.homedir();
++    return `${config.antigravity ? "antigravity" : "gemini"}:profile:${profileDir}`;
++  },
++);
+diff --git a/apps/server/src/provider/Layers/ClaudeAdapter.ts b/apps/server/src/provider/Layers/ClaudeAdapter.ts
+index 907254a4..937188da 100644
+--- a/apps/server/src/provider/Layers/ClaudeAdapter.ts
++++ b/apps/server/src/provider/Layers/ClaudeAdapter.ts
+@@ -70,7 +70,7 @@ import * as Stream from "effect/Stream";
+ import { resolveAttachmentPath } from "../../attachmentStore.ts";
+ import { ServerConfig } from "../../config.ts";
+ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
++import { makeClaudeEnvironment, resolveClaudeExecutablePath } from "../Drivers/ClaudeHome.ts";
+ import {
+   getClaudeModelCapabilities,
+   isClaudeSonnet5ConstrainedContextEnvironment,
+@@ -3415,7 +3415,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
+       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
+         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
+ 
+-      const claudeBinaryPath = claudeSettings.binaryPath;
++      const claudeBinaryPath = resolveClaudeExecutablePath(claudeSettings.binaryPath);
+       const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+       const modelSelection =
+         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+@@ -3453,7 +3453,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
+       const queryOptions: ClaudeQueryOptions = {
+         ...(input.cwd ? { cwd: input.cwd } : {}),
+         ...(apiModelId ? { model: apiModelId } : {}),
+-        pathToClaudeCodeExecutable: claudeBinaryPath,
++        ...(claudeBinaryPath ? { pathToClaudeCodeExecutable: claudeBinaryPath } : {}),
+         systemPrompt: { type: "preset", preset: "claude_code" },
+         settingSources: [...CLAUDE_SETTING_SOURCES],
+         // `ultracode` is a Claude Code setting, not an API effort level. It is
+@@ -3512,7 +3512,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
+         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
+         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
+         "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
+-        "claude.query.path_to_executable": claudeBinaryPath,
++        "claude.query.path_to_executable": claudeBinaryPath ?? "(bundled)",
+       });
+ 
+       const queryRuntime = yield* Effect.try({
+diff --git a/apps/server/src/provider/Layers/ClaudeProvider.ts b/apps/server/src/provider/Layers/ClaudeProvider.ts
+index 8a98f388..da56d42f 100644
+--- a/apps/server/src/provider/Layers/ClaudeProvider.ts
++++ b/apps/server/src/provider/Layers/ClaudeProvider.ts
+@@ -37,7 +37,7 @@ import {
+   spawnAndCollect,
+   type ServerProviderDraft,
+ } from "../providerSnapshot.ts";
+-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
++import { makeClaudeEnvironment, resolveClaudeExecutablePath } from "../Drivers/ClaudeHome.ts";
+ 
+ const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+   optionDescriptors: [],
+@@ -648,6 +648,7 @@ const probeClaudeCapabilities = (
+   const abort = new AbortController();
+   return Effect.gen(function* () {
+     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
++    const executablePath = resolveClaudeExecutablePath(claudeSettings.binaryPath);
+     return yield* Effect.tryPromise(async () => {
+       const q = claudeQuery({
+         // Never yield — we only need initialization data, not a conversation.
+@@ -658,7 +659,7 @@ const probeClaudeCapabilities = (
+         })(),
+         options: {
+           persistSession: false,
+-          pathToClaudeCodeExecutable: claudeSettings.binaryPath,
++          ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
+           abortController: abort,
+           settingSources: ["user", "project", "local"],
+           allowedTools: [],
+diff --git a/apps/server/src/provider/Layers/GeminiCliAdapter.test.ts b/apps/server/src/provider/Layers/GeminiCliAdapter.test.ts
+index 6ea76d40..fc6717e3 100644
+--- a/apps/server/src/provider/Layers/GeminiCliAdapter.test.ts
++++ b/apps/server/src/provider/Layers/GeminiCliAdapter.test.ts
+@@ -4,7 +4,7 @@ import * as NodeAssert from "node:assert/strict";
+ import {
+   ApprovalRequestId,
+   EventId,
+-  GenericProviderSettings,
++  GeminiCliSettings,
+   RuntimeItemId,
+   ThreadId,
+   TurnId,
+@@ -117,8 +117,8 @@ class FakeGeminiCliManager extends GeminiCliServerManager {
+   }
+ }
+ 
+-const enabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: true });
+-const disabledConfig = Schema.decodeSync(GenericProviderSettings)({ enabled: false });
++const enabledConfig = Schema.decodeSync(GeminiCliSettings)({ enabled: true });
++const disabledConfig = Schema.decodeSync(GeminiCliSettings)({ enabled: false });
+ 
+ const makeAdapterLayer = (manager: FakeGeminiCliManager, config = enabledConfig) =>
+   Layer.effect(GeminiCliAdapter, makeGeminiCliAdapter(config, { manager }));
+diff --git a/apps/server/src/provider/Layers/GeminiCliAdapter.ts b/apps/server/src/provider/Layers/GeminiCliAdapter.ts
+index 43603d07..534a2888 100644
+--- a/apps/server/src/provider/Layers/GeminiCliAdapter.ts
++++ b/apps/server/src/provider/Layers/GeminiCliAdapter.ts
+@@ -13,7 +13,7 @@
+  * @module provider/Layers/GeminiCliAdapter
+  */
+ import {
+-  type GenericProviderSettings,
++  type GeminiCliSettings,
+   ProviderDriverKind,
+   ProviderInstanceId,
+   type ProviderRuntimeEvent,
+@@ -38,6 +38,7 @@ export interface GeminiCliAdapterShape extends ProviderAdapterShape<ProviderAdap
+ export interface GeminiCliAdapterOptions {
+   readonly instanceId?: ProviderInstanceId;
+   readonly environment?: NodeJS.ProcessEnv;
++  readonly antigravity?: boolean;
+   readonly nativeEventLogger?: EventNdjsonLogger;
+   /**
+    * Inject a pre-built manager. Test-only — the driver always constructs its
+@@ -60,7 +61,7 @@ export interface GeminiCliAdapterOptions {
+  * remaining session when the surrounding scope closes.
+  */
+ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function* (
+-  config: GenericProviderSettings,
++  config: GeminiCliSettings,
+   options: GeminiCliAdapterOptions = {},
+ ) {
+   const _boundInstanceId = options.instanceId ?? ProviderInstanceId.make("geminiCli");
+@@ -68,13 +69,21 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function*
+   const manager =
+     options.manager ??
+     options.makeManager?.() ??
+-    new GeminiCliServerManager(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {});
++    new GeminiCliServerManager({
++      ...(trimmedBinary.length > 0 ? { binaryPath: trimmedBinary } : {}),
++      ...(options.environment ? { environment: options.environment } : {}),
++      antigravity: options.antigravity ?? config.antigravity,
++    });
+   // Keep the manager's binary path in sync with the latest config — drivers
+   // recreate the adapter when settings change, but tests may pass a manager
+   // with an empty default that should pick up the config value.
+   if (trimmedBinary.length > 0 && !manager.binaryPath) {
+     manager.binaryPath = trimmedBinary;
+   }
++  if (options.environment) {
++    manager.environment = options.environment;
++  }
++  manager.antigravity = options.antigravity ?? config.antigravity;
+ 
+   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+ 
+@@ -103,7 +112,7 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function*
+           return yield* new ProviderAdapterValidationError({
+             provider: "geminiCli",
+             operation: "startSession",
+-            issue: "Gemini CLI provider is disabled in server settings.",
++            issue: "Antigravity / Gemini provider is disabled in server settings.",
+           });
+         }
+         return yield* Effect.tryPromise({
+@@ -117,7 +126,7 @@ export const makeGeminiCliAdapter = Effect.fn("makeGeminiCliAdapter")(function*
+           new ProviderAdapterValidationError({
+             provider: "geminiCli",
+             operation: "sendTurn",
+-            issue: "Gemini CLI attachments are not supported yet.",
++            issue: "Antigravity / Gemini attachments are not supported yet.",
+           }),
+         );
+       }
+diff --git a/apps/server/src/provider/Layers/GeminiCliProvider.test.ts b/apps/server/src/provider/Layers/GeminiCliProvider.test.ts
+index 843e125f..d006fa09 100644
+--- a/apps/server/src/provider/Layers/GeminiCliProvider.test.ts
++++ b/apps/server/src/provider/Layers/GeminiCliProvider.test.ts
+@@ -3,10 +3,10 @@ import * as NodeAssert from "node:assert/strict";
+ import * as Schema from "effect/Schema";
+ import { describe, it } from "vite-plus/test";
+ 
+-import { GenericProviderSettings } from "@t3tools/contracts";
++import { GeminiCliSettings } from "@t3tools/contracts";
+ import { makePendingGeminiCliProvider } from "./GeminiCliProvider.ts";
+ 
+-const decodeSettings = Schema.decodeSync(GenericProviderSettings);
++const decodeSettings = Schema.decodeSync(GeminiCliSettings);
+ 
+ /**
+  * The Gemini "Thinking Budget" selector was inert — its value was never read
+diff --git a/apps/server/src/provider/Layers/GeminiCliProvider.ts b/apps/server/src/provider/Layers/GeminiCliProvider.ts
+index e5bc2490..c2f20492 100644
+--- a/apps/server/src/provider/Layers/GeminiCliProvider.ts
++++ b/apps/server/src/provider/Layers/GeminiCliProvider.ts
+@@ -13,7 +13,7 @@
+  * @module provider/Layers/GeminiCliProvider
+  */
+ import {
+-  type GenericProviderSettings,
++  type GeminiCliSettings,
+   type ModelCapabilities,
+   ProviderDriverKind,
+   type ServerProviderModel,
+@@ -42,6 +42,10 @@ const GEMINI_PRESENTATION = {
+   displayName: "Gemini CLI",
+   showInteractionModeToggle: true,
+ } as const;
++const ANTIGRAVITY_PRESENTATION = {
++  displayName: "Antigravity (Gemini)",
++  showInteractionModeToggle: true,
++} as const;
+ 
+ /**
+  * Capabilities for known Gemini models.
+@@ -78,14 +82,59 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+   },
+ ];
+ 
++// Antigravity models. The `slug` is passed verbatim to `agy --model`, which
++// resolves models by their display label (verified against the CLI: `agy models`
++// lists these, and the CLI logs `Propagating selected model override ...
++// label="Gemini 3.1 Pro (High)"`). `auto` is special-cased in
++// buildAntigravityArgs to omit `--model` and use the CLI's default.
++const ANTIGRAVITY_MODEL_LABELS = [
++  "Gemini 3.5 Flash (Low)",
++  "Gemini 3.5 Flash (Medium)",
++  "Gemini 3.5 Flash (High)",
++  "Gemini 3.1 Pro (Low)",
++  "Gemini 3.1 Pro (High)",
++  "Claude Sonnet 4.6 (Thinking)",
++  "Claude Opus 4.6 (Thinking)",
++  "GPT-OSS 120B (Medium)",
++] as const;
++
++const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
++  {
++    slug: "auto",
++    name: "Antigravity (Automatic)",
++    isCustom: false,
++    capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
++  },
++  ...ANTIGRAVITY_MODEL_LABELS.map(
++    (label): ServerProviderModel => ({
++      slug: label,
++      name: label,
++      isCustom: false,
++      capabilities: DEFAULT_GEMINI_MODEL_CAPABILITIES,
++    }),
++  ),
++];
++
++function presentationFor(config: GeminiCliSettings) {
++  return config.antigravity ? ANTIGRAVITY_PRESENTATION : GEMINI_PRESENTATION;
++}
++
++function builtInModelsFor(config: GeminiCliSettings): ReadonlyArray<ServerProviderModel> {
++  return config.antigravity ? ANTIGRAVITY_BUILT_IN_MODELS : BUILT_IN_MODELS;
++}
++
++function cliLabel(config: GeminiCliSettings): string {
++  return config.antigravity ? "Antigravity CLI" : "Gemini CLI";
++}
++
+ /** Resolve the configured binary path, or fall back to `"gemini"`. */
+-function resolveBinary(config: GenericProviderSettings): string {
++function resolveBinary(config: GeminiCliSettings): string {
+   const trimmed = config.binaryPath.trim();
+-  return trimmed.length > 0 ? trimmed : "gemini";
++  return trimmed.length > 0 ? trimmed : config.antigravity ? "agy" : "gemini";
+ }
+ 
+ const runGeminiCommand = Effect.fn("runGeminiCommand")(function* (
+-  config: GenericProviderSettings,
++  config: GeminiCliSettings,
+   args: ReadonlyArray<string>,
+   environment: NodeJS.ProcessEnv = process.env,
+ ) {
+@@ -99,7 +148,7 @@ const runGeminiCommand = Effect.fn("runGeminiCommand")(function* (
+ });
+ 
+ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function* (
+-  config: GenericProviderSettings,
++  config: GeminiCliSettings,
+   environment: NodeJS.ProcessEnv = process.env,
+ ): Effect.fn.Return<
+   ServerProviderDraft,
+@@ -108,7 +157,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+ > {
+   const checkedAt = new Date().toISOString();
+   const allModels = providerModelsFromSettings(
+-    BUILT_IN_MODELS,
++    builtInModelsFor(config),
+     PROVIDER,
+     config.customModels,
+     DEFAULT_GEMINI_MODEL_CAPABILITIES,
+@@ -116,7 +165,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+ 
+   if (!config.enabled) {
+     return buildServerProvider({
+-      presentation: GEMINI_PRESENTATION,
++      presentation: presentationFor(config),
+       enabled: false,
+       checkedAt,
+       models: allModels,
+@@ -125,7 +174,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+         version: null,
+         status: "warning",
+         auth: { status: "unknown" },
+-        message: "Gemini CLI is disabled in T3 Code settings.",
++        message: `${cliLabel(config)} is disabled in T3 Code settings.`,
+       },
+     });
+   }
+@@ -138,7 +187,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+   if (Result.isFailure(versionProbe)) {
+     const error = versionProbe.failure;
+     return buildServerProvider({
+-      presentation: GEMINI_PRESENTATION,
++      presentation: presentationFor(config),
+       enabled: config.enabled,
+       checkedAt,
+       models: allModels,
+@@ -148,15 +197,15 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+         status: "error",
+         auth: { status: "unknown" },
+         message: isCommandMissingCause(error)
+-          ? "Gemini CLI (`gemini`) is not installed or not on PATH."
+-          : `Failed to execute Gemini CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
++          ? `${cliLabel(config)} (${config.antigravity ? "`agy`" : "`gemini`"}) is not installed or not on PATH.`
++          : `Failed to execute ${cliLabel(config)} health check: ${error instanceof Error ? error.message : String(error)}.`,
+       },
+     });
+   }
+ 
+   if (Option.isNone(versionProbe.success)) {
+     return buildServerProvider({
+-      presentation: GEMINI_PRESENTATION,
++      presentation: presentationFor(config),
+       enabled: config.enabled,
+       checkedAt,
+       models: allModels,
+@@ -165,7 +214,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+         version: null,
+         status: "error",
+         auth: { status: "unknown" },
+-        message: "Gemini CLI is installed but failed to run. Timed out while running command.",
++        message: `${cliLabel(config)} is installed but failed to run. Timed out while running command.`,
+       },
+     });
+   }
+@@ -175,7 +224,7 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+   if (version.code !== 0) {
+     const detail = detailFromResult(version);
+     return buildServerProvider({
+-      presentation: GEMINI_PRESENTATION,
++      presentation: presentationFor(config),
+       enabled: config.enabled,
+       checkedAt,
+       models: allModels,
+@@ -185,14 +234,14 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+         status: "error",
+         auth: { status: "unknown" },
+         message: detail
+-          ? `Gemini CLI is installed but failed to run. ${detail}`
+-          : "Gemini CLI is installed but failed to run.",
++          ? `${cliLabel(config)} is installed but failed to run. ${detail}`
++          : `${cliLabel(config)} is installed but failed to run.`,
+       },
+     });
+   }
+ 
+   return buildServerProvider({
+-    presentation: GEMINI_PRESENTATION,
++    presentation: presentationFor(config),
+     enabled: config.enabled,
+     checkedAt,
+     models: allModels,
+@@ -203,18 +252,16 @@ export const checkGeminiCliStatus = Effect.fn("checkGeminiCliStatus")(function*
+       auth: {
+         status: "authenticated",
+         type: "geminiCli",
+-        label: "Gemini CLI",
++        label: cliLabel(config),
+       },
+     },
+   });
+ });
+ 
+-export const makePendingGeminiCliProvider = (
+-  config: GenericProviderSettings,
+-): ServerProviderDraft => {
++export const makePendingGeminiCliProvider = (config: GeminiCliSettings): ServerProviderDraft => {
+   const checkedAt = new Date().toISOString();
+   const models = providerModelsFromSettings(
+-    BUILT_IN_MODELS,
++    builtInModelsFor(config),
+     PROVIDER,
+     config.customModels,
+     DEFAULT_GEMINI_MODEL_CAPABILITIES,
+@@ -222,7 +269,7 @@ export const makePendingGeminiCliProvider = (
+ 
+   if (!config.enabled) {
+     return buildServerProvider({
+-      presentation: GEMINI_PRESENTATION,
++      presentation: presentationFor(config),
+       enabled: false,
+       checkedAt,
+       models,
+@@ -231,13 +278,13 @@ export const makePendingGeminiCliProvider = (
+         version: null,
+         status: "warning",
+         auth: { status: "unknown" },
+-        message: "Gemini CLI is disabled in T3 Code settings.",
++        message: `${cliLabel(config)} is disabled in T3 Code settings.`,
+       },
+     });
+   }
+ 
+   return buildServerProvider({
+-    presentation: GEMINI_PRESENTATION,
++    presentation: presentationFor(config),
+     enabled: true,
+     checkedAt,
+     models,
+@@ -246,9 +293,13 @@ export const makePendingGeminiCliProvider = (
+       version: null,
+       status: "warning",
+       auth: { status: "unknown" },
+-      message: "Gemini CLI provider status has not been checked in this session yet.",
++      message: `${cliLabel(config)} provider status has not been checked in this session yet.`,
+     },
+   });
+ };
+ 
+-export { BUILT_IN_MODELS as GEMINI_BUILT_IN_MODELS, DEFAULT_GEMINI_MODEL_CAPABILITIES };
++export {
++  ANTIGRAVITY_BUILT_IN_MODELS,
++  BUILT_IN_MODELS as GEMINI_BUILT_IN_MODELS,
++  DEFAULT_GEMINI_MODEL_CAPABILITIES,
++};
+diff --git a/apps/server/src/provider/Layers/ProviderInstanceRegistryLive.test.ts b/apps/server/src/provider/Layers/ProviderInstanceRegistryLive.test.ts
+index dbfa7faf..bc9463c2 100644
+--- a/apps/server/src/provider/Layers/ProviderInstanceRegistryLive.test.ts
++++ b/apps/server/src/provider/Layers/ProviderInstanceRegistryLive.test.ts
+@@ -68,6 +68,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
+ const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings => ({
+   enabled: false,
+   binaryPath: "claude",
++  configDir: "",
+   homePath: "",
+   customModels: [],
+   launchArgs: "",
+diff --git a/apps/server/src/serverSettings.test.ts b/apps/server/src/serverSettings.test.ts
+index 504d99e1..b9465e04 100644
+--- a/apps/server/src/serverSettings.test.ts
++++ b/apps/server/src/serverSettings.test.ts
+@@ -184,6 +184,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
+       assert.deepEqual(next.providers.claudeAgent, {
+         enabled: true,
+         binaryPath: "/usr/local/bin/claude",
++        configDir: "",
+         homePath: "",
+         customModels: ["claude-custom"],
+         launchArgs: "",
+@@ -425,6 +426,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
+       assert.deepEqual(next.providers.claudeAgent, {
+         enabled: true,
+         binaryPath: "/opt/homebrew/bin/claude",
++        configDir: "",
+         homePath: "",
+         customModels: [],
+         launchArgs: "",
+diff --git a/apps/web/src/components/settings/AddProviderInstanceDialog.tsx b/apps/web/src/components/settings/AddProviderInstanceDialog.tsx
+index 77c1813f..623e9f21 100644
+--- a/apps/web/src/components/settings/AddProviderInstanceDialog.tsx
++++ b/apps/web/src/components/settings/AddProviderInstanceDialog.tsx
+@@ -28,6 +28,7 @@ import { RadioGroup } from "../ui/radio-group";
+ import { toastManager } from "../ui/toast";
+ import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
+ import { ProviderSettingsForm, deriveProviderSettingsFields } from "./ProviderSettingsForm";
++import { getProviderProfilePresets } from "./providerProfilePresets";
+ import { AnimatedHeight } from "../AnimatedHeight";
+ 
+ const PROVIDER_ACCENT_SWATCHES = [
+@@ -140,6 +141,7 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
+     () => deriveProviderSettingsFields(driverOption),
+     [driverOption],
+   );
++  const profilePresets = useMemo(() => getProviderProfilePresets(driver), [driver]);
+   const instanceIdError = validateInstanceId(instanceId, existingIds);
+   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
+   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
+@@ -162,6 +164,15 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
+     [driver],
+   );
+ 
++  const applyProfilePreset = useCallback(
++    (preset: ReturnType<typeof getProviderProfilePresets>[number]) => {
++      setLabel(preset.displayName);
++      setInstanceIdOverride(null);
++      setConfigDraft({ ...preset.config });
++    },
++    [setConfigDraft],
++  );
++
+   const handleSave = useCallback(() => {
+     setHasAttemptedSubmit(true);
+     if (instanceIdError !== null) return;
+@@ -418,6 +429,35 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
+                 </span>
+               </div>
+ 
++              {profilePresets.length > 0 ? (
++                <div className={cn("grid gap-2", wizardStep !== 2 && "hidden")}>
++                  <div>
++                    <p className="text-xs font-medium text-foreground">Account profile presets</p>
++                    <p className="text-[11px] text-muted-foreground">
++                      Choose a ready-made isolated local account, then review the paths below.
++                    </p>
++                  </div>
++                  <div className="grid grid-cols-2 gap-2">
++                    {profilePresets.map((preset) => (
++                      <Button
++                        key={preset.id}
++                        type="button"
++                        variant="outline"
++                        className="h-auto min-h-14 items-start justify-start px-3 py-2 text-left"
++                        onClick={() => applyProfilePreset(preset)}
++                      >
++                        <span className="grid gap-0.5">
++                          <span className="text-xs font-semibold">{preset.label}</span>
++                          <span className="whitespace-normal text-[10px] font-normal text-muted-foreground">
++                            {preset.description}
++                          </span>
++                        </span>
++                      </Button>
++                    ))}
++                  </div>
++                </div>
++              ) : null}
++
+               {driverSettingsFields.length > 0 ? (
+                 <div className={cn("grid gap-4", wizardStep !== 2 && "hidden")}>
+                   <ProviderSettingsForm
+diff --git a/apps/web/src/components/settings/providerDriverMeta.ts b/apps/web/src/components/settings/providerDriverMeta.ts
+index 80076e2c..66293042 100644
+--- a/apps/web/src/components/settings/providerDriverMeta.ts
++++ b/apps/web/src/components/settings/providerDriverMeta.ts
+@@ -107,10 +107,10 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] =
+   },
+   {
+     value: ProviderDriverKind.make("geminiCli"),
+-    label: "Gemini CLI",
++    label: "Antigravity (Gemini)",
+     icon: GeminiCliIcon,
+     settingsSchema: GeminiCliSettings,
+-    badgeLabel: "Fork Extension",
++    badgeLabel: "agy",
+   },
+   {
+     value: ProviderDriverKind.make("kilo"),
+diff --git a/apps/web/src/components/settings/providerProfilePresets.test.ts b/apps/web/src/components/settings/providerProfilePresets.test.ts
+new file mode 100644
+index 00000000..9b63337f
+--- /dev/null
++++ b/apps/web/src/components/settings/providerProfilePresets.test.ts
+@@ -0,0 +1,26 @@
++import { ProviderDriverKind } from "@t3tools/contracts";
++import { describe, expect, it } from "vite-plus/test";
++
++import { getProviderProfilePresets } from "./providerProfilePresets";
++
++describe("provider profile presets", () => {
++  it("offers direct CLAUDE_CONFIG_DIR profiles", () => {
++    expect(getProviderProfilePresets(ProviderDriverKind.make("claudeAgent"))).toMatchObject([
++      { displayName: "Claude 1", config: { configDir: "~/.claude-1" } },
++      { displayName: "Claude 2", config: { configDir: "~/.claude-2" } },
++    ]);
++  });
++
++  it("offers isolated Antigravity profiles instead of the legacy Gemini CLI", () => {
++    expect(getProviderProfilePresets(ProviderDriverKind.make("geminiCli"))).toMatchObject([
++      {
++        displayName: "Antigravity 1",
++        config: { antigravity: true, binaryPath: "agy", configDir: "~/.gemini-1" },
++      },
++      {
++        displayName: "Antigravity 2",
++        config: { antigravity: true, binaryPath: "agy", configDir: "~/.gemini-2" },
++      },
++    ]);
++  });
++});
+diff --git a/apps/web/src/components/settings/providerProfilePresets.ts b/apps/web/src/components/settings/providerProfilePresets.ts
+new file mode 100644
+index 00000000..4f7abfcf
+--- /dev/null
++++ b/apps/web/src/components/settings/providerProfilePresets.ts
+@@ -0,0 +1,59 @@
++import { type ProviderDriverKind } from "@t3tools/contracts";
++
++export interface ProviderProfilePreset {
++  readonly id: string;
++  readonly label: string;
++  readonly description: string;
++  readonly displayName: string;
++  readonly config: Readonly<Record<string, unknown>>;
++}
++
++const CLAUDE_PRESETS: ReadonlyArray<ProviderProfilePreset> = [
++  {
++    id: "claude-1",
++    label: "Claude 1",
++    description: "Uses ~/.claude-1 via CLAUDE_CONFIG_DIR",
++    displayName: "Claude 1",
++    config: { configDir: "~/.claude-1" },
++  },
++  {
++    id: "claude-2",
++    label: "Claude 2",
++    description: "Uses ~/.claude-2 via CLAUDE_CONFIG_DIR",
++    displayName: "Claude 2",
++    config: { configDir: "~/.claude-2" },
++  },
++];
++
++const ANTIGRAVITY_PRESETS: ReadonlyArray<ProviderProfilePreset> = [
++  {
++    id: "agy-1",
++    label: "Antigravity 1",
++    description: "Uses ~/.gemini-1 with the agy CLI",
++    displayName: "Antigravity 1",
++    config: {
++      antigravity: true,
++      binaryPath: "agy",
++      configDir: "~/.gemini-1",
++    },
++  },
++  {
++    id: "agy-2",
++    label: "Antigravity 2",
++    description: "Uses ~/.gemini-2 with the agy CLI",
++    displayName: "Antigravity 2",
++    config: {
++      antigravity: true,
++      binaryPath: "agy",
++      configDir: "~/.gemini-2",
++    },
++  },
++];
++
++export function getProviderProfilePresets(
++  driver: ProviderDriverKind,
++): ReadonlyArray<ProviderProfilePreset> {
++  if (driver === "claudeAgent") return CLAUDE_PRESETS;
++  if (driver === "geminiCli") return ANTIGRAVITY_PRESETS;
++  return [];
++}
+diff --git a/apps/web/src/session-logic.test.ts b/apps/web/src/session-logic.test.ts
+index bde435e4..67d4298d 100644
+--- a/apps/web/src/session-logic.test.ts
++++ b/apps/web/src/session-logic.test.ts
+@@ -1739,7 +1739,7 @@ describe("PROVIDER_OPTIONS", () => {
+       { value: "opencode", label: "OpenCode", available: true, pickerSidebarBadge: "new" },
+       { value: "droid", label: "Droid", available: true, pickerSidebarBadge: "new" },
+       { value: "grok", label: "Grok", available: true, pickerSidebarBadge: "new" },
+-      { value: "geminiCli", label: "Gemini CLI", available: true },
++      { value: "geminiCli", label: "Antigravity (Gemini)", available: true },
+       { value: "amp", label: "AMPcode", available: true },
+       { value: "kilo", label: "Kilo", available: true },
+     ]);
+@@ -1773,7 +1773,7 @@ describe("PROVIDER_OPTIONS", () => {
+     });
+     expect(geminiCli).toEqual({
+       value: "geminiCli",
+-      label: "Gemini CLI",
++      label: "Antigravity (Gemini)",
+       available: true,
+     });
+     expect(amp).toEqual({
+diff --git a/apps/web/src/session-logic.ts b/apps/web/src/session-logic.ts
+index 0747b120..f069161d 100644
+--- a/apps/web/src/session-logic.ts
++++ b/apps/web/src/session-logic.ts
+@@ -58,7 +58,11 @@ export const PROVIDER_OPTIONS: Array<{
+     available: true,
+     pickerSidebarBadge: "new",
+   },
+-  { value: ProviderDriverKind.make("geminiCli"), label: "Gemini CLI", available: true },
++  {
++    value: ProviderDriverKind.make("geminiCli"),
++    label: "Antigravity (Gemini)",
++    available: true,
++  },
+   { value: ProviderDriverKind.make("amp"), label: "AMPcode", available: true },
+   { value: ProviderDriverKind.make("kilo"), label: "Kilo", available: true },
+ ];
+diff --git a/packages/contracts/src/settings.ts b/packages/contracts/src/settings.ts
+index 694130a7..12957989 100644
+--- a/packages/contracts/src/settings.ts
++++ b/packages/contracts/src/settings.ts
+@@ -224,6 +224,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
+         providerSettingsForm: { placeholder: "~", clearWhenEmpty: "omit" },
+       }),
+     ),
++    configDir: TrimmedString.pipe(
++      Schema.withDecodingDefault(Effect.succeed("")),
++      Schema.annotateKey({
++        title: "Claude config directory",
++        description:
++          "Sets CLAUDE_CONFIG_DIR for this instance. Use this for independent Claude accounts such as ~/.claude-1 and ~/.claude-2.",
++        providerSettingsForm: { placeholder: "~/.claude-1", clearWhenEmpty: "omit" },
++      }),
++    ),
+     customModels: Schema.Array(Schema.String).pipe(
+       Schema.withDecodingDefault(Effect.succeed([])),
+       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+@@ -241,7 +250,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
+     ),
+   },
+   {
+-    order: ["binaryPath", "homePath", "launchArgs"],
++    order: ["binaryPath", "configDir", "homePath", "launchArgs"],
+   },
+ );
+ export type ClaudeSettings = typeof ClaudeSettings.Type;
+@@ -460,19 +469,30 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
+       Schema.withDecodingDefault(Effect.succeed(true)),
+       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+     ),
+-    binaryPath: makeBinaryPathSetting("gemini").pipe(
++    binaryPath: makeBinaryPathSetting("agy").pipe(
+       Schema.annotateKey({
+         title: "Binary path",
+-        description: "Path to the `gemini` executable. Leave blank to resolve from PATH.",
+-        providerSettingsForm: { placeholder: "gemini", clearWhenEmpty: "omit" },
++        description:
++          "Path to the `gemini` or Antigravity `agy` executable. Leave blank to resolve the selected CLI from PATH.",
++        providerSettingsForm: { placeholder: "agy", clearWhenEmpty: "omit" },
++      }),
++    ),
++    antigravity: Schema.Boolean.pipe(
++      Schema.withDecodingDefault(Effect.succeed(true)),
++      Schema.annotateKey({
++        title: "Use Antigravity CLI (agy)",
++        description:
++          "Use Google's Antigravity agent instead of the official Gemini CLI. Antigravity runs in print mode and T3 Code preserves conversation context between turns.",
++        providerSettingsForm: { control: "switch", clearWhenEmpty: "omit" },
+       }),
+     ),
+     configDir: TrimmedString.pipe(
+       Schema.withDecodingDefault(Effect.succeed("")),
+       Schema.annotateKey({
+-        title: "Config directory",
+-        description: "Override `GEMINI_HOME` (Gemini CLI honours `~/.gemini` by default).",
+-        providerSettingsForm: { placeholder: "~/.gemini", clearWhenEmpty: "omit" },
++        title: "Account profile directory",
++        description:
++          "For Gemini CLI this sets GEMINI_HOME. For Antigravity it sets HOME and USERPROFILE, enabling isolated profiles such as ~/.gemini-1 and ~/.gemini-2.",
++        providerSettingsForm: { placeholder: "~/.gemini-1", clearWhenEmpty: "omit" },
+       }),
+     ),
+     customModels: Schema.Array(Schema.String).pipe(
+@@ -481,7 +501,7 @@ export const GeminiCliSettings = makeProviderSettingsSchema(
+     ),
+   },
+   {
+-    order: ["binaryPath", "configDir"],
++    order: ["antigravity", "binaryPath", "configDir"],
+   },
+ );
+ export type GeminiCliSettings = typeof GeminiCliSettings.Type;
+@@ -655,6 +675,7 @@ const ClaudeSettingsPatch = Schema.Struct({
+   enabled: Schema.optionalKey(Schema.Boolean),
+   binaryPath: Schema.optionalKey(TrimmedString),
+   homePath: Schema.optionalKey(TrimmedString),
++  configDir: Schema.optionalKey(TrimmedString),
+   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+   launchArgs: Schema.optionalKey(TrimmedString),
+ });
+@@ -666,6 +687,14 @@ const GenericProviderSettingsPatch = Schema.Struct({
+   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+ });
+ 
++const GeminiCliSettingsPatch = Schema.Struct({
++  enabled: Schema.optionalKey(Schema.Boolean),
++  binaryPath: Schema.optionalKey(TrimmedString),
++  configDir: Schema.optionalKey(TrimmedString),
++  antigravity: Schema.optionalKey(Schema.Boolean),
++  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
++});
++
+ const CursorSettingsPatch = Schema.Struct({
+   enabled: Schema.optionalKey(Schema.Boolean),
+   binaryPath: Schema.optionalKey(TrimmedString),
+@@ -717,7 +746,7 @@ export const ServerSettingsPatch = Schema.Struct({
+       droid: Schema.optionalKey(DroidSettingsPatch),
+       grok: Schema.optionalKey(GrokSettingsPatch),
+       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
+-      geminiCli: Schema.optionalKey(GenericProviderSettingsPatch),
++      geminiCli: Schema.optionalKey(GeminiCliSettingsPatch),
+       amp: Schema.optionalKey(GenericProviderSettingsPatch),
+       kilo: Schema.optionalKey(GenericProviderSettingsPatch),
+     }),
+diff --git a/scripts/build-desktop-artifact.test.ts b/scripts/build-desktop-artifact.test.ts
+index 984934eb..a46ea077 100644
+--- a/scripts/build-desktop-artifact.test.ts
++++ b/scripts/build-desktop-artifact.test.ts
+@@ -204,12 +204,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+   it("installs optional native dependencies for the target desktop architecture", () => {
+     assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod"]);
+     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
++      nodeLinker: "hoisted",
+       supportedArchitectures: {
+         os: ["darwin"],
+         cpu: ["x64"],
+       },
+     });
+     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "linux", arch: "x64" }), {
++      nodeLinker: "hoisted",
+       supportedArchitectures: {
+         os: ["linux"],
+         cpu: ["x64"],
+@@ -219,6 +221,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+     // Windows artifacts also bundle the same-architecture WSL (Linux, glibc) backend, so the
+     // staged install must fetch its native optional deps (e.g. ffi-rs) too.
+     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "win", arch: "x64" }), {
++      nodeLinker: "hoisted",
+       supportedArchitectures: {
+         os: ["win32", "linux"],
+         cpu: ["x64"],
+@@ -226,6 +229,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+       },
+     });
+     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "win", arch: "arm64" }), {
++      nodeLinker: "hoisted",
+       supportedArchitectures: {
+         os: ["win32", "linux"],
+         cpu: ["arm64"],
+@@ -233,6 +237,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+       },
+     });
+     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "universal" }), {
++      nodeLinker: "hoisted",
+       supportedArchitectures: {
+         os: ["darwin"],
+         cpu: ["arm64", "x64"],
+@@ -258,6 +263,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+         },
+       }),
+       {
++        nodeLinker: "hoisted",
+         supportedArchitectures: {
+           os: ["linux"],
+           cpu: ["x64"],
+@@ -289,6 +295,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+         overrides: {},
+       }),
+       {
++        nodeLinker: "hoisted",
+         supportedArchitectures: {
+           os: ["darwin"],
+           cpu: ["arm64"],
+diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
+index 7f42036f..f79fa2dc 100644
+--- a/scripts/build-desktop-artifact.ts
++++ b/scripts/build-desktop-artifact.ts
+@@ -45,6 +45,15 @@ const WorkspaceConfig = Schema.Struct({
+ type WorkspaceConfig = typeof WorkspaceConfig.Type;
+ 
+ const StageWorkspaceConfig = Schema.Struct({
++  // Force a flat (npm-style) node_modules for the staged production install.
++  // With pnpm's default isolated store, electron-builder v26's dependency
++  // collector reports "unresolved duplicate dependency references" / "cannot
++  // find path for dependency" for packages that appear at more than one place
++  // in the graph (e.g. debug, cross-spawn, express, ajv) and silently drops
++  // them from the package → the app crashes on launch with "Cannot find module
++  // 'debug'". A hoisted layout puts every dependency at the top level where the
++  // collector resolves it. pnpm 11 only reads this from pnpm-workspace.yaml.
++  nodeLinker: Schema.optional(Schema.String),
+   supportedArchitectures: Schema.Struct({
+     os: Schema.Array(Schema.String),
+     cpu: Schema.Array(Schema.String),
+@@ -592,6 +601,64 @@ interface StagePackageJson {
+ export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+ export const DESKTOP_ASAR_UNPACK = ["node_modules/@ff-labs/fff-bin-*/**/*"] as const;
+ 
++/**
++ * electron-builder afterPack hook (written into the stage as a CommonJS file and
++ * referenced from the generated build config). electron-builder v26's pnpm
++ * dependency collector drops duplicate/multi-version transitive deps (debug, ms,
++ * express, cors, ajv, cross-spawn, …) — the packaged app then dies on launch
++ * with "Cannot find module 'debug'". On Windows the app's node_modules are
++ * unpacked to `app.asar.unpacked/node_modules`, so we copy any top-level package
++ * present in the flat (hoisted) staged install but missing from the packaged
++ * output back in. `appOutDir` is `<stage>/dist/win-unpacked`, so its
++ * great-grandparent is the stage app dir whose `node_modules` is the source.
++ */
++export const AFTERPACK_RESTORE_PNPM_DEPS_SOURCE = `"use strict";
++// Auto-generated by scripts/build-desktop-artifact.ts — do not edit.
++const fs = require("node:fs");
++const path = require("node:path");
++
++module.exports = async function afterPackRestorePnpmDeps(context) {
++  const stageAppDir = path.resolve(context.appOutDir, "..", "..");
++  const src = path.join(stageAppDir, "node_modules");
++  const resources = path.join(context.appOutDir, "resources");
++  // asar disabled (Windows) → resources/app/node_modules; asar enabled → the
++  // unpacked mirror. Copy into whichever the packaged app actually uses.
++  const dest = [
++    path.join(resources, "app", "node_modules"),
++    path.join(resources, "app.asar.unpacked", "node_modules"),
++  ].find((d) => fs.existsSync(d));
++  if (!fs.existsSync(src) || !dest) return;
++
++  const copyIfMissing = (rel) => {
++    const from = path.join(src, rel);
++    const to = path.join(dest, rel);
++    if (!fs.existsSync(from) || fs.existsSync(to)) return false;
++    fs.mkdirSync(path.dirname(to), { recursive: true });
++    fs.cpSync(from, to, { recursive: true, dereference: true });
++    return true;
++  };
++
++  let copied = 0;
++  for (const entry of fs.readdirSync(src)) {
++    if (entry.startsWith(".")) continue;
++    if (entry.startsWith("@")) {
++      let scoped;
++      try {
++        scoped = fs.readdirSync(path.join(src, entry));
++      } catch {
++        continue;
++      }
++      for (const name of scoped) {
++        if (copyIfMissing(path.join(entry, name))) copied++;
++      }
++    } else if (copyIfMissing(entry)) {
++      copied++;
++    }
++  }
++  console.log("[afterpack-restore-pnpm-deps] restored " + copied + " dependency(ies) electron-builder dropped");
++};
++`;
++
+ export interface MacPasskeySigningConfiguration {
+   readonly appId: string;
+   readonly teamId: string;
+@@ -929,6 +996,7 @@ export function createStageWorkspaceConfig(input: {
+           };
+ 
+   return {
++    nodeLinker: "hoisted",
+     supportedArchitectures,
+     ...(allowBuilds && Object.keys(allowBuilds).length > 0 ? { allowBuilds } : {}),
+     ...(patchedDependencies && Object.keys(patchedDependencies).length > 0
+@@ -1415,6 +1483,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+       "apps/server/dist/**",
+       ...(platform === "win" ? (["**/node_modules/**"] as const) : []),
+     ],
++    // `afterPack` (restores deps electron-builder's pnpm collector drops) is set
++    // to an absolute path in buildDesktopArtifact — electron-builder v26 rejects
++    // a relative hook path resolved against the process cwd as "outside the
++    // workspace root".
+   };
+   const updateChannel = resolveDesktopUpdateChannel(version);
+   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+@@ -1465,6 +1537,17 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+ 
+   if (platform === "win") {
+     buildConfig.npmRebuild = false;
++    // Ship the Windows app unpacked (no asar). electron-builder v26's pnpm
++    // collector drops ~150 transitive deps from the package; the afterPack hook
++    // restores them on disk, but Electron's main process resolves `require`
++    // through the asar's virtual filesystem, which never consults a file that
++    // has no asar entry — so restored-but-unindexed modules stay invisible and
++    // the app dies with "Cannot find module 'debug'". With asar disabled every
++    // module resolves from the real filesystem, so the restored deps load. On
++    // Windows the tree is already fully unpacked (see asarUnpack below), so this
++    // changes layout, not size. The app's own `app.asar.unpacked/node_modules`
++    // lookups keep working via their non-asar fallback candidates.
++    buildConfig.asar = false;
+     const winConfig: Record<string, unknown> = {
+       target: [target],
+       icon: "icon.ico",
+@@ -1772,6 +1855,24 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+     workspacePatchedDependencies,
+     stageDependencies,
+   );
++  const stageBuildConfig = yield* createBuildConfig(
++    options.platform,
++    options.target,
++    appVersion,
++    options.signed,
++    options.mockUpdates,
++    options.mockUpdateServerPort,
++    macPasskeySigning && macEntitlementsPath
++      ? {
++          entitlementsPath: macEntitlementsPath,
++          provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
++        }
++      : undefined,
++  );
++  // electron-builder v26 rejects a relative afterPack hook path (resolved
++  // against the process cwd) as "outside the workspace root", so point it at the
++  // absolute hook file inside the stage app dir (written just below).
++  stageBuildConfig.afterPack = path.join(stageAppDir, "afterpack-restore-pnpm-deps.cjs");
+   const stagePackageJson: StagePackageJson = {
+     name: "t3code",
+     version: appVersion,
+@@ -1782,20 +1883,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+     description: "T3 Code desktop build",
+     author: "T3 Tools",
+     main: "apps/desktop/dist-electron/main.cjs",
+-    build: yield* createBuildConfig(
+-      options.platform,
+-      options.target,
+-      appVersion,
+-      options.signed,
+-      options.mockUpdates,
+-      options.mockUpdateServerPort,
+-      macPasskeySigning && macEntitlementsPath
+-        ? {
+-            entitlementsPath: macEntitlementsPath,
+-            provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+-          }
+-        : undefined,
+-    ),
++    build: stageBuildConfig,
+     dependencies: stageDependencies,
+     devDependencies: {
+       electron: electronVersion,
+@@ -1804,6 +1892,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
+ 
+   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
+   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
++  // afterPack hook referenced by the generated build config (see
++  // AFTERPACK_RESTORE_PNPM_DEPS_SOURCE) — restores deps electron-builder's pnpm
++  // collector drops.
++  yield* fs.writeFileString(
++    path.join(stageAppDir, "afterpack-restore-pnpm-deps.cjs"),
++    AFTERPACK_RESTORE_PNPM_DEPS_SOURCE,
++  );
+   const stageWorkspaceConfig = createStageWorkspaceConfig({
+     platform: options.platform,
+     arch: options.arch,
