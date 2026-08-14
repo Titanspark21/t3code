@@ -88,6 +88,7 @@ export function PolicyTooltip({ children }: { readonly children: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
+        delay={200}
         render={
           <Button size="icon-micro" variant="ghost-muted" aria-label="Background policy details">
             <InfoIcon className="size-3.5" />
