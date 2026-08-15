@@ -20,10 +20,9 @@ Nothing else starts until these pass. Both can fail in ways that change the whol
 - [ ] **S1 — Get the toolchain running on Windows, and settle the Vite+ licence.**
       Install `vp` (`irm https://vite.plus/ps1 | iex`), then `vp i`, then `vp run dev`.
       Open the app, connect Claude and Codex, send a real turn.
-      **Before writing any code, confirm Vite+'s terms cover your use.** It's VoidZero's
-      commercial product and every workspace script runs through it; it is not swappable
-      without rewriting every package's scripts and conflicting with upstream forever.
-      If the terms don't work, stop and reconsider the whole fork.
+      **Before writing any code, confirm Vite+'s terms cover your use.** The current answer is
+      recorded in `omni/TOOLCHAIN.md`: Vite+ is now MIT-licensed open source, so the earlier
+      commercial/source-available concern no longer blocks this fork.
       _Gate: the app runs from source on your Windows machine and the licence question has
       a written answer._
   - [x] `vp` installed; its shim supplies Node 24.19, satisfying the repo's `^24.13.1`.
@@ -37,8 +36,17 @@ Nothing else starts until these pass. Both can fail in ways that change the whol
         workspace removes the whole failure class and costs nothing, since the decision
         is to use upstream's published mobile app rather than build it. Use that flag
         for every install, including after upstream syncs.
-  - [ ] Licence question — **still unanswered, still blocking.**
-  - [ ] Open the app, connect Claude and Codex, send a real turn.
+  - [x] Licence question — answered from VoidZero/Vite+ primary sources in
+        `omni/TOOLCHAIN.md`: Vite+ is free/open source under MIT as of 2026-08-15.
+  - [x] Run the source checkout on Windows — migrations complete, the backend listens, and
+        Vite+ serves the web client from the isolated worktree home.
+  - [x] Real Codex turn through the product — the orchestration HTTP API completed an actual
+        `gpt-5.6-sol` turn and projected its native usage into `context-window.updated`
+        (`23,942 / 258,400` tokens observed during the probe).
+  - [ ] Real Claude turn — environment blocker, not a product failure: Claude Code `2.1.233`
+        is installed but `claude auth status` reports `loggedIn: false`, `authMethod: none`;
+        both `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are unset. Authenticate Claude
+        on this Windows account, then rerun the source-product turn gate.
 
 - [ ] **S2 — Use it as-is for a week.** Real work, Claude and Codex, no changes.
       This is a task, not a suggestion. Half of Stage 2 may stop mattering once you've
@@ -145,11 +153,16 @@ hidden-probe machinery is unnecessary here. That's a straight win.
 
 ## Stage C — the rest, in rough priority order
 
-- [ ] **C1 — Context-window meter.** Absent upstream (no `contextWindow` in
-      `packages/contracts`). Codex reports `model_context_window` and per-turn usage.
-      Compact bar in the composer, warms at 70%, reds at 90%, **hidden entirely** for any
-      provider with no honest figure. Read the _last_ turn's usage, not the cumulative
-      total — OmniLink shipped that bug once and it reads as >100% on any long session.
+**C1 removed — upstream already ships the honest context-window meter.**
+`ContextWindowMeter.tsx` is fed by `deriveLatestContextWindowSnapshot`, which reads the latest
+`context-window.updated` activity rather than cumulative history. Server ingestion creates that
+activity from canonical `thread.token-usage.updated` runtime events. Codex emits those events from
+native `thread/tokenUsage/updated` notifications (`last.totalTokens` for current-window use and
+`modelContextWindow` for the limit); Claude emits the same canonical event from SDK stream/result
+usage and `getContextUsage()` snapshots. The 2026-08-15 real Codex product probe confirmed this
+path live end-to-end, including the projected `23,942 / 258,400` snapshot. Claude's code path is
+covered by focused adapter/ingestion tests, but a real Claude source turn remains blocked by the
+S1 authentication prerequisite above.
 
 - [ ] **C2 — Limit detection and hold.** Builds on Stage B. When a window is exhausted:
       latch the thread to a `rate-limited` state that later redraws can't flip back to
