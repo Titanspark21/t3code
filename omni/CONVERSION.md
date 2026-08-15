@@ -94,6 +94,7 @@ Everything from it is preserved in `omni/salvage/`:
 | File | What it is |
 |---|---|
 | `titanspark21-fork.patch` | full diff of all six of your commits |
+| `old-fork-commits.bundle` | the six commits as real git objects, authors and dates intact. The old repo is deleted, so this is the only remaining copy. Restore with `git fetch omni/salvage/old-fork-commits.bundle refs/heads/main:old-fork` |
 | `OLD-FORK-SPEC.md` | your design spec for the agy integration |
 | `OLD-FORK_NOTES.md` | setup + build notes, incl. the electron-builder packaging fix |
 | `src/.../GeminiCliHome.ts` | per-instance `HOME`/`USERPROFILE` isolation for agy |

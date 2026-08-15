@@ -7,6 +7,7 @@ clean from upstream `main` at `184d8ef33`. It replaces
 - **Why this exists and what was decided:** `omni/CONVERSION.md`
 - **What to build next:** `omni/PLAN.md`
 - **Salvaged from the previous fork-of-a-fork:** `omni/salvage/`
+- **Local checkout:** `C:\MySoftware\t3code`
 
 Upstream is MIT and explicitly fork-friendly — their README says "If we ever go the wrong
 direction, we want you to have everything you need to fork," and "a large number of our
@@ -33,6 +34,21 @@ git checkout omni/main && git merge main
 
 **Merge, never rebase.** Rebasing a long-lived divergent branch replays every conflict on
 every sync, forever. Merging resolves each one once.
+
+### You never need a pull request
+
+Both branches are yours, and you sync them with `git merge` on the command line. There is
+no PR anywhere in the workflow above.
+
+After any push to `omni/main`, GitHub shows a yellow **"omni/main had recent pushes —
+Compare & pull request"** banner. That is an offer, not a pull request; nothing has been
+created. **Ignore it.**
+
+It matters because on a fork GitHub defaults the *base* of a new PR to the **parent repo**
+— so clicking through and confirming would propose your entire fork to
+`pingdotgg/t3code`, publicly, in front of their maintainers. Dismiss the banner with the
+`×`. If you ever do want a PR against your own fork, change the base repo dropdown from
+`pingdotgg/t3code` to `Titanspark21/t3code` first, and check it before submitting.
 
 ---
 
