@@ -1,0 +1,7 @@
+{
+  "note": "How the chatgpt-bridge builds and proves this repo. Plain `vp i` dies with ERR_PNPM_EPERM unpacking Expo's prebuilt native binaries while Defender holds them open, so the mobile workspace is excluded — see omni/PLAN.md S1. The task name has to be reached through --filter rather than -r, because the root package has a `typecheck` script of its own and running that one recurses back into mobile. Tests are deliberately not here yet: the suite assumes a POSIX filesystem in several packages and fails on Windows on the trunk, so it would refuse every merge rather than prove anything.",
+  "install": "vp i --filter=!@t3tools/mobile",
+  "commands": [
+    "vp run --filter=./apps/* --filter=./packages/* --filter=./infra/* --filter=!@t3tools/mobile --concurrency-limit 2 typecheck"
+  ]
+}
