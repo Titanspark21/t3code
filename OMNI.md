@@ -11,7 +11,7 @@ clean from upstream `main` at `184d8ef33`. It replaces
 
 Upstream is MIT and explicitly fork-friendly — their README says "If we ever go the wrong
 direction, we want you to have everything you need to fork," and "a large number of our
-users run forks." Taking updates is supported. Keeping it *cheap* is on you, and that's
+users run forks." Taking updates is supported. Keeping it _cheap_ is on you, and that's
 what this file is for.
 
 ---
@@ -30,7 +30,14 @@ git remote add upstream https://github.com/pingdotgg/t3code.git
 git fetch upstream
 git checkout main && git merge --ff-only upstream/main && git push origin main
 git checkout omni/main && git merge main
+
+# then reinstall — always with the mobile workspace excluded, see omni/PLAN.md S1
+vp i --filter=!@t3tools/mobile
 ```
+
+**Never plain `vp i` on this machine.** It fails with `ERR_PNPM_EPERM` unpacking Expo's
+prebuilt native binaries, which Defender locks mid-copy. The flag skips the mobile
+workspace, which you don't build anyway.
 
 **Merge, never rebase.** Rebasing a long-lived divergent branch replays every conflict on
 every sync, forever. Merging resolves each one once.
@@ -44,7 +51,7 @@ After any push to `omni/main`, GitHub shows a yellow **"omni/main had recent pus
 Compare & pull request"** banner. That is an offer, not a pull request; nothing has been
 created. **Ignore it.**
 
-It matters because on a fork GitHub defaults the *base* of a new PR to the **parent repo**
+It matters because on a fork GitHub defaults the _base_ of a new PR to the **parent repo**
 — so clicking through and confirming would propose your entire fork to
 `pingdotgg/t3code`, publicly, in front of their maintainers. Dismiss the banner with the
 `×`. If you ever do want a PR against your own fork, change the base repo dropdown from
@@ -59,11 +66,11 @@ It matters because on a fork GitHub defaults the *base* of a new PR to the **par
 Every line you change in an existing upstream file is a conflict you will resolve again on
 every future sync. Every new file is free. The architecture is unusually kind about this:
 
-| Adding | Cost |
-|---|---|
+| Adding     | Cost                                                                                                                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A provider | New `Drivers/XDriver.ts` + `Layers/XAdapter.ts`, and **one line** in `builtInDrivers.ts`. Upstream's own docs: "No orchestration, contract, or client change is required for the common case." |
-| A panel | New component + one registration line |
-| A contract | **A new file** in `packages/contracts/src/` |
+| A panel    | New component + one registration line                                                                                                                                                          |
+| A contract | **A new file** in `packages/contracts/src/`                                                                                                                                                    |
 
 ### Contracts are the sharpest edge
 
@@ -83,12 +90,12 @@ All high-churn, all pure conflict, none of it worth it:
 
 ### Keep the table below current
 
-This *is* your merge checklist. Before each sync, it tells you exactly where to look.
+This _is_ your merge checklist. Before each sync, it tells you exactly where to look.
 If a change isn't in this table, it shouldn't exist.
 
 | Upstream file | Change | Why | Task |
-|---|---|---|---|
-| _(none yet)_ | | | |
+| ------------- | ------ | --- | ---- |
+| _(none yet)_  |        |     |      |
 
 ---
 

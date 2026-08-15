@@ -24,15 +24,28 @@ Nothing else starts until these pass. Both can fail in ways that change the whol
       commercial product and every workspace script runs through it; it is not swappable
       without rewriting every package's scripts and conflicting with upstream forever.
       If the terms don't work, stop and reconsider the whole fork.
-      *Gate: the app runs from source on your Windows machine and the licence question has
-      a written answer.*
+      _Gate: the app runs from source on your Windows machine and the licence question has
+      a written answer._
+  - [x] `vp` installed; its shim supplies Node 24.19, satisfying the repo's `^24.13.1`.
+  - [x] `vp i` succeeds — **but only as `vp i --filter=!@t3tools/mobile`.** A plain
+        `vp i` dies with `ERR_PNPM_EPERM` while unpacking Expo packages
+        (`expo-camera`, then `expo-paste-input`), and a retry just moves the failure to a
+        different package. It is _not_ the Windows path limit — long paths are enabled
+        and Node copies a 334-char path here, while the failures were at 290. It's
+        Defender's real-time scanner locking prebuilt native mobile binaries (an iOS
+        `.dSYM` bundle, a compiled Android `.dex`) mid-copy. Excluding the mobile
+        workspace removes the whole failure class and costs nothing, since the decision
+        is to use upstream's published mobile app rather than build it. Use that flag
+        for every install, including after upstream syncs.
+  - [ ] Licence question — **still unanswered, still blocking.**
+  - [ ] Open the app, connect Claude and Codex, send a real turn.
 
 - [ ] **S2 — Use it as-is for a week.** Real work, Claude and Codex, no changes.
       This is a task, not a suggestion. Half of Stage 2 may stop mattering once you've
       lived with the thing, and you'll find out which parts of OmniLink's spec you actually
       miss versus which you only think you miss.
-      *Gate: a written list of what genuinely annoyed you, in priority order. Re-order the
-      rest of this plan against it.*
+      _Gate: a written list of what genuinely annoyed you, in priority order. Re-order the
+      rest of this plan against it._
 
 ---
 
@@ -49,11 +62,11 @@ not exist here.** t3code has no TUI; the server must speak a machine protocol to
 So "type `agy-1` and boom, there's an agent" needs a transport underneath it, and which
 transport you get decides how good the result is:
 
-| Transport | Cost | What you get |
-|---|---|---|
-| **ACP** — if `agy` speaks it | ~1,200 lines, like `CursorAdapter.ts` | Everything. Streaming, tool calls, approvals, interrupts. Reuses `packages/effect-acp` |
-| **`agentapi` HTTP wrapper** — `<profile>\.gemini\antigravity-cli\bin\agentapi.bat`, recorded in OmniLink `SPEC.md` §11 | medium | Probably streaming and tools; approvals uncertain |
-| **`agy --print` one-shot per turn** — what the old fork did | ~600 lines, already salvaged | Works, but: no streaming (the whole reply lands at once), no tool-call visibility, no approval prompts, and the entire conversation is replayed into every prompt — which burns quota and drifts |
+| Transport                                                                                                              | Cost                                  | What you get                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **ACP** — if `agy` speaks it                                                                                           | ~1,200 lines, like `CursorAdapter.ts` | Everything. Streaming, tool calls, approvals, interrupts. Reuses `packages/effect-acp`                                                                                                           |
+| **`agentapi` HTTP wrapper** — `<profile>\.gemini\antigravity-cli\bin\agentapi.bat`, recorded in OmniLink `SPEC.md` §11 | medium                                | Probably streaming and tools; approvals uncertain                                                                                                                                                |
+| **`agy --print` one-shot per turn** — what the old fork did                                                            | ~600 lines, already salvaged          | Works, but: no streaming (the whole reply lands at once), no tool-call visibility, no approval prompts, and the entire conversation is replayed into every prompt — which burns quota and drifts |
 
 - [ ] **A1 — Spike: find out which transport `agy` actually supports.**
       Check in that order: ACP first, then `agentapi`, then `--print`. Run `agy --help`,
@@ -61,28 +74,25 @@ transport you get decides how good the result is:
       OmniLink `SPEC.md` §13.6 has the verified 1.1.5 flag set: `--continue`/`-c`,
       `--conversation <ID>`, `--model`, `--effort low|medium|high`,
       `--mode accept-edits|plan`, `--project`, `--prompt-interactive`, `--sandbox`.
-      *Gate: a written answer naming the transport and why, before any adapter code.*
+      _Gate: a written answer naming the transport and why, before any adapter code._
 
 - [ ] **A2 — Write the driver + adapter.** New files only:
       `apps/server/src/provider/Drivers/AntigravityDriver.ts`,
       `apps/server/src/provider/Layers/AntigravityAdapter.ts`,
       `.../Layers/AntigravityProvider.ts`, plus **one line** in `builtInDrivers.ts`.
       Model the shape on `CursorDriver.ts` + `CursorAdapter.ts` (ACP) or `OpenCodeDriver.ts`.
-      Three things the old fork got wrong — fix them here:
-      1. **Account isolation must not break git.** Override `USERPROFILE` only, and pass
-         `HOME`, `APPDATA`, `LOCALAPPDATA` and `GIT_CONFIG_GLOBAL` back to the *real*
-         profile (OmniLink `SPEC.md` §5.2). The salvaged `GeminiCliHome.ts` overrides both
-         `HOME` and `USERPROFILE` with no passthrough, which redirects every child process —
-         expect commits with no author, push failures, and npm re-downloading everything.
-      2. **Never emit `--dangerously-skip-permissions`.** The old fork sends it for every
-         full-access turn. Map upstream's modes to `--mode plan` / `--mode accept-edits`,
-         and for full access send no permission flag at all rather than the bypass. This is
-         the "extra guardrails for agy" decision.
-      3. **Read models from `agy models`, not a hardcoded list.** agy changes fast; a
-         hardcoded catalogue rots silently. Note effort is baked into some model ids *and*
-         settable via `--effort` — reconcile in the picker (OmniLink `PLAN.md` records this).
-      *Gate: two isolated agy accounts run concurrently; a turn in one writes only into its
-      own profile dir; `git commit` inside an agy session has the right author.*
+      Three things the old fork got wrong — fix them here: 1. **Account isolation must not break git.** Override `USERPROFILE` only, and pass
+      `HOME`, `APPDATA`, `LOCALAPPDATA` and `GIT_CONFIG_GLOBAL` back to the _real_
+      profile (OmniLink `SPEC.md` §5.2). The salvaged `GeminiCliHome.ts` overrides both
+      `HOME` and `USERPROFILE` with no passthrough, which redirects every child process —
+      expect commits with no author, push failures, and npm re-downloading everything. 2. **Never emit `--dangerously-skip-permissions`.** The old fork sends it for every
+      full-access turn. Map upstream's modes to `--mode plan` / `--mode accept-edits`,
+      and for full access send no permission flag at all rather than the bypass. This is
+      the "extra guardrails for agy" decision. 3. **Read models from `agy models`, not a hardcoded list.** agy changes fast; a
+      hardcoded catalogue rots silently. Note effort is baked into some model ids _and_
+      settable via `--effort` — reconcile in the picker (OmniLink `PLAN.md` records this).
+      _Gate: two isolated agy accounts run concurrently; a turn in one writes only into its
+      own profile dir; `git commit` inside an agy session has the right author._
 
 - [ ] **A3 — Account presets in the Add Provider dialog.** One-click "Antigravity 1/2"
       filling the profile dir, as the old fork had (`omni/salvage/src/.../providerProfilePresets.ts`).
@@ -98,7 +108,7 @@ transport you get decides how good the result is:
 
 The highest value-per-effort work in this plan, and it's half-built upstream already.
 
-Upstream's Usage page is token-*cost* analytics (`docs/user/usage.md`), not subscription
+Upstream's Usage page is token-_cost_ analytics (`docs/user/usage.md`), not subscription
 window state. But both adapters already emit the event and **nothing consumes it**:
 
 - `apps/server/src/provider/Layers/CodexAdapter.ts:1395` — `account/rateLimits/updated`
@@ -114,7 +124,7 @@ hidden-probe machinery is unnecessary here. That's a straight win.
       `packages/contracts/src/quota.ts` — do **not** edit `orchestration.ts` (see `OMNI.md`).
       Per account: one or more quota groups, each with 5-hour and weekly used-% and reset
       time, plus a `source` field recording how the number was obtained.
-      *Gate: real Codex and Claude figures land in the read model.*
+      _Gate: real Codex and Claude figures land in the read model._
 
 - [ ] **B2 — The panel.** Always-visible, bottom-left, grouped by provider then account,
       using each account's display name and accent colour (OmniLink `SPEC.md` §7.5).
@@ -138,7 +148,7 @@ hidden-probe machinery is unnecessary here. That's a straight win.
 - [ ] **C1 — Context-window meter.** Absent upstream (no `contextWindow` in
       `packages/contracts`). Codex reports `model_context_window` and per-turn usage.
       Compact bar in the composer, warms at 70%, reds at 90%, **hidden entirely** for any
-      provider with no honest figure. Read the *last* turn's usage, not the cumulative
+      provider with no honest figure. Read the _last_ turn's usage, not the cumulative
       total — OmniLink shipped that bug once and it reads as >100% on any long session.
 
 - [ ] **C2 — Limit detection and hold.** Builds on Stage B. When a window is exhausted:
@@ -146,7 +156,7 @@ hidden-probe machinery is unnecessary here. That's a straight win.
       "working", hold queued messages rather than firing them into a dead session, and show
       a banner naming the window and its reset time. **No automatic account rotation** —
       notify and pause (OmniLink `SPEC.md` §5.4, §8.9).
-      Rule from OmniLink's parser work: 90% used is *not* limited; ≥100% or an explicit
+      Rule from OmniLink's parser work: 90% used is _not_ limited; ≥100% or an explicit
       limit signal is.
 
 - [ ] **C3 — Slash-command catalogue, fully featured.** Upstream carries
@@ -168,7 +178,7 @@ hidden-probe machinery is unnecessary here. That's a straight win.
       The detail that makes it good: the target picker lists **quota groups with live
       remaining %**, not provider names — you choose by looking, not remembering. Needs B2.
 
-- [ ] **C5 — Windows binary probing.** *What this is:* when the app looks for `claude`,
+- [ ] **C5 — Windows binary probing.** _What this is:_ when the app looks for `claude`,
       `codex` or `agy`, it currently trusts that a file existing means the CLI works. On
       Windows that's wrong often enough to matter — a Microsoft Store stub or an
       ACL-blocked packaged-app resource looks installed and isn't, and the app then reports
