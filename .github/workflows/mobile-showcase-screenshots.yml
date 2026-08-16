@@ -1,27 +1,19 @@
+# Not run on this fork.
+#
+# Every job below wants a runner this machine does not have — Blacksmith's
+# hosted fleet, or macOS. Nothing may run on a GitHub-hosted runner here (there
+# are no Actions minutes and none are being bought) and there is no Mac, so
+# these sat queued forever waiting for a runner that will never appear. A run
+# that never starts is indistinguishable from one still going, which is how a
+# repo's checks stop meaning anything.
+#
+# Left on workflow_dispatch so the file stays close to upstream and can be run
+# by hand if a suitable runner is ever attached. The landing gate is ci.yml,
+# which runs here.
 name: Mobile Showcase Screenshots
 
 on:
   workflow_dispatch:
-    inputs:
-      platform:
-        description: Device platforms to capture
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - ios
-          - android
-      appearance:
-        description: System appearances to capture
-        required: true
-        default: both
-        type: choice
-        options:
-          - both
-          - dark
-          - light
-
 permissions:
   contents: read
 

@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+      # This fork's trunk. `main` is an exact mirror of upstream and nothing is
+      # ever committed to it, so a gate watching only `main` never runs.
+      - omni/main
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -13,8 +16,8 @@ concurrency:
 jobs:
   check:
     name: Check
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: [self-hosted, Linux, X64, ajay-trusted]
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -59,8 +62,8 @@ jobs:
 
   test:
     name: Test
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: [self-hosted, Linux, X64, ajay-trusted]
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -112,8 +115,13 @@ jobs:
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
-    runs-on: blacksmith-6vcpu-macos-26
-    timeout-minutes: 10
+    # macOS only, and there is no Mac here. Skipped rather than deleted: this is
+    # upstream's file and the fork keeps its diff small. It would otherwise sit
+    # queued for a runner that will never exist, which reads as a gate that has
+    # not finished rather than one that cannot run.
+    if: false
+    runs-on: [self-hosted, Linux, X64, ajay-trusted]
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -140,8 +148,8 @@ jobs:
 
   release_smoke:
     name: Release Smoke
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: [self-hosted, Linux, X64, ajay-trusted]
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6

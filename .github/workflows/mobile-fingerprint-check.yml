@@ -1,3 +1,15 @@
+# Not run on this fork.
+#
+# Every job below wants a runner this machine does not have — Blacksmith's
+# hosted fleet, or macOS. Nothing may run on a GitHub-hosted runner here (there
+# are no Actions minutes and none are being bought) and there is no Mac, so
+# these sat queued forever waiting for a runner that will never appear. A run
+# that never starts is indistinguishable from one still going, which is how a
+# repo's checks stop meaning anything.
+#
+# Left on workflow_dispatch so the file stays close to upstream and can be run
+# by hand if a suitable runner is ever attached. The landing gate is ci.yml,
+# which runs here.
 name: Mobile Fingerprint Check
 
 # Detects whether a PR changes the native fingerprint — i.e. whether merging
@@ -12,19 +24,7 @@ name: Mobile Fingerprint Check
 # fingerprints are computed in this one job (same OS, same corepack-pinned
 # pnpm), so the comparison is self-consistent; no EXPO_TOKEN needed.
 on:
-  pull_request:
-    paths:
-      - apps/mobile/**
-      - packages/client-runtime/**
-      - packages/contracts/**
-      - packages/shared/**
-      - assets/**
-      - scripts/**
-      - patches/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .github/workflows/mobile-fingerprint-check.yml
-
+  workflow_dispatch:
 concurrency:
   group: mobile-fingerprint-check-${{ github.event.pull_request.number }}
   cancel-in-progress: true
