@@ -17,7 +17,7 @@ jobs:
   check:
     name: Check
     runs-on: [self-hosted, Linux, X64, ajay-trusted]
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -52,7 +52,7 @@ jobs:
         run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
 
       - name: Build desktop pipeline
-        run: vp run build:desktop
+        run: heavy-build-slot vp run build:desktop
 
       - name: Verify preload bundle output
         run: |
@@ -63,7 +63,7 @@ jobs:
   test:
     name: Test
     runs-on: [self-hosted, Linux, X64, ajay-trusted]
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -111,7 +111,7 @@ jobs:
           retention-days: 30
 
       - name: Test resource monitor
-        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
+        run: heavy-build-slot cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
