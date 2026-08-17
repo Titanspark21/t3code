@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off - pure predicates; `now` is an injectable parameter.
 /**
  * Pure reducer turning provider runtime events into the quota read model.
  *
@@ -8,7 +9,11 @@
  * @module quota/quotaReducer
  */
 import type { AccountQuotaSnapshot } from "@t3tools/contracts/quota";
-import type { ProviderDriverKind, ProviderInstanceId, ProviderRuntimeEvent } from "@t3tools/contracts";
+import type {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderRuntimeEvent,
+} from "@t3tools/contracts";
 
 import {
   mergeQuotaSnapshots,
@@ -81,10 +86,7 @@ export function applyQuotaEvent(state: QuotaState, input: QuotaEventInput): Quot
  * Called when an instance is removed or reconfigured. A snapshot outliving the
  * account it described is worse than no snapshot: it reads as current.
  */
-export function forgetQuota(
-  state: QuotaState,
-  providerInstanceId: ProviderInstanceId,
-): QuotaState {
+export function forgetQuota(state: QuotaState, providerInstanceId: ProviderInstanceId): QuotaState {
   if (!state.has(providerInstanceId)) return state;
   const next = new Map(state);
   next.delete(providerInstanceId);

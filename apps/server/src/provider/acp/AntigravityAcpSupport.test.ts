@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - expectations must follow the host path flavour.
+import * as NodePath from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -33,8 +36,8 @@ describe("buildAntigravityAcpSpawnInput", () => {
     const env = result.spawn.env ?? {};
     // One of the two home variables must point at the profile, and git identity
     // must still resolve to the real user.
-    expect([env["HOME"], env["USERPROFILE"]]).toContain("/profiles/gemini-1");
-    expect(env["GIT_CONFIG_GLOBAL"]).toBe("/home/real/.gitconfig");
+    expect([env["HOME"], env["USERPROFILE"]]).toContain(NodePath.resolve("/profiles/gemini-1"));
+    expect(env["GIT_CONFIG_GLOBAL"]).toBe(NodePath.join("/home/real", ".gitconfig"));
   });
 
   it("pins the bridge to the configured agy binary", () => {

@@ -93,10 +93,10 @@ All high-churn, all pure conflict, none of it worth it:
 This _is_ your merge checklist. Before each sync, it tells you exactly where to look.
 If a change isn't in this table, it shouldn't exist.
 
-| Upstream file | Change | Why | Task |
-| ------------- | ------ | --- | ---- |
-| `packages/contracts/package.json` | added `./quota` and `./antigravity` subpath exports | so those modules resolve; both schemas live in new files | B1, A1 |
-| `apps/server/src/provider/builtInDrivers.ts` | _(pending)_ one line registering `AntigravityDriver` | adding a driver needs no other upstream edit | A3 |
+| Upstream file                                | Change                                               | Why                                                      | Task   |
+| -------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------- | ------ |
+| `packages/contracts/package.json`            | added `./quota` and `./antigravity` subpath exports  | so those modules resolve; both schemas live in new files | B1, A1 |
+| `apps/server/src/provider/builtInDrivers.ts` | _(pending)_ one line registering `AntigravityDriver` | adding a driver needs no other upstream edit             | A3     |
 
 ---
 

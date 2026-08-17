@@ -14,7 +14,7 @@
  *
  * @module provider/acp/AntigravityAcpSupport
  */
-import type { AntigravitySettings } from "@t3tools/contracts";
+import type { AntigravitySettings } from "@t3tools/contracts/antigravity";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -101,11 +101,10 @@ export function buildAntigravityAcpSpawnInput(
   };
 }
 
-interface AntigravityAcpRuntimeInput
-  extends Omit<
-    AcpSessionRuntime.AcpSessionRuntimeOptions,
-    "authMethodId" | "clientCapabilities" | "spawn"
-  > {
+interface AntigravityAcpRuntimeInput extends Omit<
+  AcpSessionRuntime.AcpSessionRuntimeOptions,
+  "authMethodId" | "clientCapabilities" | "spawn"
+> {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly settings: AntigravityAcpSettings;
   readonly environment?: NodeJS.ProcessEnv;
@@ -119,11 +118,7 @@ export const makeAntigravityAcpRuntime = (
   Crypto.Crypto | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { spawn } = buildAntigravityAcpSpawnInput(
-      input.settings,
-      input.cwd,
-      input.environment,
-    );
+    const { spawn } = buildAntigravityAcpSpawnInput(input.settings, input.cwd, input.environment);
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,
@@ -149,9 +144,7 @@ export const makeAntigravityAcpRuntime = (
  * the CLI resolves models by the exact id `agy models` printed, and rewriting
  * it risks producing one the CLI will not accept.
  */
-export function resolveAntigravityAcpModelId(
-  model: string | null | undefined,
-): string | undefined {
+export function resolveAntigravityAcpModelId(model: string | null | undefined): string | undefined {
   return model?.trim() || undefined;
 }
 
@@ -174,10 +167,7 @@ export function applyAntigravityAcpModelSelection<E>(input: {
   readonly requestedModelId: string | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<string | undefined, E> {
-  if (
-    input.requestedModelId === undefined ||
-    input.requestedModelId === input.currentModelId
-  ) {
+  if (input.requestedModelId === undefined || input.requestedModelId === input.currentModelId) {
     return Effect.succeed(input.currentModelId);
   }
   return input.runtime

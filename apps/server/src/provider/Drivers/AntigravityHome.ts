@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - pure path/env helpers, no Effect runtime here.
 /**
  * Per-instance account isolation for Antigravity (`agy`).
  *
@@ -80,6 +81,7 @@ export function makeAntigravityEnvironment(
   const profileDir = resolveAntigravityProfileDir(config);
   if (!profileDir) return baseEnv;
 
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure helper keeps platform injectable for tests and non-Effect callers.
   const platform = options.platform ?? process.platform;
   const realHome =
     options.realHome ?? baseEnv["HOME"] ?? baseEnv["USERPROFILE"] ?? NodeOS.homedir();
@@ -87,8 +89,7 @@ export function makeAntigravityEnvironment(
   // Git identity is the first thing to break and the most confusing when it
   // does, so it is pinned back on both platforms. An explicit value already in
   // the environment wins — the user meant it.
-  const gitConfigGlobal =
-    baseEnv["GIT_CONFIG_GLOBAL"] ?? NodePath.join(realHome, ".gitconfig");
+  const gitConfigGlobal = baseEnv["GIT_CONFIG_GLOBAL"] ?? NodePath.join(realHome, ".gitconfig");
 
   if (platform === "win32") {
     return {
@@ -126,6 +127,7 @@ export function antigravityIsolationCaveats(
   options: AntigravityEnvironmentOptions = {},
 ): ReadonlyArray<string> {
   if (!resolveAntigravityProfileDir(config)) return [];
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure helper keeps platform injectable for tests and non-Effect callers.
   const platform = options.platform ?? process.platform;
   if (platform === "win32") return [];
   return [
@@ -146,7 +148,6 @@ export function makeAntigravityContinuationGroupKey(
   config: AntigravityProfileSettings,
   options: AntigravityEnvironmentOptions = {},
 ): string {
-  const profileDir =
-    resolveAntigravityProfileDir(config) ?? options.realHome ?? NodeOS.homedir();
+  const profileDir = resolveAntigravityProfileDir(config) ?? options.realHome ?? NodeOS.homedir();
   return `antigravity:profile:${profileDir}`;
 }

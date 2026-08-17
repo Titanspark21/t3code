@@ -29,9 +29,10 @@ describe("antigravityModeFlags", () => {
   });
 
   it("lets an explicit plan interaction mode outrank the runtime mode", () => {
-    expect(
-      antigravityModeFlags({ runtimeMode: "full-access", interactionMode: "plan" }),
-    ).toEqual(["--mode", "plan"]);
+    expect(antigravityModeFlags({ runtimeMode: "full-access", interactionMode: "plan" })).toEqual([
+      "--mode",
+      "plan",
+    ]);
   });
 
   it("never emits a permission bypass, for any mode", () => {

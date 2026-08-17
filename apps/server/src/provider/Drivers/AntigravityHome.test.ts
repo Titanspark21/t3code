@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - expectations must follow the host path flavour.
+import * as NodePath from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -8,6 +11,10 @@ import {
 } from "./AntigravityHome.ts";
 
 const realHome = "/home/real";
+// Path resolution follows the host, so expectations are built the same way
+// rather than hardcoding POSIX separators.
+const gitConfig = NodePath.join(realHome, ".gitconfig");
+const npmCache = NodePath.join(realHome, ".npm");
 
 const baseEnv: NodeJS.ProcessEnv = {
   HOME: realHome,
@@ -25,7 +32,7 @@ describe("resolveAntigravityProfileDir", () => {
 
   it("resolves to an absolute path", () => {
     const resolved = resolveAntigravityProfileDir({ profileDir: "/tmp/gemini-1" });
-    expect(resolved).toBe("/tmp/gemini-1");
+    expect(resolved).toBe(NodePath.resolve("/tmp/gemini-1"));
   });
 });
 
@@ -41,7 +48,7 @@ describe("makeAntigravityEnvironment", () => {
     });
 
     it("isolates the account through USERPROFILE", () => {
-      expect(env["USERPROFILE"]).toBe("/profiles/gemini-1");
+      expect(env["USERPROFILE"]).toBe(NodePath.resolve("/profiles/gemini-1"));
     });
 
     it("keeps HOME on the real profile so git does not follow agy", () => {
@@ -54,7 +61,7 @@ describe("makeAntigravityEnvironment", () => {
     });
 
     it("pins git identity back, which is what breaks first when it is not", () => {
-      expect(env["GIT_CONFIG_GLOBAL"]).toBe("/home/real/.gitconfig");
+      expect(env["GIT_CONFIG_GLOBAL"]).toBe(gitConfig);
     });
 
     it("leaves unrelated variables alone", () => {
@@ -69,15 +76,15 @@ describe("makeAntigravityEnvironment", () => {
     });
 
     it("isolates through HOME, the only selector agy honours", () => {
-      expect(env["HOME"]).toBe("/profiles/gemini-2");
+      expect(env["HOME"]).toBe(NodePath.resolve("/profiles/gemini-2"));
     });
 
     it("pins git identity back to the real home", () => {
-      expect(env["GIT_CONFIG_GLOBAL"]).toBe("/home/real/.gitconfig");
+      expect(env["GIT_CONFIG_GLOBAL"]).toBe(gitConfig);
     });
 
     it("keeps the npm cache on the real home", () => {
-      expect(env["npm_config_cache"]).toBe("/home/real/.npm");
+      expect(env["npm_config_cache"]).toBe(npmCache);
     });
   });
 
@@ -97,10 +104,8 @@ describe("makeAntigravityEnvironment", () => {
       platform: "win32",
       realHome,
     });
-    expect([env["HOME"], env["USERPROFILE"]]).not.toEqual([
-      "/profiles/gemini-1",
-      "/profiles/gemini-1",
-    ]);
+    const profile = NodePath.resolve("/profiles/gemini-1");
+    expect([env["HOME"], env["USERPROFILE"]]).not.toEqual([profile, profile]);
   });
 });
 
@@ -141,6 +146,6 @@ describe("makeAntigravityContinuationGroupKey", () => {
   it("falls back to the real home for the default account", () => {
     expect(
       makeAntigravityContinuationGroupKey({ profileDir: "" }, { realHome: "/home/real" }),
-    ).toBe("antigravity:profile:/home/real");
+    ).toBe(`antigravity:profile:${realHome}`);
   });
 });

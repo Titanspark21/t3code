@@ -52,7 +52,7 @@ export const QuotaSource = Schema.Literals([
 export type QuotaSource = typeof QuotaSource.Type;
 
 /** Percent used within a window: 0–100, clamped by the normalizer. */
-export const QuotaUsedPercent = Schema.Number.check(Schema.between(0, 100));
+export const QuotaUsedPercent = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 
 /**
  * One rolling window.
@@ -66,7 +66,7 @@ export const QuotaWindow = Schema.Struct({
   label: Schema.optional(TrimmedNonEmptyString),
   usedPercent: QuotaUsedPercent,
   resetsAt: Schema.optional(IsoDateTime),
-  windowDurationMins: Schema.optional(Schema.Number.check(Schema.positive())),
+  windowDurationMins: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0))),
 });
 export type QuotaWindow = typeof QuotaWindow.Type;
 
@@ -135,9 +135,7 @@ export function quotaWindowKindFromDuration(
  * exhausted, ties broken toward the longer window because it is the one that
  * takes days rather than hours to recover.
  */
-export function primaryQuotaWindow(
-  windows: ReadonlyArray<QuotaWindow>,
-): QuotaWindow | undefined {
+export function primaryQuotaWindow(windows: ReadonlyArray<QuotaWindow>): QuotaWindow | undefined {
   let best: QuotaWindow | undefined;
   for (const window of windows) {
     if (!best) {

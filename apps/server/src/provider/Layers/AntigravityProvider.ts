@@ -15,12 +15,10 @@
  *
  * @module provider/Layers/AntigravityProvider
  */
-import type {
-  AntigravitySettings,
-  ModelCapabilities,
-  ServerProviderModel,
-} from "@t3tools/contracts";
+import type { ModelCapabilities, ServerProviderModel } from "@t3tools/contracts";
+import type { AntigravitySettings } from "@t3tools/contracts/antigravity";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -132,17 +130,13 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
     never,
     ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
   > {
-    const checkedAt = new Date().toISOString();
+    const checkedAt = DateTime.formatIso(yield* DateTime.now);
     // Probes run under the same isolated environment as real sessions, so a
     // profile that is not logged in reports as unauthenticated here rather than
     // inheriting the default account's health and looking fine until first use.
     const environment = makeAntigravityEnvironment(config, baseEnvironment);
 
-    const fallbackModels = providerModelsFromSettings(
-      [],
-      config.customModels,
-      EMPTY_CAPABILITIES,
-    );
+    const fallbackModels = providerModelsFromSettings([], config.customModels, EMPTY_CAPABILITIES);
 
     if (!config.enabled) {
       return buildServerProvider({
@@ -160,11 +154,10 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       });
     }
 
-    const versionResult = yield* runAntigravityCommand(
-      config,
-      ["--version"],
-      environment,
-    ).pipe(Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS), Effect.result);
+    const versionResult = yield* runAntigravityCommand(config, ["--version"], environment).pipe(
+      Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
+      Effect.result,
+    );
 
     if (Result.isFailure(versionResult)) {
       const error = versionResult.failure;

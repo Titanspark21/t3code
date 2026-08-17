@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off - pure normalizer; converts provider epochs, reads no clock.
 /**
  * Normalizes each provider's `account.rate-limits.updated` payload into the
  * shared `AccountQuotaSnapshot` shape.
@@ -31,7 +32,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readRecord(source: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+function readRecord(
+  source: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
   const value = source[key];
   return isRecord(value) ? value : undefined;
 }
@@ -171,8 +175,7 @@ export function normalizeClaudeRateLimits(input: {
   if (!isRecord(input.payload)) return undefined;
 
   const outer = readRecord(input.payload, "rateLimits") ?? input.payload;
-  const snapshot =
-    readRecord(outer, "rateLimits") ?? readRecord(outer, "rate_limits") ?? outer;
+  const snapshot = readRecord(outer, "rateLimits") ?? readRecord(outer, "rate_limits") ?? outer;
 
   const windows: Array<QuotaWindow> = [];
 
@@ -262,7 +265,7 @@ export function mergeQuotaSnapshots(
     groups: [...groupsByKey.values()],
     source: next.source,
     observedAt: next.observedAt,
-    ...(next.planType ?? previous.planType
+    ...((next.planType ?? previous.planType)
       ? { planType: next.planType ?? previous.planType! }
       : {}),
     ...(next.limitReached ? { limitReached: next.limitReached } : {}),
