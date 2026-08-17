@@ -63,54 +63,63 @@ The one provider upstream doesn't have. Upstream ships five drivers registered i
 `apps/server/src/provider/builtInDrivers.ts`; their docs say adding one needs "no
 orchestration, contract, or client change."
 
-### Set expectations first
+### A1 — transport spike: ANSWERED
 
-In OmniLink, agy was just a PTY — run `agy`, you get the real TUI, done. **That path does
-not exist here.** t3code has no TUI; the server must speak a machine protocol to the agent.
-So "type `agy-1` and boom, there's an agent" needs a transport underneath it, and which
-transport you get decides how good the result is:
+`agy` has **no native ACP**. There is an open upstream request for an `--acp` flag
+([antigravity-cli#31](https://github.com/google-antigravity/antigravity-cli/issues/31)),
+and several community adapters wrap the CLI today
+([agy-acp](https://github.com/shindgew/agy-acp),
+[antigravity-acp](https://github.com/shubzkothekar/antigravity-acp),
+[agy-agent-acp](https://github.com/jameslunardi/agy-agent-acp)). Zed has a registry
+discussion open for it too.
 
-| Transport                                                                                                              | Cost                                  | What you get                                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **ACP** — if `agy` speaks it                                                                                           | ~1,200 lines, like `CursorAdapter.ts` | Everything. Streaming, tool calls, approvals, interrupts. Reuses `packages/effect-acp`                                                                                                           |
-| **`agentapi` HTTP wrapper** — `<profile>\.gemini\antigravity-cli\bin\agentapi.bat`, recorded in OmniLink `SPEC.md` §11 | medium                                | Probably streaming and tools; approvals uncertain                                                                                                                                                |
-| **`agy --print` one-shot per turn** — what the old fork did                                                            | ~600 lines, already salvaged          | Works, but: no streaming (the whole reply lands at once), no tool-call visibility, no approval prompts, and the entire conversation is replayed into every prompt — which burns quota and drifts |
+**Decision: speak ACP to a configurable bridge process.** Reasons:
 
-- [ ] **A1 — Spike: find out which transport `agy` actually supports.**
-      Check in that order: ACP first, then `agentapi`, then `--print`. Run `agy --help`,
-      look for an ACP/experimental-acp flag, and try `agentapi.bat`.
-      OmniLink `SPEC.md` §13.6 has the verified 1.1.5 flag set: `--continue`/`-c`,
-      `--conversation <ID>`, `--model`, `--effort low|medium|high`,
-      `--mode accept-edits|plan`, `--project`, `--prompt-interactive`, `--sandbox`.
-      _Gate: a written answer naming the transport and why, before any adapter code._
+- it reuses `packages/effect-acp` and `apps/server/src/provider/acp/AcpSessionRuntime.ts`
+  wholesale, the same path Cursor and Grok already take
+- streaming, tool calls, approvals and interrupts all work, unlike `agy --print`
+- when Google ships `--acp`, the only change is the default: point `bridgeCommand` at
+  `agy` with `--acp` in `bridgeArgs`. Nothing downstream moves
 
-- [ ] **A2 — Write the driver + adapter.** New files only:
-      `apps/server/src/provider/Drivers/AntigravityDriver.ts`,
-      `apps/server/src/provider/Layers/AntigravityAdapter.ts`,
-      `.../Layers/AntigravityProvider.ts`, plus **one line** in `builtInDrivers.ts`.
-      Model the shape on `CursorDriver.ts` + `CursorAdapter.ts` (ACP) or `OpenCodeDriver.ts`.
-      Three things the old fork got wrong — fix them here: 1. **Account isolation must not break git.** Override `USERPROFILE` only, and pass
-      `HOME`, `APPDATA`, `LOCALAPPDATA` and `GIT_CONFIG_GLOBAL` back to the _real_
-      profile (OmniLink `SPEC.md` §5.2). The salvaged `GeminiCliHome.ts` overrides both
-      `HOME` and `USERPROFILE` with no passthrough, which redirects every child process —
-      expect commits with no author, push failures, and npm re-downloading everything. 2. **Never emit `--dangerously-skip-permissions`.** The old fork sends it for every
-      full-access turn. Map upstream's modes to `--mode plan` / `--mode accept-edits`,
-      and for full access send no permission flag at all rather than the bypass. This is
-      the "extra guardrails for agy" decision. 3. **Read models from `agy models`, not a hardcoded list.** agy changes fast; a
-      hardcoded catalogue rots silently. Note effort is baked into some model ids _and_
-      settable via `--effort` — reconcile in the picker (OmniLink `PLAN.md` records this).
-      _Gate: two isolated agy accounts run concurrently; a turn in one writes only into its
-      own profile dir; `git commit` inside an agy session has the right author._
+The bridge command is a setting with **no default**, deliberately: an unconfigured
+instance reports "no ACP bridge configured" with the fix, rather than silently spawning
+some package off the network.
 
-- [ ] **A3 — Account presets in the Add Provider dialog.** One-click "Antigravity 1/2"
-      filling the profile dir, as the old fork had (`omni/salvage/src/.../providerProfilePresets.ts`).
-      Note upstream already has a stubbed, disabled `gemini` driver kind in
-      `AddProviderInstanceDialog.tsx` — decide whether to take that slot or add your own.
+### Built
 
-- [ ] **A4 — First-run trust prompt.** A fresh agy session in a new project asks "Do you
-      trust the contents of this project?". It must surface to you, never be auto-answered.
+- [x] **Settings** — `packages/contracts/src/antigravity.ts`. New file, no edit to
+      `settings.ts`: `providerInstances` treats driver config as opaque exactly so a fork
+      can add a driver.
+- [x] **Account isolation** — `AntigravityHome.ts` + tests. Windows moves `USERPROFILE`
+      only and pins `HOME`/`APPDATA`/`LOCALAPPDATA`/`GIT_CONFIG_GLOBAL` back to the real
+      user; POSIX must move `HOME` and pins git identity and the npm cache back, with the
+      residual ssh redirection reported by `antigravityIsolationCaveats` instead of hidden.
+      Fixes the previous fork's defect (both vars redirected, no passthrough).
+- [x] **Launch mapping** — `AntigravityLaunch.ts` + tests. Never emits
+      `--dangerously-skip-permissions`; `full-access` maps to `--mode accept-edits`, and
+      bypass flags pasted into settings are stripped and reported. Models parsed from
+      `agy models`.
+- [x] **Health probe** — `Layers/AntigravityProvider.ts`. Runs `--version` and `agy models`
+      under the isolated environment, so a profile that is not logged in reports as such
+      instead of inheriting the default account's health.
 
----
+### Left to do
+
+- [ ] **A2 — the ACP adapter.** `Layers/AntigravityAdapter.ts`, modelled on
+      `CursorAdapter.ts` (1,182 lines) with `AntigravityAcpSupport.ts` beside it like
+      `GrokAcpSupport.ts` (108 lines). The shared `AcpSessionRuntime.ts` does the protocol;
+      the adapter maps its events onto orchestration events.
+      **Not attempted blind** — there is no generic adapter factory to parameterize, and
+      ~1,200 lines written without a typechecker would not compile. Do this with `vp`
+      running. Start by diffing `CursorAdapter.ts` against `GrokAdapter.ts` to see which
+      parts are genuinely provider-specific.
+- [ ] **A3 — driver + registration.** `Drivers/AntigravityDriver.ts` following
+      `CursorDriver.ts`, then one line in `builtInDrivers.ts`. Blocked on A2, since the
+      driver's `create` must return an adapter.
+- [ ] **A4 — account presets** in the Add Provider dialog ("Antigravity 1/2", filling the
+      profile dir), as the old fork had — see `omni/salvage/src/.../providerProfilePresets.ts`.
+- [ ] **A5 — first-run trust prompt.** A fresh agy session in a new project asks "Do you
+      trust the contents of this project?". It must surface, never be auto-answered.
 
 ## Stage B — Quota panel
 

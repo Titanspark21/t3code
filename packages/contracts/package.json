@@ -22,6 +22,10 @@
     "./quota": {
       "types": "./src/quota.ts",
       "import": "./src/quota.ts"
+    },
+    "./antigravity": {
+      "types": "./src/antigravity.ts",
+      "import": "./src/antigravity.ts"
     }
   },
   "scripts": {
