@@ -93,10 +93,17 @@ All high-churn, all pure conflict, none of it worth it:
 This _is_ your merge checklist. Before each sync, it tells you exactly where to look.
 If a change isn't in this table, it shouldn't exist.
 
-| Upstream file                                | Change                                               | Why                                                      | Task   |
-| -------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------- | ------ |
-| `packages/contracts/package.json`            | added `./quota` and `./antigravity` subpath exports  | so those modules resolve; both schemas live in new files | B1, A1 |
-| `apps/server/src/provider/builtInDrivers.ts` | _(pending)_ one line registering `AntigravityDriver` | adding a driver needs no other upstream edit             | A3     |
+| Upstream file                                                      | Change                                                      | Why                                                             | Task |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------- | ---- |
+| `packages/contracts/package.json`                                  | added `./quota` and `./antigravity` subpath exports         | so those modules resolve; both schemas live in new files        | B1   |
+| `apps/server/src/provider/builtInDrivers.ts`                       | _(pending)_ one line registering `AntigravityDriver`        | adding a driver needs no other upstream edit                    | A3   |
+| `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` | _(pending)_ subscribe the quota reducer to runtime events   | the only place `account.rate-limits.updated` already lands      | B1b  |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx`                | _(pending)_ one line mounting the quota panel in the footer | both sidebar shells render this footer, so one edit covers both | B2   |
+
+**Conflict warning on the last two.** Upstream's unmerged `t3code/usage-limits-analytics`
+branch edits _both_ of those files for the same feature. If it lands, expect a real conflict
+in each, not a textual one — resolve it by keeping this fork's `ProviderInstanceId` keying
+and dropping theirs. See `omni/PLAN.md` B0.
 
 ---
 
