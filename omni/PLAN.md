@@ -124,14 +124,21 @@ the correct one.
 ### Left to do
 
 - [ ] **B1b — Wire the reducer to the event stream and the wire.** The single highest-value
-      task in this plan; everything visible depends on it. - subscribe at `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` —
-      that is where runtime events already land, and it is the file upstream's branch
-      touched for the same reason - hold the state in a fork-local service (`apps/server/src/quota/QuotaService.ts`),
-      not inside an existing upstream service - expose it: an RPC returning the snapshot map, plus a push so the panel is live
-      rather than polled - client state in `apps/web/src/state/quota.ts`, merging across environments the way
-      `apps/web/src/state/accountLimits.ts` does on the upstream branch - **contracts only for mobile.** `apps/mobile/` stays untouched per `OMNI.md`; the
-      panel is web + desktop. Say so in the PR body so it isn't read as an oversight.
-      _Gate: real Codex and Claude figures land in the client, observed live, not in a test._
+      task in this plan; everything visible depends on it.
+
+  - Subscribe at `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` — that
+    is where runtime events already land, and it is the file upstream's branch touched for
+    the same reason.
+  - Hold the state in a fork-local service (`apps/server/src/quota/QuotaService.ts`), not
+    inside an existing upstream service.
+  - Expose it: an RPC returning the snapshot map, plus a push so the panel is live rather
+    than polled.
+  - Client state in `apps/web/src/state/quota.ts`, merging across environments the way
+    `apps/web/src/state/accountLimits.ts` does on the upstream branch.
+  - **Contracts only for mobile.** `apps/mobile/` stays untouched per `OMNI.md`; the panel
+    is web + desktop. Say so in the commit body so it isn't read as an oversight.
+
+  _Gate: real Codex and Claude figures land in the client, observed live, not in a test._
 
 - [ ] **B2 — The panel. Bottom-left, always visible.**
       Mount inside `SidebarChromeFooter` in

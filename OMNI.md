@@ -109,12 +109,16 @@ and dropping theirs. See `omni/PLAN.md` B0.
 
 ## Upstream what you can
 
-Every patch they accept is one you stop carrying. Two good candidates in `omni/PLAN.md`:
+Every patch they accept is one you stop carrying. Candidates in `omni/PLAN.md`:
 
-- **B4** — the quota panel. It consumes `account.rate-limits.updated` events both adapters
-  already emit and nothing currently reads. Small, useful, touches nothing architectural.
 - **C5** — Windows binary probing. Proving a candidate CLI runs `--version` rather than
-  trusting that a file exists.
+  trusting that a file exists. Still the cleanest offer: small, self-contained, and nobody
+  upstream is working on it.
+- **B4** — _rescoped._ The quota panel is no longer a gap they have; upstream built their
+  own on `t3code/usage-limits-analytics` in August. What's left to offer is the narrower
+  fix that their snapshot-per-provider keying breaks as soon as one provider has two
+  accounts. Make that offer only after B1b and B2 prove the instance-keyed version works
+  here.
 
 They say big features won't be accepted. Neither of these is a big feature.
 
