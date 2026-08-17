@@ -95,7 +95,7 @@ If a change isn't in this table, it shouldn't exist.
 
 | Upstream file | Change | Why | Task |
 | ------------- | ------ | --- | ---- |
-| _(none yet)_  |        |     |      |
+| `packages/contracts/package.json` | added a `./quota` subpath export | so `@t3tools/contracts/quota` resolves; the schema itself lives in a new file | B1 |
 
 ---
 
