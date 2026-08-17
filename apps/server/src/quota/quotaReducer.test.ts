@@ -1,0 +1,243 @@
+import { describe, expect, it } from "@effect/vitest";
+
+import type { ProviderInstanceId, ProviderRuntimeEvent } from "@t3tools/contracts";
+
+import {
+  applyQuotaEvent,
+  earliestReset,
+  emptyQuotaState,
+  forgetQuota,
+  isQuotaSnapshotStale,
+  isRateLimited,
+  QUOTA_SNAPSHOT_STALE_AFTER_MS,
+} from "./quotaReducer.ts";
+import { normalizeCodexRateLimits } from "./normalizeRateLimits.ts";
+
+const instanceId = "codex-1" as ProviderInstanceId;
+const now = Date.parse("2026-08-14T12:00:00.000Z");
+const observedAt = "2026-08-14T12:00:00.000Z";
+
+function rateLimitEvent(snapshot: Record<string, unknown>): ProviderRuntimeEvent {
+  return {
+    type: "account.rate-limits.updated",
+    payload: { rateLimits: { rateLimits: snapshot } },
+  } as unknown as ProviderRuntimeEvent;
+}
+
+const codexEvent = rateLimitEvent({
+  primary: { usedPercent: 40, windowDurationMins: 300 },
+  secondary: { usedPercent: 82, windowDurationMins: 10080 },
+});
+
+describe("applyQuotaEvent", () => {
+  it("records a snapshot for a known driver", () => {
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: codexEvent,
+      observedAt,
+    });
+    expect(state.get(instanceId)?.groups[0]?.windows).toHaveLength(2);
+  });
+
+  it("ignores events that are not quota events", () => {
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: { type: "turn.completed", payload: {} } as unknown as ProviderRuntimeEvent,
+      observedAt,
+    });
+    expect(state).toBe(emptyQuotaState);
+  });
+
+  it("returns the same state object when nothing changed, so callers can skip a publish", () => {
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "opencode",
+      event: codexEvent,
+      observedAt,
+    });
+    expect(state).toBe(emptyQuotaState);
+  });
+
+  it("refuses to guess at an unknown driver's payload", () => {
+    // A fork's driver, or a newer release's. Guessing produces a confident
+    // wrong number, which is worse than showing nothing.
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "someFutureDriver",
+      event: codexEvent,
+      observedAt,
+    });
+    expect(state.size).toBe(0);
+  });
+
+  it("merges a later sparse update onto the earlier one", () => {
+    const first = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: codexEvent,
+      observedAt,
+    });
+    const second = applyQuotaEvent(first, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: rateLimitEvent({ primary: { usedPercent: 61, windowDurationMins: 300 } }),
+      observedAt: "2026-08-14T12:30:00.000Z",
+    });
+    const windows = second.get(instanceId)!.groups[0]!.windows;
+    expect(windows).toHaveLength(2);
+    expect(windows.find((w) => w.kind === "short")?.usedPercent).toBe(61);
+    expect(windows.find((w) => w.kind === "long")?.usedPercent).toBe(82);
+  });
+
+  it("keeps instances independent", () => {
+    const other = "codex-2" as ProviderInstanceId;
+    let state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: codexEvent,
+      observedAt,
+    });
+    state = applyQuotaEvent(state, {
+      providerInstanceId: other,
+      driverKind: "codex",
+      event: rateLimitEvent({ primary: { usedPercent: 5, windowDurationMins: 300 } }),
+      observedAt,
+    });
+    expect(state.get(instanceId)?.groups[0]?.windows[0]?.usedPercent).toBe(40);
+    expect(state.get(other)?.groups[0]?.windows[0]?.usedPercent).toBe(5);
+  });
+});
+
+describe("forgetQuota", () => {
+  it("drops an instance so a snapshot cannot outlive the account it described", () => {
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: instanceId,
+      driverKind: "codex",
+      event: codexEvent,
+      observedAt,
+    });
+    expect(forgetQuota(state, instanceId).size).toBe(0);
+  });
+
+  it("is identity for an unknown instance", () => {
+    expect(forgetQuota(emptyQuotaState, instanceId)).toBe(emptyQuotaState);
+  });
+});
+
+describe("isRateLimited", () => {
+  const limited = normalizeCodexRateLimits({
+    providerInstanceId: instanceId,
+    observedAt,
+    payload: {
+      rateLimits: {
+        rateLimits: {
+          rateLimitReachedType: "rate_limit_reached",
+          primary: {
+            usedPercent: 100,
+            windowDurationMins: 300,
+            resetsAt: Math.floor(Date.parse("2026-08-14T17:00:00.000Z") / 1000),
+          },
+        },
+      },
+    },
+  })!;
+
+  it("is true while the limit is live and the reset is still ahead", () => {
+    expect(isRateLimited(limited, now)).toBe(true);
+  });
+
+  it("is false once the published reset time has passed", () => {
+    // The account-stuck bug: the window rolled over, but the provider has had
+    // no reason to publish anything since, so nothing cleared the flag.
+    expect(isRateLimited(limited, Date.parse("2026-08-14T17:00:01.000Z"))).toBe(false);
+  });
+
+  it("is false for a stale snapshot even with no reset time", () => {
+    const noReset = normalizeCodexRateLimits({
+      providerInstanceId: instanceId,
+      observedAt,
+      payload: {
+        rateLimits: { rateLimits: { rateLimitReachedType: "rate_limit_reached" } },
+      },
+    })!;
+    expect(isRateLimited(noReset, now)).toBe(true);
+    expect(isRateLimited(noReset, now + QUOTA_SNAPSHOT_STALE_AFTER_MS + 1)).toBe(false);
+  });
+
+  it("is false when no limit was reported, whatever the percentage", () => {
+    const busy = normalizeCodexRateLimits({
+      providerInstanceId: instanceId,
+      observedAt,
+      payload: {
+        rateLimits: { rateLimits: { primary: { usedPercent: 100, windowDurationMins: 300 } } },
+      },
+    })!;
+    // 100% used is not the same fact as "the provider refused the work".
+    expect(isRateLimited(busy, now)).toBe(false);
+  });
+
+  it("is false for a missing snapshot", () => {
+    expect(isRateLimited(undefined, now)).toBe(false);
+  });
+});
+
+describe("isQuotaSnapshotStale", () => {
+  const fresh = normalizeCodexRateLimits({
+    providerInstanceId: instanceId,
+    observedAt,
+    payload: {
+      rateLimits: { rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300 } } },
+    },
+  })!;
+
+  it("is false inside the window", () => {
+    expect(isQuotaSnapshotStale(fresh, now + 60_000)).toBe(false);
+  });
+
+  it("is true past it", () => {
+    expect(isQuotaSnapshotStale(fresh, now + QUOTA_SNAPSHOT_STALE_AFTER_MS + 1)).toBe(true);
+  });
+
+  it("treats an unparseable timestamp as stale", () => {
+    expect(isQuotaSnapshotStale({ ...fresh, observedAt: "not a date" }, now)).toBe(true);
+  });
+});
+
+describe("earliestReset", () => {
+  it("finds the soonest reset across windows", () => {
+    const snapshot = normalizeCodexRateLimits({
+      providerInstanceId: instanceId,
+      observedAt,
+      payload: {
+        rateLimits: {
+          rateLimits: {
+            primary: {
+              usedPercent: 10,
+              windowDurationMins: 300,
+              resetsAt: Math.floor(Date.parse("2026-08-14T17:00:00.000Z") / 1000),
+            },
+            secondary: {
+              usedPercent: 80,
+              windowDurationMins: 10080,
+              resetsAt: Math.floor(Date.parse("2026-08-18T00:00:00.000Z") / 1000),
+            },
+          },
+        },
+      },
+    })!;
+    expect(earliestReset(snapshot)).toBe(Date.parse("2026-08-14T17:00:00.000Z"));
+  });
+
+  it("is undefined when no window published one", () => {
+    const snapshot = normalizeCodexRateLimits({
+      providerInstanceId: instanceId,
+      observedAt,
+      payload: {
+        rateLimits: { rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300 } } },
+      },
+    })!;
+    expect(earliestReset(snapshot)).toBeUndefined();
+  });
+});

@@ -1,0 +1,156 @@
+/**
+ * Pure reducer turning provider runtime events into the quota read model.
+ *
+ * Kept separate from the service so the rules that matter — which driver's
+ * payload gets which normalizer, when a limit clears, what a stale snapshot
+ * looks like — are testable without an Effect runtime or a live provider.
+ *
+ * @module quota/quotaReducer
+ */
+import type { AccountQuotaSnapshot } from "@t3tools/contracts/quota";
+import type { ProviderDriverKind, ProviderInstanceId, ProviderRuntimeEvent } from "@t3tools/contracts";
+
+import {
+  mergeQuotaSnapshots,
+  normalizeClaudeRateLimits,
+  normalizeCodexRateLimits,
+} from "./normalizeRateLimits.ts";
+
+/** Quota keyed by provider instance. Absent means "nothing published yet". */
+export type QuotaState = ReadonlyMap<ProviderInstanceId, AccountQuotaSnapshot>;
+
+export const emptyQuotaState: QuotaState = new Map();
+
+/**
+ * Pick the normalizer for a driver.
+ *
+ * Unknown drivers return `undefined` rather than falling back to a "generic"
+ * parse. A driver this build has never seen — a fork's, a newer release's —
+ * has an unknown payload shape, and guessing at it produces a confident wrong
+ * number, which is the one outcome this whole module is built to avoid.
+ */
+function normalizerFor(driverKind: string) {
+  switch (driverKind) {
+    case "codex":
+      return normalizeCodexRateLimits;
+    case "claudeAgent":
+      return normalizeClaudeRateLimits;
+    default:
+      return undefined;
+  }
+}
+
+export interface QuotaEventInput {
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly driverKind: ProviderDriverKind | string;
+  readonly event: ProviderRuntimeEvent;
+  readonly observedAt: string;
+}
+
+/**
+ * Apply one runtime event.
+ *
+ * Returns the same state object when nothing changed, so callers can skip a
+ * publish on identity. Most events are not quota events, and re-rendering the
+ * sidebar on every assistant delta would be a real cost.
+ */
+export function applyQuotaEvent(state: QuotaState, input: QuotaEventInput): QuotaState {
+  if (input.event.type !== "account.rate-limits.updated") return state;
+
+  const normalize = normalizerFor(input.driverKind);
+  if (!normalize) return state;
+
+  const snapshot = normalize({
+    providerInstanceId: input.providerInstanceId,
+    payload: input.event.payload,
+    observedAt: input.observedAt,
+  });
+  if (!snapshot) return state;
+
+  const previous = state.get(input.providerInstanceId);
+  const merged = mergeQuotaSnapshots(previous, snapshot);
+
+  const next = new Map(state);
+  next.set(input.providerInstanceId, merged);
+  return next;
+}
+
+/**
+ * Forget an instance's quota.
+ *
+ * Called when an instance is removed or reconfigured. A snapshot outliving the
+ * account it described is worse than no snapshot: it reads as current.
+ */
+export function forgetQuota(
+  state: QuotaState,
+  providerInstanceId: ProviderInstanceId,
+): QuotaState {
+  if (!state.has(providerInstanceId)) return state;
+  const next = new Map(state);
+  next.delete(providerInstanceId);
+  return next;
+}
+
+/**
+ * Age at which a snapshot stops being trustworthy.
+ *
+ * Providers publish rate limits as a side effect of doing work, so an idle
+ * account simply stops reporting. Six hours outlives the short window
+ * everywhere it is currently observed, so a snapshot older than this is
+ * describing a window that has since reset.
+ */
+export const QUOTA_SNAPSHOT_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Whether a snapshot is old enough that the UI should mark it stale rather
+ * than present it as the current figure.
+ */
+export function isQuotaSnapshotStale(
+  snapshot: AccountQuotaSnapshot,
+  now: number = Date.now(),
+): boolean {
+  const observed = Date.parse(snapshot.observedAt);
+  if (Number.isNaN(observed)) return true;
+  return now - observed > QUOTA_SNAPSHOT_STALE_AFTER_MS;
+}
+
+/**
+ * Whether an instance should be treated as rate-limited right now.
+ *
+ * Driven by the provider's own `limitReached` signal, never by a percentage:
+ * a window can report 100% and still accept work, and a limit can be reached
+ * below 100% on a different axis such as credits.
+ *
+ * A stale snapshot never reports limited. This is the specific bug that makes
+ * an account look permanently broken — you hit a limit, the window resets
+ * hours later, and the UI is still refusing to let you continue because
+ * nothing ever cleared the flag.
+ */
+export function isRateLimited(
+  snapshot: AccountQuotaSnapshot | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!snapshot?.limitReached) return false;
+  if (isQuotaSnapshotStale(snapshot, now)) return false;
+
+  // A published reset time in the past clears it too: the window has rolled
+  // over even though the provider has not yet had reason to say so.
+  const soonest = earliestReset(snapshot);
+  if (soonest !== undefined && soonest <= now) return false;
+
+  return true;
+}
+
+/** Earliest reset across every window, as epoch ms. */
+export function earliestReset(snapshot: AccountQuotaSnapshot): number | undefined {
+  let earliest: number | undefined;
+  for (const group of snapshot.groups) {
+    for (const window of group.windows) {
+      if (!window.resetsAt) continue;
+      const parsed = Date.parse(window.resetsAt);
+      if (Number.isNaN(parsed)) continue;
+      if (earliest === undefined || parsed < earliest) earliest = parsed;
+    }
+  }
+  return earliest;
+}
