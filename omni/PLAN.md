@@ -105,6 +105,13 @@ some package off the network.
 
 ### Left to do
 
+- [x] **ACP support surface** — `acp/AntigravityAcpSupport.ts` + tests. The provider-specific
+      half of the adapter, mirroring `GrokAcpSupport.ts`: bridge spawn under the isolated
+      profile, `AGY_BINARY` pinned so the bridge cannot resolve a different CLI than the
+      health probe checked, bypass flags stripped from user-editable bridge arguments, and
+      model selection passed through by exact id (agy bakes the reasoning tier into the id,
+      so there is no separate effort axis).
+
 - [ ] **A2 — the ACP adapter.** `Layers/AntigravityAdapter.ts`, modelled on
       `CursorAdapter.ts` (1,182 lines) with `AntigravityAcpSupport.ts` beside it like
       `GrokAcpSupport.ts` (108 lines). The shared `AcpSessionRuntime.ts` does the protocol;
