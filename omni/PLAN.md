@@ -217,6 +217,74 @@ the correct one.
 
 ## Stage C — the limit failure, and the rest
 
+- [ ] **C1 — Fix completed turns that remain stuck in “Working”.** This is a real observed
+      failure, not a timer-display bug. A turn can finish, and its final assistant summary (and
+      sometimes its final tool rows) can already be visible, while T3 Code keeps the thread in
+      `working` for hours. The same stale tool calls remain on screen, the Working timer keeps
+      increasing, and the red Stop button can do nothing. The reliable workaround observed on the
+      Windows fork is to send another message, creating a fresh turn, then Stop that new turn; only
+      then does the thread settle and the already-finished summary remain visible.
+
+      **Investigation finding:** transcript completion and lifecycle completion are separate event
+      paths. `ChatView`/`derivePhase` treats the projected session/thread `running` state as
+      authoritative for the Working UI. `ProviderService.sendTurn` persists `running` plus an
+      `activeTurnId`, and normal completion depends on a later terminal runtime event being mapped
+      and ingested to clear it. The red button calls turn interrupt only; `ProviderService.interruptTurn`
+      does not reconcile the persisted/projected state afterward. Therefore, if the provider has
+      actually become idle but the terminal lifecycle event was lost, rejected or never mapped,
+      interrupt can legitimately have nothing left to interrupt and the stale `running` projection
+      survives forever. Codex has an additional sharp edge: terminal `turn/completed` mapping can
+      currently return no canonical event when the native payload fails schema decoding, and its
+      child-thread notification routing is complex enough that this exact class of root completion
+      loss has happened before (there is already a guard against registering `/root` as its own
+      child). Claude likewise relies on its result/stream terminal path rather than interrupt itself
+      making the session ready. Fix the invariant across providers, not just one symptom.
+
+      Implementation order:
+      1. **Lock the bug down with regression tests first.** Cover “final assistant item visible but
+         lifecycle projection still running”, “provider is already idle when Stop is pressed”, and
+         “a normal active turn is interrupted”. Put common lifecycle tests in
+         `ProviderRuntimeIngestion.test.ts` / `ProviderCommandReactor.test.ts`; add provider-focused
+         cases in Codex and Claude adapter/runtime tests. Include a Codex multi-agent fixture where
+         root and child notifications are interleaved so a child can never consume the root
+         `turn/completed` event.
+      2. **Make Stop reconcile, not merely request an interrupt.** After the provider interrupt
+         path returns, obtain provider-authoritative session state. If the provider confirms there
+         is no active turn (ready/idle/error/closed), repair the canonical session projection and
+         persisted binding by clearing `activeTurnId` and applying the matching terminal/ready
+         state. If work is genuinely still active, keep it Working. Do not treat an orchestration
+         turn id as a provider-native turn id.
+      3. **Harden terminal-event ingestion.** A native terminal event must never disappear silently.
+         Codex terminal decode/routing failures need a logged/observable fallback that triggers
+         reconciliation instead of returning `[]` and leaving `running` behind. Treat an
+         authoritative root-thread idle/ready signal as another reconciliation opportunity, while
+         keeping child-thread idle signals isolated from the parent. Apply the same invariant at
+         provider stream exit/error boundaries.
+      4. **Repair stale persisted state on reconnect/reload.** When a live provider session says it
+         is ready/idle but the saved binding says running, reconcile to the provider rather than
+         resurrecting an hours-old Working state. Preserve queued/follow-up semantics: never clear
+         `running` if another provider turn is actually active or queued to become active.
+      5. **Make the Stop UX reflect backend truth.** While an interrupt/reconciliation request is
+         in flight, show a bounded “Stopping…” state and prevent duplicate clicks. When the backend
+         reports already-idle/reconciled, immediately restore the Send control and stop the timer.
+         Do not optimistically mark a genuinely active agent finished just to make the UI look
+         responsive.
+      6. **Add diagnostics for the invariant.** Log/measure repairs such as “projection running,
+         provider idle”, dropped/undecodable terminal events, and interrupts that found no active
+         provider turn. That makes any remaining provider-specific recurrence diagnosable from one
+         event trail instead of another multi-hour visual hang.
+
+      **Do not solve this with an elapsed-time cutoff.** Legitimate agents may run for hours. State
+      must end because a provider-terminal/idle condition is confirmed, never because the Working
+      timer crossed an arbitrary duration.
+
+      _Gate: after every normal Codex and Claude completion the final summary remains visible,
+      Working ends promptly, the timer stops, stale live tool rows are terminal, and Send returns;
+      Stop terminates a genuinely active turn; Stop also clears a stale-running projection when the
+      provider is already idle; no second user message is required; reload/reconnect cannot revive
+      a completed turn as Working; long-running legitimate turns remain Working; queued follow-ups
+      and Codex multi-agent child turns cannot incorrectly settle the parent._
+
 - [ ] **C2 — The unrecoverable chat. Reproduce it before fixing it.** Expanded — this is the
       bug you actually hit, and it is currently the fork's most user-visible defect.
       _Symptom, from the developer:_ hitting a usage limit produces an error and the thread
@@ -274,7 +342,7 @@ the correct one.
       data change, not surgery. Do this last, or whenever you feel like it — it must never
       block anything above.
 
-**C1 removed — upstream already ships the honest context-window meter.**
+**Old context-window item removed — upstream already ships the honest context-window meter.**
 `ContextWindowMeter.tsx` is fed by `deriveLatestContextWindowSnapshot`, which reads the latest
 `context-window.updated` activity rather than cumulative history. Server ingestion creates that
 activity from canonical `thread.token-usage.updated` runtime events. Codex emits those events from
