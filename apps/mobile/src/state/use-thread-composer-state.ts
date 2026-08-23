@@ -236,6 +236,24 @@ export function useThreadComposerState() {
       return null;
     }
 
+    const threadBusy =
+      thread.session?.status === "running" || thread.session?.status === "starting";
+    const deliveryMode = threadBusy
+      ? await new Promise<"immediate" | "after-active-turn" | null>((resolve) => {
+          Alert.alert(
+            "Send while the agent is working?",
+            "Steer sends this message into the active turn now. Queue sends it as a new turn after the current work finishes.",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+              { text: "Queue", onPress: () => resolve("after-active-turn") },
+              { text: "Steer now", onPress: () => resolve("immediate") },
+            ],
+            { cancelable: true, onDismiss: () => resolve(null) },
+          );
+        })
+      : "immediate";
+    if (deliveryMode === null) return null;
+
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
     // Enqueue publishes the queued atom synchronously (the durable write
@@ -253,6 +271,7 @@ export function useThreadComposerState() {
       modelSelection: draft.modelSelection ?? thread.modelSelection,
       runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
       interactionMode: draft.interactionMode ?? thread.interactionMode,
+      deliveryMode,
       createdAt: metadata.createdAt,
     });
     clearComposerDraftContent(threadKey);

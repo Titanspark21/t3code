@@ -53,6 +53,12 @@ Provider output comes back as internal commands such as `thread.message.assistan
 `thread.session.set`, which clients observe through `orchestration.subscribeThread`. See
 [overview.md](./overview.md) for the command/event loop.
 
+Turn attachments are decoded and persisted before the command enters orchestration. Every
+attachment is described to the provider with its absolute on-disk path, which is the universal
+fallback for documents and archives. Adapters may additionally use provider-native attachment
+blocks: Codex, Claude, Cursor, and Grok do so for supported images, while OpenCode accepts native
+file parts. Adapter-native support must never be required for a provider to access a generic file.
+
 ## Server-side workers
 
 Provider work flows through three queue-backed workers. All three are built with

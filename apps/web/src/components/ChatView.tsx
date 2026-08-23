@@ -222,6 +222,7 @@ import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRo
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
+  type ComposerAttachment,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
@@ -1224,6 +1225,11 @@ function chatActionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An error occurred.";
 }
 
+type ActiveTurnSendChoice = "steer" | "queue" | null;
+type ActiveTurnSendChoiceRequest = {
+  readonly resolve: (choice: ActiveTurnSendChoice) => void;
+};
+
 /**
  * Drops the send-time anchored end space. That space is what holds a sent
  * message near the top while its turn streams, and it keeps LegendList's
@@ -1385,12 +1391,18 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const promptRef = useRef("");
-  const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
+  const composerImagesRef = useRef<ComposerAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
+  const [activeTurnSendChoiceRequest, setActiveTurnSendChoiceRequest] =
+    useState<ActiveTurnSendChoiceRequest | null>(null);
+  const activeTurnSendChoiceRequestRef = useRef<ActiveTurnSendChoiceRequest | null>(null);
+  const [queuedSubmissionThreadKeys, setQueuedSubmissionThreadKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -5042,18 +5054,18 @@ function ChatViewContent(props: ChatViewProps) {
   const onRevertToTurnCount = useCallback(
     async (turnCount: number) => {
       const localApi = readLocalApi();
-      if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      if (!localApi || !activeThread || isRevertingCheckpoint) return false;
 
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
           activeThread.id,
           `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
         );
-        return;
+        return false;
       }
       if (phase === "running" || isSendBusy || isConnecting) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
-        return;
+        return false;
       }
       const confirmed = await localApi.dialogs.confirm(
         [
@@ -5064,26 +5076,33 @@ function ChatViewContent(props: ChatViewProps) {
         { variant: "destructive" },
       );
       if (!confirmed) {
-        return;
+        return false;
       }
 
       setIsRevertingCheckpoint(true);
       setThreadError(activeThread.id, null);
-      const result = await revertThreadCheckpoint({
-        environmentId,
-        input: {
-          threadId: activeThread.id,
-          turnCount,
-        },
-      });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setThreadError(
-          activeThread.id,
-          error instanceof Error ? error.message : "Failed to revert thread state.",
-        );
+      try {
+        const result = await revertThreadCheckpoint({
+          environmentId,
+          input: {
+            threadId: activeThread.id,
+            turnCount,
+          },
+        });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            setThreadError(
+              activeThread.id,
+              error instanceof Error ? error.message : "Failed to revert thread state.",
+            );
+          }
+          return false;
+        }
+        return true;
+      } finally {
+        setIsRevertingCheckpoint(false);
       }
-      setIsRevertingCheckpoint(false);
     },
     [
       activeThread,
@@ -5099,6 +5118,24 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const requestActiveTurnSendChoice = useCallback(
+    () =>
+      new Promise<ActiveTurnSendChoice>((resolve) => {
+        const request = { resolve };
+        activeTurnSendChoiceRequestRef.current?.resolve(null);
+        activeTurnSendChoiceRequestRef.current = request;
+        setActiveTurnSendChoiceRequest(request);
+      }),
+    [],
+  );
+
+  const resolveActiveTurnSendChoice = useCallback((choice: ActiveTurnSendChoice) => {
+    const request = activeTurnSendChoiceRequestRef.current;
+    activeTurnSendChoiceRequestRef.current = null;
+    setActiveTurnSendChoiceRequest(null);
+    request?.resolve(choice);
+  }, []);
+
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
@@ -5106,6 +5143,7 @@ function ChatViewContent(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    skipActiveTurnChoice = false,
   ) => {
     e?.preventDefault();
     const notifyDirectAnnotationAttached = () => {
@@ -5362,6 +5400,33 @@ function ChatViewContent(props: ChatViewProps) {
       );
       return;
     }
+    if (phase === "running" && !skipActiveTurnChoice) {
+      const choice = await requestActiveTurnSendChoice();
+      if (choice === null) return;
+      if (choice === "queue") {
+        if (activeThreadKey) {
+          setQueuedSubmissionThreadKeys((current) => {
+            const next = new Set(current);
+            next.add(activeThreadKey);
+            return next;
+          });
+          toastManager.add({
+            type: "info",
+            title: "Message queued",
+            description: "It will send automatically when the current turn finishes.",
+          });
+        }
+        return;
+      }
+    }
+    if (activeThreadKey) {
+      setQueuedSubmissionThreadKeys((current) => {
+        if (!current.has(activeThreadKey)) return current;
+        const next = new Set(current);
+        next.delete(activeThreadKey);
+        return next;
+      });
+    }
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
@@ -5440,7 +5505,7 @@ function ChatViewContent(props: ChatViewProps) {
     const messageCreatedAt = new Date().toISOString();
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
+        type: image.type,
         name: image.name,
         mimeType: image.mimeType,
         sizeBytes: image.sizeBytes,
@@ -5448,7 +5513,7 @@ function ChatViewContent(props: ChatViewProps) {
       })),
     );
     const optimisticAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
+      type: image.type,
       id: image.id,
       name: image.name,
       mimeType: image.mimeType,
@@ -5515,7 +5580,7 @@ function ChatViewContent(props: ChatViewProps) {
     let titleSeed = trimmed;
     if (!titleSeed) {
       if (firstComposerImageName) {
-        titleSeed = `Image: ${firstComposerImageName}`;
+        titleSeed = `Attachment: ${firstComposerImageName}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
@@ -6384,6 +6449,28 @@ function ChatViewContent(props: ChatViewProps) {
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  useEffect(() => {
+    if (
+      !activeThreadKey ||
+      phase !== "ready" ||
+      isSendBusy ||
+      isConnecting ||
+      !queuedSubmissionThreadKeys.has(activeThreadKey)
+    ) {
+      return;
+    }
+    setQueuedSubmissionThreadKeys((current) => {
+      if (!current.has(activeThreadKey)) return current;
+      const next = new Set(current);
+      next.delete(activeThreadKey);
+      return next;
+    });
+    queueMicrotask(() => {
+      void onSendRef.current(undefined, "foreground", undefined, true);
+    });
+  }, [activeThreadKey, isConnecting, isSendBusy, phase, queuedSubmissionThreadKeys]);
   const onOpenTurnDiff = useCallback(
     (turnId: TurnId, filePath?: string) => {
       if (!isServerThread || !activeThreadRef) return;
@@ -6399,12 +6486,65 @@ function ChatViewContent(props: ChatViewProps) {
   revertTurnCountRef.current = revertTurnCountByUserMessageId;
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
+  const timelineMessagesRef = useRef(displayServerMessages);
+  timelineMessagesRef.current = displayServerMessages;
   const onRevertUserMessage = useCallback((messageId: MessageId) => {
     const targetTurnCount = revertTurnCountRef.current.get(messageId);
     if (typeof targetTurnCount !== "number") {
       return;
     }
-    void onRevertToTurnCountRef.current(targetTurnCount);
+    const message = timelineMessagesRef.current.find((candidate) => candidate.id === messageId);
+    if (!message || message.role !== "user") return;
+
+    void (async () => {
+      const reverted = await onRevertToTurnCountRef.current(targetTurnCount);
+      if (!reverted) return;
+
+      const restoredAttachments = (
+        await Promise.all(
+          (message.attachments ?? []).map(
+            async (attachment): Promise<ComposerAttachment | null> => {
+              if (!attachment.previewUrl) return null;
+              try {
+                const response = await fetch(attachment.previewUrl);
+                if (!response.ok) return null;
+                const blob = await response.blob();
+                const file = new File([blob], attachment.name, {
+                  type: attachment.mimeType || blob.type || "application/octet-stream",
+                });
+                return {
+                  ...attachment,
+                  sizeBytes: file.size,
+                  previewUrl: URL.createObjectURL(file),
+                  file,
+                };
+              } catch {
+                return null;
+              }
+            },
+          ),
+        )
+      ).filter((attachment): attachment is ComposerAttachment => attachment !== null);
+
+      clearComposerDraftContent(composerDraftTarget);
+      promptRef.current = message.text;
+      composerImagesRef.current = restoredAttachments;
+      setComposerDraftPrompt(composerDraftTarget, message.text);
+      addComposerDraftImages(composerDraftTarget, restoredAttachments);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(message.text, message.text.length),
+        prompt: message.text,
+        detectTrigger: true,
+      });
+      composerRef.current?.focusAtEnd();
+      if ((message.attachments?.length ?? 0) > restoredAttachments.length) {
+        toastManager.add({
+          type: "warning",
+          title: "Some attachments could not be restored",
+          description: "Reattach any missing files before sending the edited message.",
+        });
+      }
+    })();
   }, []);
 
   // Empty state: no active thread
@@ -7065,6 +7205,29 @@ function ChatViewContent(props: ChatViewProps) {
           onClose={closeExpandedImage}
         />
       )}
+      <AlertDialog
+        open={activeTurnSendChoiceRequest !== null}
+        onOpenChange={(open) => {
+          if (!open) resolveActiveTurnSendChoice(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send while the agent is working?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Steer sends this message into the active turn now. Queue waits and sends it as a new
+              turn after the current work finishes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button variant="outline" onClick={() => resolveActiveTurnSendChoice("queue")}>
+              Queue
+            </Button>
+            <Button onClick={() => resolveActiveTurnSendChoice("steer")}>Steer now</Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </div>
   );
 }
