@@ -91,11 +91,13 @@ export function isoFromEpochSeconds(value: unknown): string | undefined {
  */
 function normalizeWindow(value: unknown, fallbackLabel?: string): QuotaWindow | undefined {
   if (!isRecord(value)) return undefined;
-  const usedPercent = readUsedPercent(value["usedPercent"]);
+  const usedPercent = readUsedPercent(value["usedPercent"] ?? value["used_percent"]);
   if (usedPercent === undefined) return undefined;
 
-  const windowDurationMins = readFiniteNumber(value["windowDurationMins"]);
-  const resetsAt = isoFromEpochSeconds(value["resetsAt"]);
+  const windowDurationMins = readFiniteNumber(
+    value["windowDurationMins"] ?? value["window_minutes"],
+  );
+  const resetsAt = isoFromEpochSeconds(value["resetsAt"] ?? value["resets_at"]);
   const label = readNonEmptyString(value["label"]) ?? fallbackLabel;
 
   return {
@@ -135,13 +137,16 @@ export function normalizeCodexRateLimits(input: {
   const secondary = normalizeWindow(snapshot["secondary"]);
   if (secondary) windows.push(secondary);
 
-  const limitReached = readNonEmptyString(snapshot["rateLimitReachedType"]);
+  const limitReached = readNonEmptyString(
+    snapshot["rateLimitReachedType"] ?? snapshot["rate_limit_reached_type"],
+  );
 
   // Nothing usable in this message. Absent beats an empty-looking row.
   if (windows.length === 0 && !limitReached) return undefined;
 
-  const displayName = readNonEmptyString(snapshot["limitName"]) ?? "Subscription";
-  const planType = readNonEmptyString(snapshot["planType"]);
+  const displayName =
+    readNonEmptyString(snapshot["limitName"] ?? snapshot["limit_name"]) ?? "Subscription";
+  const planType = readNonEmptyString(snapshot["planType"] ?? snapshot["plan_type"]);
 
   const group: QuotaGroup = { key: "default", displayName, windows };
 

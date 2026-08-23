@@ -34,6 +34,29 @@ const quotaEvent = (
 });
 
 describe("QuotaService", () => {
+  it("uses a cold-start seed until a newer live snapshot arrives", async () => {
+    const summary = await Effect.gen(function* () {
+      const service = yield* QuotaService;
+      yield* service.seedSnapshot({
+        providerInstanceId: ProviderInstanceId.make("codex_work"),
+        groups: [
+          {
+            key: "default",
+            displayName: "Subscription",
+            windows: [{ kind: "short", usedPercent: 18 }],
+          },
+        ],
+        source: "state-file",
+        observedAt: "2026-08-22T12:00:00.000Z",
+      });
+      yield* service.ingest(quotaEvent(42));
+      return yield* service.readSummary;
+    }).pipe(Effect.provide(layer), Effect.runPromise);
+
+    expect(summary.snapshots[0]?.source).toBe("provider-event");
+    expect(summary.snapshots[0]?.groups[0]?.windows[0]?.usedPercent).toBe(42);
+  });
+
   it("stores snapshots by provider instance", async () => {
     const summary = await Effect.gen(function* () {
       const service = yield* QuotaService;

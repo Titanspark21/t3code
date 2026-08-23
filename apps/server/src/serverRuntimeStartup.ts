@@ -39,6 +39,8 @@ import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDi
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
+import { seedCodexQuotaFromTranscripts } from "./quota/CodexTranscriptQuota.ts";
+import * as QuotaService from "./quota/QuotaService.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -393,6 +395,7 @@ export const make = (options?: StartupOptions) =>
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const crypto = yield* Crypto.Crypto;
     const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
+    const quota = yield* Effect.serviceOption(QuotaService.QuotaService);
 
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
@@ -430,6 +433,17 @@ export const make = (options?: StartupOptions) =>
           ),
         ),
       );
+
+      if (Option.isSome(quota)) {
+        yield* runStartupPhase(
+          "quota.seed-codex-transcripts",
+          seedCodexQuotaFromTranscripts(serverSettings, quota.value).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to seed Codex quota from transcripts", { cause }),
+            ),
+          ),
+        );
+      }
 
       yield* Effect.logDebug("startup phase: parking orchestration roots at activation");
       yield* runStartupPhase(

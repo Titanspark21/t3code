@@ -34,6 +34,23 @@ describe("isoFromEpochSeconds", () => {
 });
 
 describe("normalizeCodexRateLimits", () => {
+  it("reads the snake-case snapshot stored in Codex transcripts", () => {
+    const snapshot = normalizeCodexRateLimits({
+      providerInstanceId: instanceId,
+      observedAt,
+      payload: {
+        limit_name: "ChatGPT Plus",
+        plan_type: "plus",
+        primary: { used_percent: 12, resets_at: 1_775_000_000, window_minutes: 300 },
+        secondary: { used_percent: 34, window_minutes: 10080 },
+      },
+    });
+
+    expect(snapshot?.planType).toBe("plus");
+    expect(snapshot?.groups[0]?.displayName).toBe("ChatGPT Plus");
+    expect(snapshot?.groups[0]?.windows.map((window) => window.usedPercent)).toEqual([12, 34]);
+  });
+
   it("reads both windows and classifies them by duration", () => {
     const snapshot = normalizeCodexRateLimits({
       providerInstanceId: instanceId,

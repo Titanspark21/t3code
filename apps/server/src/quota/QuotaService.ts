@@ -9,7 +9,11 @@
  * @module quota/QuotaService
  */
 import type { ProviderRuntimeEvent } from "@t3tools/contracts";
-import { QUOTA_CONTRACT_VERSION, type QuotaSummary } from "@t3tools/contracts/quota";
+import {
+  type AccountQuotaSnapshot,
+  QUOTA_CONTRACT_VERSION,
+  type QuotaSummary,
+} from "@t3tools/contracts/quota";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,6 +28,7 @@ export class QuotaService extends Context.Service<
   {
     readonly readSummary: Effect.Effect<QuotaSummary>;
     readonly ingest: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
+    readonly seedSnapshot: (snapshot: AccountQuotaSnapshot) => Effect.Effect<void>;
     readonly changes: Stream.Stream<QuotaSummary>;
   }
 >()("t3/quota/QuotaService") {}
@@ -55,9 +60,24 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const seedSnapshot = Effect.fn("QuotaService.seedSnapshot")(function* (
+    snapshot: AccountQuotaSnapshot,
+  ) {
+    yield* SubscriptionRef.updateSome(state, (current) => {
+      const existing = current.get(snapshot.providerInstanceId);
+      if (existing && Date.parse(existing.observedAt) >= Date.parse(snapshot.observedAt)) {
+        return Option.none();
+      }
+      const next = new Map(current);
+      next.set(snapshot.providerInstanceId, snapshot);
+      return Option.some(next);
+    });
+  });
+
   return QuotaService.of({
     readSummary: SubscriptionRef.get(state).pipe(Effect.map(summaryFromState)),
     ingest,
+    seedSnapshot,
     changes: SubscriptionRef.changes(state).pipe(Stream.map(summaryFromState)),
   });
 });
@@ -73,6 +93,7 @@ export const layerTest = Layer.succeed(
       snapshots: [],
     }),
     ingest: () => Effect.void,
+    seedSnapshot: () => Effect.void,
     changes: Stream.succeed({
       contractVersion: QUOTA_CONTRACT_VERSION,
       snapshots: [],
