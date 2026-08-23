@@ -8,7 +8,11 @@
  *
  * @module quota/quotaReducer
  */
-import type { AccountQuotaSnapshot } from "@t3tools/contracts/quota";
+import {
+  isQuotaSnapshotStale,
+  QUOTA_SNAPSHOT_STALE_AFTER_MS,
+  type AccountQuotaSnapshot,
+} from "@t3tools/contracts/quota";
 import type {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -101,20 +105,7 @@ export function forgetQuota(state: QuotaState, providerInstanceId: ProviderInsta
  * everywhere it is currently observed, so a snapshot older than this is
  * describing a window that has since reset.
  */
-export const QUOTA_SNAPSHOT_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
-
-/**
- * Whether a snapshot is old enough that the UI should mark it stale rather
- * than present it as the current figure.
- */
-export function isQuotaSnapshotStale(
-  snapshot: AccountQuotaSnapshot,
-  now: number = Date.now(),
-): boolean {
-  const observed = Date.parse(snapshot.observedAt);
-  if (Number.isNaN(observed)) return true;
-  return now - observed > QUOTA_SNAPSHOT_STALE_AFTER_MS;
-}
+export { isQuotaSnapshotStale, QUOTA_SNAPSHOT_STALE_AFTER_MS };
 
 /**
  * Whether an instance should be treated as rate-limited right now.

@@ -55,6 +55,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as QuotaService from "../../quota/QuotaService.ts";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
   return ServerSettingsService.layerTest(overrides);
@@ -197,7 +198,10 @@ async function waitForThread(
 
 describe("ProviderRuntimeIngestion", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderRuntimeIngestionService | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderRuntimeIngestionService
+    | ProjectionSnapshotQuery
+    | QuotaService.QuotaService,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -252,6 +256,7 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
+      Layer.provideMerge(QuotaService.layer),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -259,6 +264,7 @@ describe("ProviderRuntimeIngestion", () => {
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const ingestion = await runtime.runPromise(Effect.service(ProviderRuntimeIngestionService));
+    const quota = await runtime.runPromise(Effect.service(QuotaService.QuotaService));
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(ingestion.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(ingestion.drain);
@@ -324,8 +330,34 @@ describe("ProviderRuntimeIngestion", () => {
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
+      readQuota: () => Effect.runPromise(quota.readSummary),
     };
   }
+
+  it("forwards rate-limit events into the instance-keyed quota service", async () => {
+    const harness = await createHarness();
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-quota-codex"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex_work"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-08-23T12:00:00.000Z",
+      payload: {
+        rateLimits: {
+          rateLimits: {
+            primary: { usedPercent: 64, windowDurationMins: 300 },
+          },
+        },
+      },
+    });
+    await harness.drain();
+
+    const summary = await harness.readQuota();
+    expect(summary.snapshots).toHaveLength(1);
+    expect(summary.snapshots[0]?.providerInstanceId).toBe("codex_work");
+    expect(summary.snapshots[0]?.groups[0]?.windows[0]?.usedPercent).toBe(64);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();

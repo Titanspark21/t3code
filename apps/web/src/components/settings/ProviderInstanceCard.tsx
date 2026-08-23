@@ -23,6 +23,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import type { AccountQuotaSnapshot } from "@t3tools/contracts/quota";
 
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -44,6 +45,7 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { ProviderQuotaTooltip } from "../quota/ProviderQuotaTooltip";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -345,6 +347,8 @@ interface ProviderInstanceCardProps {
   readonly hiddenModels: ReadonlyArray<string>;
   readonly favoriteModels: ReadonlyArray<string>;
   readonly modelOrder: ReadonlyArray<string>;
+  readonly quotaSnapshot?: AccountQuotaSnapshot | undefined;
+  readonly quotaNowMs?: number | undefined;
   readonly onHiddenModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
@@ -387,6 +391,8 @@ export function ProviderInstanceCard({
   hiddenModels,
   favoriteModels,
   modelOrder,
+  quotaSnapshot,
+  quotaNowMs,
   onHiddenModelsChange,
   onFavoriteModelsChange,
   onModelOrderChange,
@@ -604,7 +610,16 @@ export function ProviderInstanceCard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {titleHeadNode}
+              {driverKind && quotaNowMs !== undefined ? (
+                <ProviderQuotaTooltip
+                  driverKind={driverKind}
+                  nowMs={quotaNowMs}
+                  snapshot={quotaSnapshot}
+                  trigger={<div className="flex min-w-0 items-center gap-2">{titleHeadNode}</div>}
+                />
+              ) : (
+                titleHeadNode
+              )}
               {versionCodeNode}
               {versionAdvisory ? (
                 <Popover>

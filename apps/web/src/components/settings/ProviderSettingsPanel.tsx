@@ -47,6 +47,8 @@ import {
 } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useEnvironmentSessionState } from "../../state/session";
+import { useQuota } from "../../state/quota";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { getRelativeTimeState } from "../../timestampFormat";
 import {
@@ -369,6 +371,10 @@ export function EnvironmentProviderSettings({
   readonly readOnly?: boolean;
 }) {
   const settings = useEnvironmentSettings(environmentId);
+  const quota = useQuota();
+  const nowMinute = useNowMinute();
+  const quotaNowMs = Date.parse(`${nowMinute}:00.000Z`);
+  const quotaByInstance = quota.byEnvironment.get(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
@@ -864,6 +870,8 @@ export function EnvironmentProviderSettings({
                 hiddenModels={modelPreferences.hiddenModels}
                 favoriteModels={favoriteModels}
                 modelOrder={modelPreferences.modelOrder}
+                quotaSnapshot={quotaByInstance?.get(row.instanceId)}
+                quotaNowMs={quotaNowMs}
                 onHiddenModelsChange={(hiddenModels) =>
                   updateProviderModelPreferences(row.instanceId, {
                     ...modelPreferences,

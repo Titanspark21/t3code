@@ -33,6 +33,7 @@ import {
   WsRpcGroup,
   EditorId,
 } from "@t3tools/contracts";
+import { QUOTA_CONTRACT_VERSION } from "@t3tools/contracts/quota";
 import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
@@ -115,6 +116,7 @@ import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
+import * as QuotaService from "./quota/QuotaService.ts";
 import { ProviderAdapterRequestError } from "./provider/Errors.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -844,6 +846,7 @@ const buildAppUnderTest = (options?: {
     const appLayer = servedRoutesLayer.pipe(
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
+      Layer.provide(QuotaService.layerTest),
       Layer.provide(
         Layer.mock(AnalyticsService.AnalyticsService)({
           record: () => Effect.void,
@@ -4680,6 +4683,28 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(Option.isSome(snapshot));
       assert.equal(snapshot.value.processes.length, 0);
       assert.equal(snapshot.value.groups.backend.processCount, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket quota snapshots through unary and subscription RPCs", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all({
+            snapshot: client[WS_METHODS.serverGetQuota]({}),
+            streamed: client[WS_METHODS.subscribeQuota]({}).pipe(Stream.runHead),
+          }),
+        ),
+      );
+
+      assert.equal(result.snapshot.contractVersion, QUOTA_CONTRACT_VERSION);
+      assert.deepEqual(result.snapshot.snapshots, []);
+      assertTrue(Option.isSome(result.streamed));
+      assert.equal(result.streamed.value.contractVersion, QUOTA_CONTRACT_VERSION);
+      assert.deepEqual(result.streamed.value.snapshots, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

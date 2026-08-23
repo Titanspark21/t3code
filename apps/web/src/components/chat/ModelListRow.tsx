@@ -1,4 +1,5 @@
 import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
+import type { AccountQuotaSnapshot } from "@t3tools/contracts/quota";
 import { memo } from "react";
 import { StarIcon } from "lucide-react";
 import {
@@ -13,6 +14,7 @@ import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
+import { ProviderQuotaTooltip } from "../quota/ProviderQuotaTooltip";
 
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
@@ -28,6 +30,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
    */
   providerDisplayName: string;
   providerAccentColor?: string | undefined;
+  quotaSnapshot?: AccountQuotaSnapshot | undefined;
+  quotaNowMs?: number | undefined;
   isFavorite: boolean;
   isSelected: boolean;
   showProvider: boolean;
@@ -42,6 +46,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
   const providerLabel = props.model.subProvider
     ? `${props.providerDisplayName} · ${props.model.subProvider}`
     : props.providerDisplayName;
+  const providerLine = (
+    <span className="mt-1 flex min-w-0 items-center gap-1.5">
+      {ProviderIcon ? <ProviderIcon className="size-3 shrink-0" /> : null}
+      <span className="truncate text-xs font-normal leading-snug text-muted-foreground/70">
+        {providerLabel}
+      </span>
+    </span>
+  );
 
   const row = (
     <ComboboxItem
@@ -76,14 +88,18 @@ export const ModelListRow = memo(function ModelListRow(props: {
             </span>
           ) : null}
         </div>
-        {props.showProvider && (
-          <div className="mt-1 flex items-center gap-1.5">
-            {ProviderIcon ? <ProviderIcon className="size-3 shrink-0" /> : null}
-            <span className="truncate text-xs font-normal leading-snug text-muted-foreground/70">
-              {providerLabel}
-            </span>
-          </div>
-        )}
+        {props.showProvider &&
+          (!props.disabledReason && props.quotaNowMs !== undefined ? (
+            <ProviderQuotaTooltip
+              driverKind={props.driverKind}
+              nowMs={props.quotaNowMs}
+              snapshot={props.quotaSnapshot}
+              trigger={providerLine}
+              side="left"
+            />
+          ) : (
+            providerLine
+          ))}
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">

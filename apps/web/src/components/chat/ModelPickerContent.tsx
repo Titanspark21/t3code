@@ -1,4 +1,5 @@
 import {
+  type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
@@ -41,6 +42,8 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { useNowMinute } from "../../hooks/useNowMinute";
+import { useQuota } from "../../state/quota";
 
 type ModelPickerItem = {
   slug: string;
@@ -64,6 +67,7 @@ function ModelListSeparator() {
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** The instance currently selected in the composer (combobox "value"). */
   activeInstanceId: ProviderInstanceId;
+  environmentId?: EnvironmentId;
   model: string;
   /**
    * When set, the picker is locked to the given driver kind — typically
@@ -127,6 +131,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           : [],
       ),
   );
+  const quota = useQuota();
+  const nowMinute = useNowMinute();
+  const quotaNowMs = Date.parse(`${nowMinute}:00.000Z`);
+  const quotaByInstance = props.environmentId
+    ? quota.byEnvironment.get(props.environmentId)
+    : undefined;
   const keybindings = useMemo<ResolvedKeybindingsConfig>(
     () => providedKeybindings ?? [],
     [providedKeybindings],
@@ -758,6 +768,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         driverKind={model.driverKind}
                         providerDisplayName={model.instanceDisplayName}
                         providerAccentColor={model.instanceAccentColor}
+                        {...(props.environmentId
+                          ? {
+                              quotaSnapshot: quotaByInstance?.get(model.instanceId),
+                              quotaNowMs,
+                            }
+                          : {})}
                         isFavorite={favoritesSet.has(
                           providerModelKey(model.instanceId, model.slug),
                         )}

@@ -1,3 +1,5 @@
+// @effect-diagnostics globalDate:off - staleness accepts an injected clock for deterministic callers.
+
 /**
  * Subscription quota contracts — the rolling usage windows a provider
  * publishes for the account behind a provider instance.
@@ -111,6 +113,22 @@ export const AccountQuotaSnapshot = Schema.Struct({
 });
 export type AccountQuotaSnapshot = typeof AccountQuotaSnapshot.Type;
 
+/** Bumped when the wire representation of {@link QuotaSummary} changes incompatibly. */
+export const QUOTA_CONTRACT_VERSION = 1 as const;
+
+/**
+ * Server-wide quota read model.
+ *
+ * Maps are encoded as arrays on the wire. `providerInstanceId` remains part of
+ * every snapshot, so clients can merge several environments without ever
+ * collapsing two accounts that use the same driver.
+ */
+export const QuotaSummary = Schema.Struct({
+  contractVersion: Schema.Number,
+  snapshots: Schema.Array(AccountQuotaSnapshot),
+});
+export type QuotaSummary = typeof QuotaSummary.Type;
+
 /** Minutes in the window each provider treats as its hours-scale limit. */
 export const SHORT_WINDOW_MAX_MINS = 24 * 60;
 
@@ -151,4 +169,17 @@ export function primaryQuotaWindow(windows: ReadonlyArray<QuotaWindow>): QuotaWi
     }
   }
   return best;
+}
+
+/** Six hours outlives the short subscription window currently exposed by providers. */
+export const QUOTA_SNAPSHOT_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+
+/** Invalid timestamps are stale rather than accidentally current. */
+export function isQuotaSnapshotStale(
+  snapshot: AccountQuotaSnapshot,
+  now: number = Date.now(),
+): boolean {
+  const observed = Date.parse(snapshot.observedAt);
+  if (Number.isNaN(observed)) return true;
+  return now - observed > QUOTA_SNAPSHOT_STALE_AFTER_MS;
 }

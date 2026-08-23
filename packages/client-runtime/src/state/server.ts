@@ -728,6 +728,16 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    quotaSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:quota-summary",
+      tag: WS_METHODS.serverGetQuota,
+      staleTimeMs: 0,
+    }),
+    quota: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:quota",
+      tag: WS_METHODS.subscribeQuota,
+      idleTtlMs: 0,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
