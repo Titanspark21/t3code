@@ -4,6 +4,17 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Code kee
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
+## Commands and skills
+
+Type `/` to open the command menu. Type `$` to find and add a skill. Skill rows show their source,
+such as System, Personal, Project, or App.
+
+By default, the `/` menu includes skills. To keep this menu command-only, turn off **Show skills in
+slash menu** in **Settings → General**. Skill results use the `/skill:Skill Name` label and add the
+same `$name` skill token to your message. The original skill name remains searchable. If the provider
+also reports that skill as a native slash command, T3 Code hides the duplicate native entry and keeps
+the `/skill:Skill Name` label.
+
 ## Attachments
 
 Drag files onto the chat, paste them, or use the attachment picker. A message can include up to
