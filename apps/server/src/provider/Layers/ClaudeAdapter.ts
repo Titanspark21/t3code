@@ -15,6 +15,7 @@ import {
   type PermissionUpdate,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKControlGetUsageResponse,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -58,6 +59,7 @@ import {
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -99,6 +101,7 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonStri
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
+const ACCOUNT_USAGE_MIN_INTERVAL_MS = 3 * 60_000;
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
 type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
@@ -286,6 +289,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   readonly close: () => void;
 }
 
@@ -3107,6 +3111,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             config: message as Record<string, unknown>,
           },
         });
+        yield* refreshAccountUsageSnapshot(context);
         return;
       case "status":
         yield* offerRuntimeEvent({
@@ -3435,6 +3440,54 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  let lastAccountUsageFetchAtMs: number | undefined;
+
+  const emitAccountUsageSnapshot = Effect.fn("emitAccountUsageSnapshot")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (!readUsage) return;
+
+    const now = yield* Clock.currentTimeMillis;
+    if (lastAccountUsageFetchAtMs !== undefined) {
+      const elapsed = now - lastAccountUsageFetchAtMs;
+      if (elapsed >= 0 && elapsed < ACCOUNT_USAGE_MIN_INTERVAL_MS) return;
+    }
+    lastAccountUsageFetchAtMs = now;
+
+    const usage = yield* Effect.promise(async () => {
+      try {
+        return await readUsage.call(context.query);
+      } catch {
+        return undefined;
+      }
+    });
+    if (!usage?.rate_limits) return;
+
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      providerRefs: nativeProviderRefs(context),
+      type: "account.rate-limits.updated",
+      payload: {
+        rateLimits: {
+          subscription_type: usage.subscription_type,
+          rate_limits: usage.rate_limits,
+        },
+      },
+    });
+  });
+
+  const refreshAccountUsageSnapshot = (context: ClaudeSessionContext) =>
+    emitAccountUsageSnapshot(context).pipe(
+      Effect.ignoreCause({ log: true }),
+      Effect.forkDetach,
+      Effect.asVoid,
+    );
+
   const handleSdkTelemetryMessage = Effect.fn("handleSdkTelemetryMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -3546,6 +3599,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "auth_status":
       case "rate_limit_event":
         yield* handleSdkTelemetryMessage(context, message);
+        if (message.type === "rate_limit_event") {
+          yield* refreshAccountUsageSnapshot(context);
+        }
         return;
       // Composer prompt suggestions have no T3 surface; consumed deliberately.
       case "prompt_suggestion":

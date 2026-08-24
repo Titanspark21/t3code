@@ -8,6 +8,7 @@ import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
   PermissionResult,
+  SDKControlGetUsageResponse,
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -155,8 +156,18 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly usageResponse?: unknown;
 }) {
   const query = new FakeClaudeQuery();
+  let usageCalls = 0;
+  if (config?.usageResponse !== undefined) {
+    Object.assign(query, {
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => {
+        usageCalls += 1;
+        return config.usageResponse as SDKControlGetUsageResponse;
+      },
+    });
+  }
   let createInput:
     | {
         readonly prompt: AsyncIterable<SDKUserMessage>;
@@ -201,6 +212,7 @@ function makeHarness(config?: {
     ),
     query,
     getLastCreateQueryInput: () => createInput,
+    getUsageCalls: () => usageCalls,
   };
 }
 
@@ -368,6 +380,92 @@ describe("ClaudeAdapterLive", () => {
       const createInput = harness.getLastCreateQueryInput();
       assert.equal(createInput?.options.permissionMode, "auto");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("pulls all Claude quota windows on init and throttles binding-window refreshes", () => {
+    const harness = makeHarness({
+      usageResponse: {
+        session: {
+          total_cost_usd: 0,
+          total_api_duration_ms: 0,
+          total_duration_ms: 0,
+          total_lines_added: 0,
+          total_lines_removed: 0,
+          model_usage: {},
+        },
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 22, resets_at: "2026-08-24T05:00:00.000Z" },
+          seven_day: { utilization: 48, resets_at: "2026-08-30T00:00:00.000Z" },
+        },
+        behaviors: null,
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const limitsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "account.rate-limits.updated"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        apiKeySource: "none",
+        claude_code_version: "test",
+        cwd: "/tmp/claude-adapter-test",
+        tools: [],
+        mcp_servers: [],
+        model: "claude-sonnet-4-5",
+        permissionMode: "bypassPermissions",
+        slash_commands: [],
+        output_style: "default",
+        skills: [],
+        plugins: [],
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        uuid: "quota-init",
+      } as unknown as SDKMessage);
+
+      const limits = Array.from(yield* Fiber.join(limitsFiber));
+      const event = limits[0];
+      assert.equal(event?.type, "account.rate-limits.updated");
+      if (event?.type === "account.rate-limits.updated") {
+        assert.deepEqual(event.payload.rateLimits, {
+          subscription_type: "max",
+          rate_limits: {
+            five_hour: { utilization: 22, resets_at: "2026-08-24T05:00:00.000Z" },
+            seven_day: { utilization: 48, resets_at: "2026-08-30T00:00:00.000Z" },
+          },
+        });
+      }
+      assert.equal(harness.getUsageCalls(), 1);
+
+      harness.query.emit({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          resetsAt: 1_777_000_000_000,
+          rateLimitType: "five_hour",
+          utilization: 23,
+        },
+        uuid: "quota-binding-window",
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+      } as unknown as SDKMessage);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      assert.equal(harness.getUsageCalls(), 1);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

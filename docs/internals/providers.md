@@ -59,6 +59,12 @@ fallback for documents and archives. Adapters may additionally use provider-nati
 blocks: Codex, Claude, Cursor, and Grok do so for supported images, while OpenCode accepts native
 file parts. Adapter-native support must never be required for a provider to access a generic file.
 
+Account quota is keyed by provider instance. Codex publishes rolling window events and can seed a
+cold-start snapshot from bounded transcript tails. Claude's streamed `rate_limit_event` contains
+only the currently binding window, so its adapter also makes the SDK's full usage control request at
+session initialization and after binding-window updates, throttled to one request per three minutes.
+The full response is reduced to subscription and rate-limit fields before it enters orchestration.
+
 ## Server-side workers
 
 Provider work flows through three queue-backed workers. All three are built with

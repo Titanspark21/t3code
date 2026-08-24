@@ -83,21 +83,35 @@ export function isoFromEpochSeconds(value: unknown): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : iso;
 }
 
+function isoFromProviderReset(value: unknown): string | undefined {
+  const text = readNonEmptyString(value);
+  if (text === undefined) return isoFromEpochSeconds(value);
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 /**
  * One `{ usedPercent, resetsAt?, windowDurationMins? }` window.
  *
  * `usedPercent` is the only required field: a window with no percentage tells
  * us nothing, so it is dropped rather than shown at zero.
  */
-function normalizeWindow(value: unknown, fallbackLabel?: string): QuotaWindow | undefined {
+function normalizeWindow(
+  value: unknown,
+  fallbackLabel?: string,
+  fallbackDurationMins?: number,
+): QuotaWindow | undefined {
   if (!isRecord(value)) return undefined;
-  const usedPercent = readUsedPercent(value["usedPercent"] ?? value["used_percent"]);
+  const usedPercent = readUsedPercent(
+    value["usedPercent"] ?? value["used_percent"] ?? value["utilization"],
+  );
   if (usedPercent === undefined) return undefined;
 
-  const windowDurationMins = readFiniteNumber(
-    value["windowDurationMins"] ?? value["window_minutes"],
-  );
-  const resetsAt = isoFromEpochSeconds(value["resetsAt"] ?? value["resets_at"]);
+  const windowDurationMins =
+    readFiniteNumber(value["windowDurationMins"] ?? value["window_minutes"]) ??
+    fallbackDurationMins;
+  const rawReset = value["resetsAt"] ?? value["resets_at"];
+  const resetsAt = isoFromProviderReset(rawReset);
   const label = readNonEmptyString(value["label"]) ?? fallbackLabel;
 
   return {
@@ -185,14 +199,19 @@ export function normalizeClaudeRateLimits(input: {
   const windows: Array<QuotaWindow> = [];
 
   // Named windows, when the SDK labels them.
-  for (const [key, label] of [
-    ["primary", "Session limit"],
-    ["secondary", "Weekly limit"],
-    ["five_hour", "5-hour limit"],
-    ["fiveHour", "5-hour limit"],
-    ["weekly", "Weekly limit"],
+  for (const [key, label, durationMins] of [
+    ["primary", "Session limit", undefined],
+    ["secondary", "Weekly limit", undefined],
+    ["five_hour", "5-hour limit", 300],
+    ["fiveHour", "5-hour limit", 300],
+    ["weekly", "Weekly limit", 10_080],
+    ["seven_day", "Weekly limit", 10_080],
+    ["sevenDay", "Weekly limit", 10_080],
+    ["seven_day_oauth_apps", "OAuth apps weekly limit", 10_080],
+    ["seven_day_opus", "Opus weekly limit", 10_080],
+    ["seven_day_sonnet", "Sonnet weekly limit", 10_080],
   ] as const) {
-    const window = normalizeWindow(snapshot[key], label);
+    const window = normalizeWindow(snapshot[key], label, durationMins);
     if (window) windows.push(window);
   }
 
@@ -211,12 +230,14 @@ export function normalizeClaudeRateLimits(input: {
     (snapshot["limitReached"] === true ? "rate_limit_reached" : undefined);
 
   if (windows.length === 0 && !limitReached) return undefined;
+  const planType = readNonEmptyString(outer["subscription_type"]);
 
   return {
     providerInstanceId: input.providerInstanceId,
     groups: [{ key: "default", displayName: "Subscription", windows }],
     source: "provider-event" satisfies QuotaSource,
     observedAt: input.observedAt,
+    ...(planType ? { planType } : {}),
     ...(limitReached ? { limitReached } : {}),
   };
 }

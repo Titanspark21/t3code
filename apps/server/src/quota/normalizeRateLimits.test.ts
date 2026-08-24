@@ -154,6 +154,40 @@ describe("normalizeCodexRateLimits", () => {
 });
 
 describe("normalizeClaudeRateLimits", () => {
+  it("reads the full-window SDK usage response", () => {
+    const snapshot = normalizeClaudeRateLimits({
+      providerInstanceId: "claude-1" as ProviderInstanceId,
+      observedAt,
+      payload: {
+        rateLimits: {
+          subscription_type: "max",
+          rate_limits: {
+            five_hour: { utilization: 22, resets_at: "2026-08-24T05:00:00.000Z" },
+            seven_day: { utilization: 48, resets_at: "2026-08-30T00:00:00.000Z" },
+          },
+        },
+      },
+    });
+
+    expect(snapshot?.planType).toBe("max");
+    expect(snapshot?.groups[0]?.windows).toEqual([
+      {
+        kind: "short",
+        usedPercent: 22,
+        label: "5-hour limit",
+        resetsAt: "2026-08-24T05:00:00.000Z",
+        windowDurationMins: 300,
+      },
+      {
+        kind: "long",
+        usedPercent: 48,
+        label: "Weekly limit",
+        resetsAt: "2026-08-30T00:00:00.000Z",
+        windowDurationMins: 10_080,
+      },
+    ]);
+  });
+
   it("reads duration-tagged windows", () => {
     const snapshot = normalizeClaudeRateLimits({
       providerInstanceId: "claude-1" as ProviderInstanceId,
