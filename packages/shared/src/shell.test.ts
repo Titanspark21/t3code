@@ -19,8 +19,11 @@ import {
   resolveCommandPath,
   resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
+  resolveSpawnCommandCandidates,
   resolveWindowsEnvironment,
+  SpawnExecutableCandidatesResolution,
   SpawnExecutableResolution,
+  withVerifiedSpawnCommand,
   WindowsShellEnvironment,
   type WindowsShellEnvironmentReader,
 } from "./shell.ts";
@@ -445,6 +448,64 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         args: ["unsafe & value"],
         shell: false,
       });
+    }),
+  );
+});
+
+effectIt.layer(NodeServices.layer)("resolveSpawnCommandCandidates", (it) => {
+  it.effect("supports every standard Windows PATHEXT launcher type", () =>
+    Effect.gen(function* () {
+      const candidates = yield* resolveSpawnCommandCandidates("agent", ["--version"], {
+        env: { PATH: "C:\\Tools", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+      }).pipe(
+        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(SpawnExecutableCandidatesResolution, () => [
+          "C:\\Tools\\agent.COM",
+          "C:\\Tools\\agent.EXE",
+          "C:\\Tools\\agent.BAT",
+          "C:\\Tools\\agent.CMD",
+        ]),
+      );
+
+      expect(candidates.map((candidate) => candidate.resolvedPath)).toEqual([
+        "C:\\Tools\\agent.COM",
+        "C:\\Tools\\agent.EXE",
+        "C:\\Tools\\agent.BAT",
+        "C:\\Tools\\agent.CMD",
+      ]);
+      expect(candidates.map((candidate) => candidate.shell)).toEqual([false, false, true, true]);
+    }),
+  );
+
+  it.effect("skips a blocked candidate and promotes the working candidate for later spawns", () =>
+    Effect.gen(function* () {
+      const environment: NodeJS.ProcessEnv = {
+        PATH: "C:\\Blocked;C:\\Working;C:\\Windows\\System32",
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      };
+      const attempted: string[] = [];
+
+      const verified = yield* withVerifiedSpawnCommand(
+        "claude",
+        ["--version"],
+        { env: environment, promoteEnvironments: [environment] },
+        (candidate) => {
+          attempted.push(candidate.resolvedPath ?? candidate.command);
+          return candidate.resolvedPath?.startsWith("C:\\Blocked")
+            ? Effect.fail("access-denied")
+            : Effect.succeed(candidate.resolvedPath);
+        },
+      ).pipe(
+        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(SpawnExecutableCandidatesResolution, () => [
+          "C:\\Blocked\\claude.EXE",
+          "C:\\Working\\claude.CMD",
+        ]),
+      );
+
+      expect(verified).toBe("C:\\Working\\claude.CMD");
+      expect(attempted).toEqual(["C:\\Blocked\\claude.EXE", "C:\\Working\\claude.CMD"]);
+      expect(environment.PATH).toBe("C:\\Working;C:\\Blocked;C:\\Windows\\System32");
     }),
   );
 });

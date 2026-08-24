@@ -25,11 +25,12 @@ import * as Result from "effect/Result";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { createModelCapabilities } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { withVerifiedSpawnCommand } from "@t3tools/shared/shell";
 
 import {
   buildServerProvider,
   detailFromResult,
+  isCommandLaunchFailureCause,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
@@ -73,16 +74,23 @@ const runAntigravityCommand = (
   config: AntigravitySettings,
   args: ReadonlyArray<string>,
   environment: NodeJS.ProcessEnv,
+  promoteEnvironments: ReadonlyArray<NodeJS.ProcessEnv> = [environment],
 ) =>
   Effect.gen(function* () {
     const command = resolveBinary(config);
-    const spawnCommand = yield* resolveSpawnCommand(command, [...args], { env: environment });
-    return yield* spawnAndCollect(
+    return yield* withVerifiedSpawnCommand(
       command,
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: environment,
-        shell: spawnCommand.shell,
-      }),
+      args,
+      { env: environment, promoteEnvironments },
+      (candidate) =>
+        spawnAndCollect(
+          command,
+          ChildProcess.make(candidate.command, candidate.args, {
+            env: candidate.environment,
+            shell: candidate.shell,
+          }),
+        ),
+      isCommandLaunchFailureCause,
     );
   });
 
@@ -154,10 +162,10 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       });
     }
 
-    const versionResult = yield* runAntigravityCommand(config, ["--version"], environment).pipe(
-      Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
-      Effect.result,
-    );
+    const versionResult = yield* runAntigravityCommand(config, ["--version"], environment, [
+      environment,
+      baseEnvironment,
+    ]).pipe(Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS), Effect.result);
 
     if (Result.isFailure(versionResult)) {
       const error = versionResult.failure;

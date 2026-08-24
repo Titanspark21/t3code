@@ -7,6 +7,7 @@ import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import { HostProcessEnvironment, HostProcessPlatform } from "./hostProcess.ts";
@@ -88,17 +89,38 @@ export interface ResolvedSpawnCommand {
   readonly shell: boolean;
 }
 
+export interface ResolvedSpawnCandidate extends ResolvedSpawnCommand {
+  /** The concrete PATH candidate before cmd.exe escaping. */
+  readonly resolvedPath?: string;
+  /** Environment with this candidate's directory promoted to the front of PATH. */
+  readonly environment: NodeJS.ProcessEnv;
+}
+
+export interface VerifiedSpawnCommandOptions extends CommandAvailabilityOptions {
+  /**
+   * Receives the verified PATH ordering. Use a provider-owned environment here
+   * so later session spawns resolve the same executable that passed the probe.
+   */
+  readonly promoteEnvironments?: ReadonlyArray<NodeJS.ProcessEnv>;
+}
+
 export type SpawnExecutableResolver = (
   command: string,
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ) => string | undefined;
 
-function resolveSpawnExecutableWithNode(
+export type SpawnExecutableCandidatesResolver = (
   command: string,
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
-): string | undefined {
+) => ReadonlyArray<string>;
+
+function resolveSpawnExecutablesWithNode(
+  command: string,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): ReadonlyArray<string> {
   const path = platform === "win32" ? NodePath.win32 : NodePath.posix;
   const windowsPathExtensions = platform === "win32" ? resolveWindowsPathExtensions(env) : [];
   const candidates = resolveCommandCandidates(
@@ -119,19 +141,37 @@ function resolveSpawnExecutableWithNode(
     }
   };
 
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  const append = (candidate: string) => {
+    if (!isExecutable(candidate)) return;
+    const comparisonKey = platform === "win32" ? candidate.toLowerCase() : candidate;
+    if (seen.has(comparisonKey)) return;
+    seen.add(comparisonKey);
+    resolved.push(candidate);
+  };
+
   if (command.includes("/") || command.includes("\\")) {
-    return candidates.find(isExecutable);
+    for (const candidate of candidates) append(candidate);
+    return resolved;
   }
 
   for (const pathEntry of (readEnvPath(env) ?? "").split(pathDelimiterForPlatform(platform))) {
     const normalizedPathEntry = stripWrappingQuotes(pathEntry.trim());
     if (normalizedPathEntry.length === 0) continue;
     for (const candidate of candidates) {
-      const candidatePath = path.join(normalizedPathEntry, candidate);
-      if (isExecutable(candidatePath)) return candidatePath;
+      append(path.join(normalizedPathEntry, candidate));
     }
   }
-  return undefined;
+  return resolved;
+}
+
+function resolveSpawnExecutableWithNode(
+  command: string,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  return resolveSpawnExecutablesWithNode(command, platform, env)[0];
 }
 
 export const SpawnExecutableResolution = Context.Reference<SpawnExecutableResolver>(
@@ -140,6 +180,14 @@ export const SpawnExecutableResolution = Context.Reference<SpawnExecutableResolv
     defaultValue: () => resolveSpawnExecutableWithNode,
   },
 );
+
+export const SpawnExecutableCandidatesResolution =
+  Context.Reference<SpawnExecutableCandidatesResolver>(
+    "@t3tools/shared/shell/SpawnExecutableCandidatesResolution",
+    {
+      defaultValue: () => resolveSpawnExecutablesWithNode,
+    },
+  );
 
 export interface WindowsEnvironmentProbeOptions {
   readonly loadProfile?: boolean;
@@ -631,6 +679,136 @@ export const resolveCommandPath = Effect.fn("shell.resolveCommandPath")(function
     platform: yield* HostProcessPlatform,
   });
 });
+
+function writeEnvPath(env: NodeJS.ProcessEnv, value: string): void {
+  const matchingKeys = Object.keys(env).filter((key) => key.toLowerCase() === "path");
+  const targetKey = matchingKeys.find((key) => key === "PATH") ?? matchingKeys[0] ?? "PATH";
+  for (const key of matchingKeys) {
+    if (key !== targetKey) delete env[key];
+  }
+  env[targetKey] = value;
+}
+
+function environmentForSpawnCandidate(
+  env: NodeJS.ProcessEnv,
+  resolvedPath: string | undefined,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv {
+  const environment = { ...env };
+  if (platform !== "win32" || !resolvedPath) return environment;
+
+  const directory = NodePath.win32.dirname(resolvedPath);
+  const pathValue = mergePathValues(directory, readEnvPath(environment), platform);
+  if (pathValue) writeEnvPath(environment, pathValue);
+  return environment;
+}
+
+function resolvedSpawnCandidate(
+  command: string,
+  args: ReadonlyArray<string>,
+  environment: NodeJS.ProcessEnv,
+  resolvedPath?: string,
+): ResolvedSpawnCandidate {
+  const effectiveCommand = resolvedPath ?? command;
+  const extension = NodePath.win32.extname(effectiveCommand).toLowerCase();
+  if (extension !== ".cmd" && extension !== ".bat") {
+    return {
+      command: effectiveCommand,
+      args: [...args],
+      shell: false,
+      ...(resolvedPath ? { resolvedPath } : {}),
+      environment,
+    };
+  }
+
+  return {
+    command: escapeWindowsShellArg(effectiveCommand),
+    args: sanitizeShellModeArgsForPlatform(args, "win32"),
+    shell: true,
+    ...(resolvedPath ? { resolvedPath } : {}),
+    environment,
+  };
+}
+
+/**
+ * Returns every launchable Windows PATH/PATHEXT candidate in search order.
+ * POSIX keeps its normal direct-spawn behavior and returns one candidate.
+ */
+export const resolveSpawnCommandCandidates = Effect.fn("shell.resolveSpawnCommandCandidates")(
+  function* (
+    command: string,
+    args: ReadonlyArray<string>,
+    options: CommandAvailabilityOptions = {},
+  ): Effect.fn.Return<ReadonlyArray<ResolvedSpawnCandidate>> {
+    const platform = yield* HostProcessPlatform;
+    const hostEnvironment = yield* HostProcessEnvironment;
+    const env =
+      options.env === undefined
+        ? hostEnvironment
+        : options.extendEnv
+          ? { ...hostEnvironment, ...options.env }
+          : options.env;
+
+    if (platform !== "win32") {
+      return [resolvedSpawnCandidate(command, args, { ...env })];
+    }
+
+    const resolveExecutables = yield* SpawnExecutableCandidatesResolution;
+    const resolvedPaths = resolveExecutables(command, platform, env);
+    if (resolvedPaths.length === 0) {
+      return [resolvedSpawnCandidate(command, args, { ...env })];
+    }
+
+    return resolvedPaths.map((resolvedPath) =>
+      resolvedSpawnCandidate(
+        command,
+        args,
+        environmentForSpawnCandidate(env, resolvedPath, platform),
+        resolvedPath,
+      ),
+    );
+  },
+);
+
+/**
+ * Tries Windows PATH candidates until one can actually be launched. A
+ * successful candidate promotes its directory in the provider-owned PATH so
+ * subsequent long-lived sessions use the same executable. The verifier should
+ * fail only when that candidate cannot be used; non-zero process exits are
+ * ordinary successful values and stop iteration.
+ */
+export function withVerifiedSpawnCommand<A, E, R>(
+  command: string,
+  args: ReadonlyArray<string>,
+  options: VerifiedSpawnCommandOptions,
+  verify: (candidate: ResolvedSpawnCandidate) => Effect.Effect<A, E, R>,
+  shouldTryNext: (error: E) => boolean = () => true,
+): Effect.Effect<A, E, R> {
+  return Effect.gen(function* () {
+    const candidates = yield* resolveSpawnCommandCandidates(command, args, options);
+    let lastFailure = Option.none<E>();
+
+    for (const candidate of candidates) {
+      const result = yield* verify(candidate).pipe(Effect.result);
+      if (result._tag === "Failure") {
+        if (!shouldTryNext(result.failure)) return yield* Effect.fail(result.failure);
+        lastFailure = Option.some(result.failure);
+        continue;
+      }
+
+      const promotedPath = readEnvPath(candidate.environment);
+      if (promotedPath) {
+        for (const environment of options.promoteEnvironments ?? []) {
+          writeEnvPath(environment, promotedPath);
+        }
+      }
+      return result.success;
+    }
+
+    if (Option.isSome(lastFailure)) return yield* Effect.fail(lastFailure.value);
+    return yield* Effect.die(new Error(`No spawn candidates were produced for ${command}.`));
+  });
+}
 
 export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(function* (
   command: string,

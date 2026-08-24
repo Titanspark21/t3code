@@ -25,7 +25,7 @@ import type {
 import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { withVerifiedSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
@@ -343,33 +343,35 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     ...input.environment,
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
-  const spawnCommand = yield* resolveSpawnCommand(
+  const child = yield* withVerifiedSpawnCommand(
     input.binaryPath,
     codexAppServerArgs(input.launchArgs),
     {
       env: environment,
       extendEnv: true,
+      promoteEnvironments: [environment, ...(input.environment ? [input.environment] : [])],
     },
-  );
-  const child = yield* spawner
-    .spawn(
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        cwd: input.cwd,
-        env: environment,
-        extendEnv: true,
-        forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
-        shell: spawnCommand.shell,
-      }),
-    )
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new CodexErrors.CodexAppServerSpawnError({
-            command: `${input.binaryPath} app-server`,
-            cause,
+    (candidate) =>
+      spawner
+        .spawn(
+          ChildProcess.make(candidate.command, candidate.args, {
+            cwd: input.cwd,
+            env: candidate.environment,
+            extendEnv: true,
+            forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
+            shell: candidate.shell,
           }),
-      ),
-    );
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new CodexErrors.CodexAppServerSpawnError({
+                command: `${input.binaryPath} app-server`,
+                cause,
+              }),
+          ),
+        ),
+  );
   const clientContext = yield* Layer.build(CodexClient.layerChildProcess(child));
   const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
     Effect.provide(clientContext),

@@ -78,6 +78,11 @@ Each provider CLI must be on the server's `PATH`, or have an explicit binary pat
 manager or a non-standard install location keeps the CLI off the `PATH` of the shell that
 started T3 Code.
 
+On Windows, T3 Code checks `.COM`, `.EXE`, `.BAT`, and `.CMD` entries in `PATHEXT`. If an earlier
+matching entry cannot be launched—for example, a blocked Microsoft Store alias—it continues to the
+next matching directory and keeps the working directory first for later agent sessions. An explicit
+binary path remains authoritative and is not replaced by a different `PATH` entry.
+
 ### When Auth Is Needed
 
 Provider auth is required before you start a session with that provider, not before you start

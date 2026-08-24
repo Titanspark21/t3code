@@ -10,6 +10,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  isCommandLaunchFailureCause,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
@@ -85,6 +86,20 @@ describe("ProviderCommandNotFoundError", () => {
       ),
     ).toBe(true);
     expect(isCommandMissingCause(new Error("spawn provider ENOENT"))).toBe(false);
+  });
+
+  it("retries only launch and access failures when probing PATH candidates", () => {
+    const platformError = (tag: "PermissionDenied" | "TimedOut") =>
+      PlatformError.systemError({
+        _tag: tag,
+        module: "ChildProcess",
+        method: "spawn",
+        description: "host detail",
+      });
+
+    expect(isCommandLaunchFailureCause(platformError("PermissionDenied"))).toBe(true);
+    expect(isCommandLaunchFailureCause(platformError("TimedOut"))).toBe(false);
+    expect(isCommandLaunchFailureCause(new Error("provider protocol failed"))).toBe(false);
   });
 
   it.effect("retains safe failed-command diagnostics without process output", () => {

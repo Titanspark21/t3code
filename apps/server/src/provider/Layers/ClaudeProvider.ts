@@ -18,7 +18,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { withVerifiedSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
@@ -33,6 +33,7 @@ import {
   buildSelectOptionDescriptor,
   buildServerProvider,
   DEFAULT_TIMEOUT_MS,
+  isCommandLaunchFailureCause,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -794,14 +795,23 @@ const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (
   environment?: NodeJS.ProcessEnv,
 ) {
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-  const spawnCommand = yield* resolveSpawnCommand(claudeSettings.binaryPath, args, {
-    env: claudeEnvironment,
-  });
-  const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-    env: claudeEnvironment,
-    shell: spawnCommand.shell,
-  });
-  return yield* spawnAndCollect(claudeSettings.binaryPath, command);
+  return yield* withVerifiedSpawnCommand(
+    claudeSettings.binaryPath,
+    args,
+    {
+      env: claudeEnvironment,
+      promoteEnvironments: [claudeEnvironment, ...(environment ? [environment] : [])],
+    },
+    (candidate) =>
+      spawnAndCollect(
+        claudeSettings.binaryPath,
+        ChildProcess.make(candidate.command, candidate.args, {
+          env: candidate.environment,
+          shell: candidate.shell,
+        }),
+      ),
+    isCommandLaunchFailureCause,
+  );
 });
 
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (

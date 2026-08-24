@@ -72,6 +72,17 @@ export function isCommandMissingCause(error: unknown): boolean {
   return error instanceof PlatformError.PlatformError && error.reason._tag === "NotFound";
 }
 
+/** Launch failures for which another executable with the same PATH name may still work. */
+export function isCommandLaunchFailureCause(error: unknown): boolean {
+  if (isProviderCommandNotFoundError(error)) return true;
+  if (!(error instanceof PlatformError.PlatformError)) return false;
+  return (
+    error.reason._tag === "NotFound" ||
+    error.reason._tag === "PermissionDenied" ||
+    error.reason._tag === "BadResource"
+  );
+}
+
 export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Command) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
