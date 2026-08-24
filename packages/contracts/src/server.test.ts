@@ -92,6 +92,34 @@ describe("ServerProvider", () => {
     expect(parsed.continuation?.groupKey).toBe("codex:home:/Users/julius/.codex");
   });
 
+  it("decodes rich provider slash-command metadata", () => {
+    const parsed = decodeServerProvider({
+      ...baseProviderSnapshot,
+      slashCommands: [
+        {
+          name: "compact",
+          description: "Summarize the conversation.",
+          input: { hint: "Optional preservation instructions" },
+          syntax: "/compact [instructions]",
+          sideEffects: "Replaces older context with a summary.",
+          duringWork: "queued",
+          output: "conversation",
+          minimumVersion: "2.1.0",
+          support: "supported",
+          supportNote: "Reported by the active Claude session.",
+        },
+      ],
+    });
+
+    expect(parsed.slashCommands[0]).toEqual(
+      expect.objectContaining({
+        syntax: "/compact [instructions]",
+        duringWork: "queued",
+        support: "supported",
+      }),
+    );
+  });
+
   it("decodes optional legacy model metadata", () => {
     const parsed = decodeServerProvider({
       instanceId: "codex",

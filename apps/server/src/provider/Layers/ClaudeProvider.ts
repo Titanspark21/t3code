@@ -57,6 +57,139 @@ const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 
+interface ClaudeSlashCommandMetadata {
+  readonly syntax: string;
+  readonly description: string;
+  readonly argumentHelp?: string;
+  readonly sideEffects: string;
+  readonly duringWork: "immediate" | "queued" | "idle-only";
+  readonly minimumVersion: string;
+}
+
+/** Verified from Claude Code's official command reference. */
+const CLAUDE_SLASH_COMMAND_METADATA: Readonly<Record<string, ClaudeSlashCommandMetadata>> = {
+  model: {
+    syntax: "/model [model]",
+    description: "Choose the model for this session.",
+    argumentHelp: "Optional model alias or full model ID; omit it to open Claude's picker.",
+    sideEffects: "Changes the model and may ask you to confirm rereading the conversation.",
+    duringWork: "immediate",
+    minimumVersion: "2.1.0",
+  },
+  effort: {
+    syntax: "/effort [level|auto]",
+    description: "Choose how much reasoning the current model uses.",
+    argumentHelp: "low, medium, high, xhigh, max, or auto; omit it to open the slider.",
+    sideEffects: "Changes reasoning effort immediately.",
+    duringWork: "immediate",
+    minimumVersion: "2.1.205",
+  },
+  permissions: {
+    syntax: "/permissions",
+    description: "Manage allow, ask, and deny rules.",
+    sideEffects: "Can change which tools Claude may run without asking.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  usage: {
+    syntax: "/usage",
+    description: "Show subscription usage and limits.",
+    sideEffects: "Read-only.",
+    duringWork: "immediate",
+    minimumVersion: "2.1.0",
+  },
+  context: {
+    syntax: "/context [all]",
+    description: "Show what is filling the context window.",
+    argumentHelp: "Pass all for the expanded breakdown.",
+    sideEffects: "Read-only.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  compact: {
+    syntax: "/compact [instructions]",
+    description: "Summarize the conversation to free context.",
+    argumentHelp: "Optional instructions tell Claude what the summary must preserve.",
+    sideEffects: "Replaces older context with a summary; conversation continuity may lose detail.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  clear: {
+    syntax: "/clear [name]",
+    description: "Start a new conversation with empty context.",
+    argumentHelp: "Optional name labels the conversation being left behind.",
+    sideEffects: "Leaves this conversation and starts a fresh one.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  diff: {
+    syntax: "/diff",
+    description: "Open Claude's interactive diff viewer.",
+    sideEffects: "Read-only.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  status: {
+    syntax: "/status",
+    description: "Show version, model, account, and connection status.",
+    sideEffects: "Read-only.",
+    duringWork: "immediate",
+    minimumVersion: "2.1.0",
+  },
+  tasks: {
+    syntax: "/tasks",
+    description: "View and manage background work for this session.",
+    sideEffects: "Opening the panel is read-only; actions inside it can stop tasks.",
+    duringWork: "immediate",
+    minimumVersion: "2.1.0",
+  },
+  mcp: {
+    syntax: "/mcp [reconnect <server>|enable|disable [server|all]]",
+    description: "Inspect or manage MCP server connections.",
+    argumentHelp: "Omit arguments for the interactive server list.",
+    sideEffects: "Enable, disable, or reconnect can change available MCP tools.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  skills: {
+    syntax: "/skills",
+    description: "Browse the skills available in this Claude session.",
+    sideEffects: "Changing visibility affects Claude and slash-menu discovery.",
+    duringWork: "queued",
+    minimumVersion: "2.1.121",
+  },
+  rewind: {
+    syntax: "/rewind",
+    description: "Return code or conversation to an earlier checkpoint.",
+    sideEffects:
+      "Can discard later conversation or restore earlier file content after confirmation.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  resume: {
+    syntax: "/resume [session]",
+    description: "Switch to a saved Claude conversation.",
+    argumentHelp: "Optional session ID or name; omit it to open the picker.",
+    sideEffects: "Leaves the current conversation and resumes another.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  doctor: {
+    syntax: "/doctor",
+    description: "Diagnose Claude Code setup and configuration problems.",
+    sideEffects: "Reports findings first; any offered fix still requires confirmation.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+  help: {
+    syntax: "/help",
+    description: "Show Claude Code help and every command available here.",
+    sideEffects: "Read-only.",
+    duringWork: "queued",
+    minimumVersion: "2.1.0",
+  },
+};
+
 const CURRENT_CLAUDE_MODELS = new Set(["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]);
 
 export function isLegacyClaudeModel(model: string): boolean {
@@ -708,6 +841,62 @@ function dedupeSlashCommands(
   return [...commandsByName.values()];
 }
 
+export function enrichClaudeSlashCommands(
+  commands: ReadonlyArray<ServerProviderSlashCommand>,
+  installedVersion: string | null,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const reportedNames = new Set(
+    commands.map((command) => command.name.replace(/^\//, "").toLowerCase()),
+  );
+  const enriched = commands.map((command): ServerProviderSlashCommand => {
+    const name = command.name.replace(/^\//, "");
+    const metadata = CLAUDE_SLASH_COMMAND_METADATA[name.toLowerCase()];
+    if (!metadata) return command;
+    return {
+      ...command,
+      name,
+      description: command.description ?? metadata.description,
+      ...(command.input
+        ? {}
+        : metadata.argumentHelp
+          ? { input: { hint: metadata.argumentHelp } }
+          : {}),
+      syntax: metadata.syntax,
+      sideEffects: metadata.sideEffects,
+      duringWork: metadata.duringWork,
+      output: "conversation",
+      minimumVersion: metadata.minimumVersion,
+      support: "supported",
+      supportNote: installedVersion
+        ? `Reported by Claude Code ${installedVersion}; metadata verified since ${metadata.minimumVersion}.`
+        : `Reported by the active Claude session; metadata verified since ${metadata.minimumVersion}.`,
+    };
+  });
+
+  if (!installedVersion) return enriched;
+  for (const [name, metadata] of Object.entries(CLAUDE_SLASH_COMMAND_METADATA)) {
+    if (
+      reportedNames.has(name) ||
+      compareSemverVersions(installedVersion, metadata.minimumVersion) >= 0
+    ) {
+      continue;
+    }
+    enriched.push({
+      name,
+      description: metadata.description,
+      ...(metadata.argumentHelp ? { input: { hint: metadata.argumentHelp } } : {}),
+      syntax: metadata.syntax,
+      sideEffects: metadata.sideEffects,
+      duringWork: metadata.duringWork,
+      output: "conversation",
+      minimumVersion: metadata.minimumVersion,
+      support: "unsupported",
+      supportNote: `Requires Claude Code ${metadata.minimumVersion} or newer; installed version is ${installedVersion}.`,
+    });
+  }
+  return enriched;
+}
+
 function waitForAbortSignal(signal: AbortSignal): Promise<void> {
   if (signal.aborted) {
     return Promise.resolve();
@@ -938,7 +1127,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     : undefined;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = capabilities?.slashCommands ?? [];
-  const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
+  const dedupedSlashCommands = enrichClaudeSlashCommands(
+    dedupeSlashCommands(slashCommands),
+    parsedVersion,
+  );
 
   if (!capabilities) {
     return buildServerProvider({

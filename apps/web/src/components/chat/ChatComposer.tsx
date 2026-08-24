@@ -1127,8 +1127,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         type: "provider-slash-command" as const,
         provider: selectedProvider,
         command,
-        label: `/${command.name}`,
-        description: command.description ?? command.input?.hint ?? "Run provider command",
+        label: command.syntax ?? `/${command.name}`,
+        description: [
+          command.description ?? command.input?.hint ?? "Run provider command",
+          command.sideEffects,
+          command.duringWork === "immediate"
+            ? "Available during work"
+            : command.duringWork === "queued"
+              ? "Queues during work"
+              : command.duringWork === "idle-only"
+                ? "Idle only"
+                : undefined,
+          command.output === "conversation"
+            ? "Output appears in the conversation"
+            : command.output === "provider-ui"
+              ? "Output opens in provider UI"
+              : command.output === "external"
+                ? "Output opens externally"
+                : undefined,
+          command.supportNote,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join(" · "),
       }));
       const query = composerTrigger.query.trim().toLowerCase();
       const skillItems = slashMenuSkills.map((skill) => ({
@@ -1792,6 +1812,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "provider-slash-command") {
+        if (item.command.support === "unsupported") return;
         const replacement = `/${item.command.name} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,

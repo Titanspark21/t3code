@@ -614,6 +614,14 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         name: "feedback",
         description: "Send this thread and Codex logs to OpenAI",
         input: { hint: "Describe the issue (optional)" },
+        syntax: "/feedback [description]",
+        sideEffects: "Uploads this thread and Codex diagnostic logs to OpenAI.",
+        duringWork: "queued",
+        output: "conversation",
+        support: "supported",
+        supportNote: snapshot.version
+          ? `Reported by Codex app-server ${snapshot.version}.`
+          : "Reported by the active Codex app-server session.",
       },
     ],
     probe: {

@@ -56,6 +56,39 @@ describe("ComposerCommandMenu", () => {
     expect(markup).toContain("text-left");
   });
 
+  it("labels and disables provider commands unsupported by the installed version", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerCommandMenu
+        items={[
+          {
+            id: "provider-slash-command:claudeAgent:effort",
+            type: "provider-slash-command",
+            provider: ProviderDriverKind.make("claudeAgent"),
+            command: {
+              name: "effort",
+              syntax: "/effort [level|auto]",
+              support: "unsupported",
+              supportNote: "Requires Claude Code 2.1.205 or newer.",
+            },
+            label: "/effort [level|auto]",
+            description: "Choose reasoning effort",
+          },
+        ]}
+        resolvedTheme="dark"
+        isLoading={false}
+        triggerKind="slash-command"
+        activeItemId={null}
+        onHighlightedItemChange={() => {}}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("/effort [level|auto]");
+    expect(markup).toContain("Unsupported");
+    expect(markup).toContain("Requires Claude Code 2.1.205 or newer.");
+    expect(markup).toContain("disabled");
+  });
+
   it("renders the skill source icon inside its badge", () => {
     const markup = renderToStaticMarkup(
       <ComposerCommandMenu

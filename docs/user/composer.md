@@ -15,6 +15,11 @@ same `$name` skill token to your message. The original skill name remains search
 also reports that skill as a native slash command, T3 Code hides the duplicate native entry and keeps
 the `/skill:Skill Name` label.
 
+Provider commands are scoped to the provider selected in the composer. Where the provider exposes
+the information, entries include exact argument syntax, side effects, behavior while work is active,
+and the minimum verified CLI version. A command that requires a newer installed CLI remains visible
+but disabled with the required version instead of failing after insertion.
+
 ## Attachments
 
 Drag files onto the chat, paste them, or use the attachment picker. A message can include up to

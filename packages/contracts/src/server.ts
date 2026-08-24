@@ -78,10 +78,32 @@ export const ServerProviderSlashCommandInput = Schema.Struct({
 });
 export type ServerProviderSlashCommandInput = typeof ServerProviderSlashCommandInput.Type;
 
+export const ServerProviderSlashCommandWorkBehavior = Schema.Literals([
+  "immediate",
+  "queued",
+  "idle-only",
+]);
+export type ServerProviderSlashCommandWorkBehavior =
+  typeof ServerProviderSlashCommandWorkBehavior.Type;
+
+export const ServerProviderSlashCommandSupport = Schema.Literals([
+  "supported",
+  "unsupported",
+  "unknown",
+]);
+export type ServerProviderSlashCommandSupport = typeof ServerProviderSlashCommandSupport.Type;
+
 export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
   input: Schema.optional(ServerProviderSlashCommandInput),
+  syntax: Schema.optional(TrimmedNonEmptyString),
+  sideEffects: Schema.optional(TrimmedNonEmptyString),
+  duringWork: Schema.optional(ServerProviderSlashCommandWorkBehavior),
+  output: Schema.optional(Schema.Literals(["conversation", "provider-ui", "external"])),
+  minimumVersion: Schema.optional(TrimmedNonEmptyString),
+  support: Schema.optional(ServerProviderSlashCommandSupport),
+  supportNote: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 

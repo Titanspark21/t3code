@@ -142,14 +142,19 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
   const isSlashSkill =
     props.triggerKind === "slash-command" && props.item.type === "skill" ? props.item.skill : null;
+  const providerCommand = props.item.type === "provider-slash-command" ? props.item.command : null;
+  const providerCommandUnavailable = providerCommand?.support === "unsupported";
 
   return (
     <CommandItem
       value={props.item.id}
+      disabled={providerCommandUnavailable}
+      title={providerCommand?.supportNote ?? providerCommand?.sideEffects}
       data-composer-item-id={props.item.id}
       className={cn(
         "cursor-pointer select-none gap-3 rounded-lg px-3 py-2! hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit",
         props.isActive && "bg-accent! text-accent-foreground!",
+        providerCommandUnavailable && "cursor-not-allowed opacity-55",
       )}
       onMouseMove={() => {
         if (!props.isActive) props.onHighlight(props.item.id);
@@ -158,6 +163,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         event.preventDefault();
       }}
       onClick={() => {
+        if (providerCommandUnavailable) return;
         props.onSelect(props.item);
       }}
     >
@@ -187,6 +193,11 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
             kind={skillSourceKind}
             showSkillSuffix={props.triggerKind === "skill"}
           />
+        ) : null}
+        {providerCommandUnavailable ? (
+          <Badge className="ms-auto" variant="secondary">
+            Unsupported
+          </Badge>
         ) : null}
       </span>
     </CommandItem>
