@@ -8,6 +8,7 @@
  * @module state/quota
  */
 import { useAtomValue } from "@effect/atom-react";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import {
   QUOTA_CONTRACT_VERSION,
@@ -90,9 +91,14 @@ export function useQuota(): QuotaView {
 
   const refresh = useCallback(() => {
     for (const environment of environments) {
-      appAtomRegistry.refresh(
-        serverEnvironment.quota({ environmentId: environment.environmentId, input: {} }),
-      );
+      const target = { environmentId: environment.environmentId, input: {} };
+      void runAtomCommand(appAtomRegistry, serverEnvironment.refreshProviders, target, {
+        label: "refresh account limits",
+        reportFailure: false,
+        reportDefect: false,
+      }).then(() => {
+        appAtomRegistry.refresh(serverEnvironment.quota(target));
+      });
     }
   }, [environments]);
 

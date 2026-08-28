@@ -16,6 +16,9 @@ The account-limit indicators in the sidebar and provider picker are separate fro
 history. Codex can restore its last reported windows from local session history when T3 Code starts.
 Claude reports its full 5-hour, weekly, and model-specific windows after a Claude session connects;
 until then, the account correctly shows that no limit data has been reported yet.
+When the same named account is connected from multiple devices, the sidebar combines those entries
+into one account row and keeps the newest reported snapshot. Use the refresh button in the Limits
+header to re-check connected providers and refresh their reported limits.
 
 If a provider rejects a turn because its usage window is exhausted, the thread is marked **Rate
 Limited** instead of being left in a generic unrecoverable error. Wait for the provider's reset

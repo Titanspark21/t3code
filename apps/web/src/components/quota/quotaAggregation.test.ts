@@ -32,34 +32,50 @@ function snapshot(
   };
 }
 
-function account(key: string, snapshotValue?: AccountQuotaSnapshot): QuotaAggregationAccount {
+function account(
+  key: string,
+  snapshotValue?: AccountQuotaSnapshot,
+  displayName = key,
+): QuotaAggregationAccount {
   return {
     key,
-    instance: { driverKind: ProviderDriverKind.make("antigravity") },
+    instance: { driverKind: ProviderDriverKind.make("antigravity"), displayName },
     snapshot: snapshotValue,
   };
 }
 
 describe("quotaAggregation", () => {
-  it("keeps ordinary rows in place and combines every Antigravity account", () => {
+  it("collapses the same labeled account across environments", () => {
     const rows = groupQuotaPanelAccounts([
-      { ...account("codex"), instance: { driverKind: ProviderDriverKind.make("codex") } },
-      account("agy-one"),
       {
-        ...account("claude"),
-        instance: { driverKind: ProviderDriverKind.make("claudeAgent") },
+        ...account("windows:claude-1", snapshot("claude-1", [group("Subscription", 40)])),
+        instance: { driverKind: ProviderDriverKind.make("claudeAgent"), displayName: "Claude-1" },
       },
-      account("agy-two"),
+      {
+        ...account("windows:agy-1", undefined, "AGY-1"),
+        instance: { driverKind: ProviderDriverKind.make("antigravity"), displayName: "AGY-1" },
+      },
+      {
+        ...account(
+          "ubuntu:claude-1",
+          snapshot("claude-1", [group("Subscription", 20)], "2026-08-27T11:30:00.000Z"),
+        ),
+        instance: { driverKind: ProviderDriverKind.make("claudeAgent"), displayName: "Claude-1" },
+      },
+      {
+        ...account("ubuntu:agy-2", undefined, "AGY-2"),
+        instance: { driverKind: ProviderDriverKind.make("antigravity"), displayName: "AGY-2" },
+      },
     ]);
 
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ kind: "account", account: { key: "codex" } });
-    expect(rows[1]).toMatchObject({ kind: "antigravity", key: "antigravity" });
-    expect(rows[2]).toMatchObject({ kind: "account", account: { key: "claude" } });
-    expect(rows[1]?.kind === "antigravity" && rows[1].accounts.map(({ key }) => key)).toEqual([
-      "agy-one",
-      "agy-two",
+    expect(rows.map((row) => row.account.instance.displayName)).toEqual([
+      "Claude-1",
+      "AGY-1",
+      "AGY-2",
     ]);
+    expect(rows[0]?.account.key).toBe("claudeAgent:claude-1");
+    expect(rows[0]?.account.snapshot?.groups[0]?.windows[0]?.usedPercent).toBe(20);
   });
 
   it("averages each Antigravity account's pools before averaging accounts", () => {

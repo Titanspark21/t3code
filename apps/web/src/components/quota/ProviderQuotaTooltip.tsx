@@ -24,7 +24,9 @@ export function ProviderQuotaTooltip({
       <TooltipPopup className={snapshot ? undefined : "max-w-56"} side={side}>
         {snapshot ? (
           <QuotaAccountDetails nowMs={nowMs} snapshot={snapshot} />
-        ) : driverKind === "codex" || driverKind === "claudeAgent" ? (
+        ) : driverKind === "codex" ||
+          driverKind === "claudeAgent" ||
+          driverKind === "antigravity" ? (
           "No quota data yet. Send a message with this account, then refresh limits."
         ) : (
           "This provider does not expose subscription quota to OmniCode yet."

@@ -9,48 +9,61 @@ export interface QuotaAggregationAccount {
   readonly key: string;
   readonly instance: {
     readonly driverKind: ProviderDriverKind;
+    readonly displayName: string;
   };
   readonly snapshot: AccountQuotaSnapshot | undefined;
 }
 
-export type QuotaPanelRow<TAccount extends QuotaAggregationAccount> =
-  | {
-      readonly kind: "account";
-      readonly account: TAccount;
-    }
-  | {
-      readonly kind: "antigravity";
-      readonly key: "antigravity";
-      readonly accounts: ReadonlyArray<TAccount>;
-    };
+export type QuotaPanelRow<TAccount extends QuotaAggregationAccount> = {
+  readonly kind: "account";
+  readonly account: TAccount;
+};
 
 /**
- * Keep one row per ordinary provider, but present all Antigravity instances as
- * one account group. The first Antigravity account determines where the group
- * appears, so the panel remains stable as other providers refresh.
+ * Keep one row per configured account label across all connected environments.
+ *
+ * Provider instance ids are routing keys inside one environment. The same
+ * account configured on Windows and Linux can therefore arrive with different
+ * environment-qualified row keys even when the user intentionally gave it the
+ * same name. The configured display name is the account identity used by the
+ * sidebar, preserving the first-seen order while selecting the newest snapshot
+ * from the connected environments.
  */
 export function groupQuotaPanelAccounts<TAccount extends QuotaAggregationAccount>(
   accounts: ReadonlyArray<TAccount>,
 ): ReadonlyArray<QuotaPanelRow<TAccount>> {
-  const rows: Array<QuotaPanelRow<TAccount>> = [];
-  let antigravityAccounts: TAccount[] | undefined;
+  const grouped = new Map<string, TAccount>();
 
   for (const account of accounts) {
-    if (account.instance.driverKind !== "antigravity") {
-      rows.push({ kind: "account", account });
+    const displayName = account.instance.displayName.trim() || account.key;
+    const identity = `${account.instance.driverKind}:${displayName.toLocaleLowerCase()}`;
+    const existing = grouped.get(identity);
+    if (!existing) {
+      grouped.set(identity, { ...account, key: identity });
       continue;
     }
 
-    if (antigravityAccounts) {
-      antigravityAccounts.push(account);
-      continue;
+    const snapshot = latestSnapshot(existing.snapshot, account.snapshot);
+    if (snapshot !== existing.snapshot) {
+      grouped.set(identity, { ...existing, snapshot });
     }
-
-    antigravityAccounts = [account];
-    rows.push({ kind: "antigravity", key: "antigravity", accounts: antigravityAccounts });
   }
 
-  return rows;
+  return [...grouped.values()].map((account) => ({ kind: "account", account }));
+}
+
+function latestSnapshot(
+  left: AccountQuotaSnapshot | undefined,
+  right: AccountQuotaSnapshot | undefined,
+): AccountQuotaSnapshot | undefined {
+  if (!left) return right;
+  if (!right) return left;
+
+  const leftObservedAt = Date.parse(left.observedAt);
+  const rightObservedAt = Date.parse(right.observedAt);
+  if (Number.isNaN(leftObservedAt)) return right;
+  if (Number.isNaN(rightObservedAt) || rightObservedAt <= leftObservedAt) return left;
+  return right;
 }
 
 function quotaRemainingPercentExact(usedPercent: number): number {
