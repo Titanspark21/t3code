@@ -13,3 +13,8 @@ The account-limit indicators in the sidebar and provider picker are separate fro
 history. Codex can restore its last reported windows from local session history when T3 Code starts.
 Claude reports its full 5-hour, weekly, and model-specific windows after a Claude session connects;
 until then, the account correctly shows that no limit data has been reported yet.
+
+If a provider rejects a turn because its usage window is exhausted, the thread is marked **Rate
+Limited** instead of being left in a generic unrecoverable error. Wait for the provider's reset
+window, then send a new message in the same thread; T3 Code clears the temporary latch and resumes
+the provider session. The web, desktop, and mobile thread views all show this recovery path.

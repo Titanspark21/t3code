@@ -176,5 +176,22 @@ describe("projectThreadAwareness", () => {
       headline: "Agent failed",
       detail: "Provider process exited.",
     });
+
+    const rateLimitedState = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "rate-limited",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: "Provider usage limit reached.",
+          updatedAt: NOW,
+        },
+      }),
+    });
+    expect(rateLimitedState?.phase).toBe("failed");
   });
 });

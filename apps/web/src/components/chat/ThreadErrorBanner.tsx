@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { isProviderRateLimitFailure } from "@t3tools/shared/providerRateLimit";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
@@ -33,6 +34,10 @@ export function isThreadErrorBannerDismissedForSession(bannerKey: string | null)
   return bannerKey !== null && sessionDismissedThreadErrorBannerKeys.has(bannerKey);
 }
 
+export function isProviderRateLimitError(error: string): boolean {
+  return isProviderRateLimitFailure(error);
+}
+
 export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   error,
   onDismiss,
@@ -52,6 +57,11 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
               {error}
             </TooltipPopup>
           </Tooltip>
+          {isProviderRateLimitError(error) && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              Send again after the provider reset window.
+            </div>
+          )}
         </AlertDescription>
         {onDismiss && (
           <AlertAction>

@@ -30,6 +30,7 @@ import {
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
+  OMNI_THEME,
   OCEAN_THEME,
   updateCustomTheme,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -79,6 +80,20 @@ function contrastRatio(first: string, second: string): number {
 }
 
 describe("theme files", () => {
+  it("registers OmniCode as a dark-first palette with a system-safe light companion", () => {
+    expect(OMNI_THEME.id).toBe("omni");
+    expect(OMNI_THEME.label).toBe("OmniCode");
+    expect(OMNI_THEME.appearance).toBe("dark");
+    expect(getThemeModes(OMNI_THEME)).toEqual(["light", "dark"]);
+    expect(getThemeColorsForMode(OMNI_THEME, "dark")).toBe(OMNI_THEME.colors);
+    expect(getThemePreferenceMode("omni")).toBe("dark");
+    expect(asHex(OMNI_THEME.colors.canvas)).toBe("#161b21");
+    expect(asHex(OMNI_THEME.colors.accent)).toBe("#72c6d3");
+    expect(contrastRatio(OMNI_THEME.colors.text, OMNI_THEME.colors.canvas)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+  });
+
   it("keeps every built-in palette value in canonical OKLCH form", () => {
     for (const theme of BUILT_IN_THEMES) {
       for (const colors of [theme.colors, ...Object.values(theme.variants ?? {})]) {

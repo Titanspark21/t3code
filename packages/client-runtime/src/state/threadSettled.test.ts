@@ -477,6 +477,15 @@ describe("hasQueuedTurnStart", () => {
       },
     };
     expect(hasQueuedTurnStart(failedShell, JUST_AFTER)).toBe(false);
+    expect(
+      hasQueuedTurnStart(
+        {
+          ...failedShell,
+          session: { ...failedShell.session, status: "rate-limited" as const },
+        },
+        JUST_AFTER,
+      ),
+    ).toBe(false);
   });
 
   it("is quiet without user messages", () => {

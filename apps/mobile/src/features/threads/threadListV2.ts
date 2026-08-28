@@ -137,7 +137,7 @@ export function resolveThreadListV2Status(
   if (thread.session?.status === "running" || thread.session?.status === "starting") {
     return "working";
   }
-  if (thread.session?.status === "error") {
+  if (thread.session?.status === "error" || thread.session?.status === "rate-limited") {
     return "failed";
   }
   return "ready";

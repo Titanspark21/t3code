@@ -41,6 +41,10 @@ import {
 import { forkParked, ServerActivation } from "../../serverActivation.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import {
+  formatProviderRateLimitFailure,
+  isProviderRateLimitFailure,
+} from "../providerRateLimit.ts";
+import {
   resolveSourceControlWriterModelSelection,
   ServerSettingsService,
 } from "../../serverSettings.ts";
@@ -398,6 +402,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly detail: string;
     readonly createdAt: string;
+    readonly status?: "rate-limited";
   }) {
     const thread = yield* resolveThread(input.threadId);
     if (!thread) {
@@ -413,7 +418,7 @@ const make = Effect.gen(function* () {
           providerInstanceId: thread.modelSelection.instanceId,
           runtimeMode: thread.runtimeMode,
         }),
-        status: session?.status === "stopped" ? "stopped" : "error",
+        status: input.status ?? (session?.status === "stopped" ? "stopped" : "error"),
         activeTurnId: null,
         lastError: input.detail,
         updatedAt: input.createdAt,
@@ -1119,17 +1124,20 @@ const make = Effect.gen(function* () {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
+      const rateLimited = isProviderRateLimitFailure(detail);
+      const userFacingDetail = rateLimited ? formatProviderRateLimitFailure(detail) : detail;
       return setThreadSessionErrorOnTurnStartFailure({
         threadId: event.payload.threadId,
-        detail,
+        detail: userFacingDetail,
         createdAt: event.payload.createdAt,
+        ...(rateLimited ? { status: "rate-limited" as const } : {}),
       }).pipe(
         Effect.flatMap(() =>
           appendProviderFailureActivity({
             threadId: event.payload.threadId,
             kind: "provider.turn.start.failed",
-            summary: "Provider turn start failed",
-            detail,
+            summary: rateLimited ? "Provider usage limit reached" : "Provider turn start failed",
+            detail: userFacingDetail,
             turnId: null,
             createdAt: event.payload.createdAt,
           }),

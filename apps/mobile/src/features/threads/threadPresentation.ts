@@ -97,10 +97,11 @@ export function resolveThreadStatus(
     };
   }
 
-  if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
+  const rateLimited = thread.session?.status === "rate-limited";
+  if (rateLimited || thread.session?.status === "error" || thread.latestTurn?.state === "error") {
     return {
       kind: "error",
-      label: "Error",
+      label: rateLimited ? "Rate Limited" : "Error",
       pillClassName: "bg-rose-500/12 dark:bg-rose-500/16",
       textClassName: "text-rose-700 dark:text-rose-300",
       iconColor: "#ff453a",

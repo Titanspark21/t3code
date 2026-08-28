@@ -29,6 +29,21 @@ const codexEvent = rateLimitEvent({
   secondary: { usedPercent: 82, windowDurationMins: 10080 },
 });
 
+const antigravityEvent = rateLimitEvent({
+  pools: [
+    {
+      id: "gemini",
+      name: "Gemini",
+      windows: [{ usedPercent: 25, windowDurationMins: 300 }],
+    },
+    {
+      id: "claude-gpt",
+      name: "Claude and GPT",
+      windows: [{ usedPercent: 75, windowDurationMins: 10080 }],
+    },
+  ],
+});
+
 describe("applyQuotaEvent", () => {
   it("records a snapshot for a known driver", () => {
     const state = applyQuotaEvent(emptyQuotaState, {
@@ -38,6 +53,16 @@ describe("applyQuotaEvent", () => {
       observedAt,
     });
     expect(state.get(instanceId)?.groups[0]?.windows).toHaveLength(2);
+  });
+
+  it("records Antigravity's independent quota pools", () => {
+    const state = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: "antigravity-1" as ProviderInstanceId,
+      driverKind: "antigravity",
+      event: antigravityEvent,
+      observedAt,
+    });
+    expect(state.get("antigravity-1" as ProviderInstanceId)?.groups).toHaveLength(2);
   });
 
   it("ignores events that are not quota events", () => {

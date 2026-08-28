@@ -6,6 +6,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  type ProviderSession,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
@@ -298,6 +299,114 @@ const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>)
 const ORPHANED_PROVIDER_SESSION_ERROR =
   "Provider session did not survive a server restart. Send a new message to continue.";
 
+const STARTUP_PROVIDER_SESSION_ERROR =
+  "The provider session reported an error while T3 Code was reconnecting.";
+
+function providerBindingStatus(
+  status: ProviderSession["status"],
+): "starting" | "running" | "stopped" | "error" {
+  switch (status) {
+    case "connecting":
+      return "starting";
+    case "error":
+      return "error";
+    case "closed":
+      return "stopped";
+    case "ready":
+    case "running":
+      // ProviderSessionDirectory predates the distinct ready state. The
+      // runtimePayload below carries the precise provider status for repair
+      // diagnostics while this compatibility field remains routable.
+      return "running";
+  }
+}
+
+function startupSessionStatus(
+  projectedStatus:
+    | "idle"
+    | "starting"
+    | "running"
+    | "ready"
+    | "interrupted"
+    | "stopped"
+    | "error"
+    | "rate-limited",
+  providerStatus: ProviderSession["status"],
+): "starting" | "running" | "ready" | "stopped" | "error" | "rate-limited" {
+  switch (providerStatus) {
+    case "connecting":
+      return "starting";
+    case "running":
+      return "running";
+    case "error":
+      return "error";
+    case "closed":
+      return "stopped";
+    case "ready":
+      // A starting projection may have a queued turn start that has not yet
+      // reached the provider. Preserve that intent while clearing stale
+      // activeTurnId below; all other working projections are repaired to
+      // ready because the provider is explicitly idle.
+      if (projectedStatus === "rate-limited") return "rate-limited";
+      return projectedStatus === "starting" ? "starting" : "ready";
+  }
+}
+
+function shouldRepairLiveProviderSession(input: {
+  readonly projectedStatus:
+    | "idle"
+    | "starting"
+    | "running"
+    | "ready"
+    | "interrupted"
+    | "stopped"
+    | "error"
+    | "rate-limited";
+  readonly projectedActiveTurnId: string | null;
+  readonly provider: ProviderSession;
+}): boolean {
+  const { projectedStatus, projectedActiveTurnId, provider } = input;
+  switch (provider.status) {
+    case "connecting":
+      return projectedStatus !== "starting" || projectedActiveTurnId !== null;
+    case "running":
+      // ProviderSession.activeTurnId is provider-native. It is not safe to
+      // compare or copy it into the orchestration turn id, so the persisted
+      // orchestration id is intentionally preserved while the provider says
+      // the session is still running.
+      return projectedStatus !== "running";
+    case "ready":
+      return (
+        projectedStatus === "running" ||
+        projectedActiveTurnId !== null ||
+        projectedStatus === "error"
+      );
+    case "error":
+      return projectedStatus !== "error" || projectedActiveTurnId !== null;
+    case "closed":
+      return projectedStatus !== "stopped" || projectedActiveTurnId !== null;
+  }
+}
+
+function mergeStartupRuntimePayload(
+  existing: unknown,
+  provider: ProviderSession,
+  reconciledAt: string,
+): Record<string, unknown> {
+  const prior =
+    existing !== null && typeof existing === "object" && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  return {
+    ...prior,
+    activeTurnId: provider.activeTurnId ?? null,
+    providerStatus: provider.status,
+    lastError: provider.lastError ?? null,
+    lastRuntimeEvent: "provider.startup.reconcile",
+    lastRuntimeEventAt: reconciledAt,
+  };
+}
+
 export const reconcileProviderSessions = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -305,10 +414,121 @@ export const reconcileProviderSessions = Effect.gen(function* () {
   const providerService = yield* ProviderService.ProviderService;
   const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
 
-  const liveThreadIds = new Set(
-    (yield* providerService.listSessions()).map((session) => session.threadId),
+  const liveSessions = yield* providerService.listSessions();
+  const liveSessionsByThreadId = new Map(
+    liveSessions.map((session) => [session.threadId, session] as const),
   );
   const { threads } = yield* query.getCommandReadModel();
+  const activeProjectedThreads = threads.filter(
+    (thread) =>
+      thread.session !== null &&
+      (thread.session.status === "starting" ||
+        thread.session.status === "running" ||
+        thread.session.activeTurnId !== null),
+  );
+
+  // A provider process can outlive the server process. On restart, the
+  // provider inventory is more authoritative than the persisted projection:
+  // an idle provider must not leave the UI spinning, while a running provider
+  // must not be interrupted merely because its turn id was not persisted.
+  for (const thread of activeProjectedThreads) {
+    const session = thread.session;
+    if (session === null) {
+      continue;
+    }
+    const providerSession = liveSessionsByThreadId.get(thread.id);
+    if (
+      !providerSession ||
+      !shouldRepairLiveProviderSession({
+        projectedStatus: session.status,
+        projectedActiveTurnId: session.activeTurnId,
+        provider: providerSession,
+      })
+    ) {
+      continue;
+    }
+
+    yield* Effect.gen(function* () {
+      const reconciledAt = DateTime.formatIso(yield* DateTime.now);
+      const nextStatus = startupSessionStatus(session.status, providerSession.status);
+      const nextActiveTurnId = providerSession.status === "running" ? session.activeTurnId : null;
+      const nextLastError =
+        providerSession.status === "error"
+          ? (providerSession.lastError ?? STARTUP_PROVIDER_SESSION_ERROR)
+          : null;
+      const binding = yield* directory.getBinding(thread.id);
+      const runtimePayload = mergeStartupRuntimePayload(
+        Option.isSome(binding) ? binding.value.runtimePayload : undefined,
+        providerSession,
+        reconciledAt,
+      );
+
+      yield* directory.upsert({
+        ...(Option.isSome(binding)
+          ? binding.value
+          : {
+              threadId: thread.id,
+              provider: providerSession.provider,
+            }),
+        provider: providerSession.provider,
+        ...(providerSession.providerInstanceId !== undefined
+          ? { providerInstanceId: providerSession.providerInstanceId }
+          : Option.isSome(binding) && binding.value.providerInstanceId !== undefined
+            ? { providerInstanceId: binding.value.providerInstanceId }
+            : {}),
+        runtimeMode: providerSession.runtimeMode,
+        status: providerBindingStatus(providerSession.status),
+        ...(providerSession.resumeCursor !== undefined
+          ? { resumeCursor: providerSession.resumeCursor }
+          : Option.isSome(binding) && binding.value.resumeCursor !== undefined
+            ? { resumeCursor: binding.value.resumeCursor }
+            : {}),
+        runtimePayload,
+      });
+
+      yield* orchestrationEngine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make(yield* crypto.randomUUIDv4),
+        threadId: thread.id,
+        session: {
+          ...session,
+          status: nextStatus,
+          providerName: providerSession.provider,
+          ...(providerSession.providerInstanceId !== undefined
+            ? { providerInstanceId: providerSession.providerInstanceId }
+            : {}),
+          runtimeMode: providerSession.runtimeMode,
+          activeTurnId: nextActiveTurnId,
+          lastError: nextLastError,
+          updatedAt: reconciledAt,
+        },
+        createdAt: reconciledAt,
+      });
+
+      yield* Effect.logInfo("reconciled provider session after server restart", {
+        threadId: thread.id,
+        provider: providerSession.provider,
+        providerInstanceId: providerSession.providerInstanceId,
+        previousStatus: session.status,
+        nextStatus,
+        providerStatus: providerSession.status,
+        preservedActiveTurn: providerSession.status === "running" && nextActiveTurnId !== null,
+      });
+    }).pipe(
+      Effect.retry({ times: 1 }),
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("failed to reconcile live provider session after server restart", {
+              threadId: thread.id,
+              provider: providerSession.provider,
+              cause,
+            }),
+      ),
+    );
+  }
+
+  const liveThreadIds = new Set(liveSessionsByThreadId.keys());
   const orphanedThreads = threads.filter(
     (thread) =>
       thread.session !== null &&

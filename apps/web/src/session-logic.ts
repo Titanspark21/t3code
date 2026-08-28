@@ -1860,7 +1860,8 @@ export function derivePhase(session: ThreadSession | null): SessionPhase {
     !session ||
     session.status === "stopped" ||
     session.status === "interrupted" ||
-    session.status === "error"
+    session.status === "error" ||
+    session.status === "rate-limited"
   ) {
     return "disconnected";
   }

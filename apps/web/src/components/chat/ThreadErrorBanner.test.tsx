@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
+  isProviderRateLimitError,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
@@ -69,6 +70,13 @@ describe("ThreadErrorBanner", () => {
   it("never shows a null error", () => {
     expect(shouldShowThreadErrorBanner("env:thread-e", null, false)).toBe(false);
   });
+
+  it("identifies the recoverable provider usage-limit message", () => {
+    expect(isProviderRateLimitError("Provider usage limit reached. Wait, then retry.")).toBe(true);
+    expect(isProviderRateLimitError("HTTP 429 from provider")).toBe(true);
+    expect(isProviderRateLimitError("Provider crashed unexpectedly.")).toBe(false);
+  });
+
   it("aligns the warning and dismiss icons with the first line of a multi-line error", () => {
     const markup = renderToStaticMarkup(
       <ThreadErrorBanner

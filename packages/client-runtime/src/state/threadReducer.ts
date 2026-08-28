@@ -618,6 +618,7 @@ function settledTurnStateForSessionStatus(
     case "ready":
       return "completed";
     case "error":
+    case "rate-limited":
       return "error";
     case "interrupted":
     case "stopped":

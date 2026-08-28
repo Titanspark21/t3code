@@ -5,6 +5,7 @@ import type { ProviderInstanceId } from "@t3tools/contracts";
 import {
   isoFromEpochSeconds,
   mergeQuotaSnapshots,
+  normalizeAntigravityRateLimits,
   normalizeClaudeRateLimits,
   normalizeCodexRateLimits,
 } from "./normalizeRateLimits.ts";
@@ -220,6 +221,55 @@ describe("normalizeClaudeRateLimits", () => {
         providerInstanceId: "claude-1" as ProviderInstanceId,
         observedAt,
         payload: { type: "rate_limit_event", somethingNew: { pct: 50 } },
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("normalizeAntigravityRateLimits", () => {
+  it("keeps separate provider pools and classifies their published windows", () => {
+    const snapshot = normalizeAntigravityRateLimits({
+      providerInstanceId: "antigravity-1" as ProviderInstanceId,
+      observedAt,
+      payload: {
+        rate_limits: {
+          plan_type: "pro",
+          pools: [
+            {
+              id: "gemini",
+              name: "Gemini",
+              windows: [{ used_percent: 31, window_minutes: 300 }],
+            },
+            {
+              id: "claude-gpt",
+              displayName: "Claude and GPT",
+              weekly: { utilization: 67 },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(snapshot?.planType).toBe("pro");
+    expect(snapshot?.groups.map((group) => group.key)).toEqual(["gemini", "claude-gpt"]);
+    expect(snapshot?.groups[0]?.windows[0]).toMatchObject({
+      kind: "short",
+      usedPercent: 31,
+      windowDurationMins: 300,
+    });
+    expect(snapshot?.groups[1]?.windows[0]).toMatchObject({
+      kind: "long",
+      usedPercent: 67,
+      windowDurationMins: 10_080,
+    });
+  });
+
+  it("does not turn an unrecognized bridge payload into quota", () => {
+    expect(
+      normalizeAntigravityRateLimits({
+        providerInstanceId: "antigravity-1" as ProviderInstanceId,
+        observedAt,
+        payload: { pools: [{ name: "Gemini", remaining: 50 }] },
       }),
     ).toBeUndefined();
   });

@@ -2747,6 +2747,52 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("runtime exploded");
   });
 
+  it("latches a rate-limited runtime failure across passive provider redraws", async () => {
+    const harness = await createHarness();
+    const failedAt = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "runtime.error",
+      eventId: asEventId("evt-runtime-rate-limit"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: failedAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-rate-limit"),
+      payload: {
+        message: "HTTP 429: too many requests",
+      },
+    });
+
+    const failedThread = await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.session?.status === "rate-limited" &&
+        entry.session?.lastError?.startsWith("Provider usage limit reached.") === true,
+    );
+    expect(failedThread.session?.activeTurnId).toBe("turn-rate-limit");
+    expect(
+      failedThread.activities.find((activity) => activity.id === "evt-runtime-rate-limit")?.summary,
+    ).toBe("Provider usage limit reached");
+
+    // Providers often publish a ready state after rejecting the request. It is
+    // informational here; only the next user turn may clear the latch.
+    const redrawAt = "2026-01-01T00:00:01.000Z";
+    harness.emit({
+      type: "session.state.changed",
+      eventId: asEventId("evt-session-ready-after-rate-limit"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: redrawAt,
+      threadId: asThreadId("thread-1"),
+      payload: { state: "ready" },
+    });
+
+    const redrawnThread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.session?.status === "rate-limited" && entry.session?.updatedAt === redrawAt,
+    );
+    expect(redrawnThread.session?.lastError).toBe(failedThread.session?.lastError);
+  });
+
   it("records runtime.error activities from the typed payload message", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

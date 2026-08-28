@@ -11,6 +11,10 @@
       "types": "./src/themePreview.ts",
       "import": "./src/themePreview.ts"
     },
+    "./providerRateLimit": {
+      "types": "./src/providerRateLimit.ts",
+      "import": "./src/providerRateLimit.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
@@ -206,6 +210,14 @@
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"
+    },
+    "./handoff": {
+      "types": "./src/handoff.ts",
+      "import": "./src/handoff.ts"
+    },
+    "./handoffTargets": {
+      "types": "./src/handoffTargets.ts",
+      "import": "./src/handoffTargets.ts"
     },
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",

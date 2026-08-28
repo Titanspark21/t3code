@@ -83,6 +83,7 @@ function settledTurnStateForSessionStatus(
     case "ready":
       return "completed";
     case "error":
+    case "rate-limited":
       return "error";
     case "interrupted":
     case "stopped":
@@ -1165,6 +1166,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           if (turnId === null || event.payload.session.status !== "running") {
             if (
               event.payload.session.status === "error" ||
+              event.payload.session.status === "rate-limited" ||
               event.payload.session.status === "stopped" ||
               event.payload.session.status === "interrupted"
             ) {

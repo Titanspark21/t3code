@@ -12,6 +12,7 @@
 import {
   ModelSelection,
   NonNegativeInt,
+  EventId,
   ThreadId,
   ProviderInterruptTurnInput,
   ProviderRespondToRequestInput,
@@ -132,6 +133,23 @@ function toRuntimeStatus(session: ProviderSession): "starting" | "running" | "st
   }
 }
 
+function toRuntimeSessionState(
+  status: ProviderSession["status"],
+): "starting" | "ready" | "running" | "stopped" | "error" {
+  switch (status) {
+    case "connecting":
+      return "starting";
+    case "ready":
+      return "ready";
+    case "running":
+      return "running";
+    case "error":
+      return "error";
+    case "closed":
+      return "stopped";
+  }
+}
+
 function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
@@ -232,6 +250,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const revokeMcpCredential =
     options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const interruptReconciliationSequence = yield* Ref.make(0);
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   /**
    * Attach the `t3-code` MCP server to the session that is about to start.
@@ -336,6 +355,80 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         runtimePayload: toRuntimePayloadFromSession(session, extra),
       });
     });
+
+  const reconcileSessionAfterInterrupt = Effect.fn("reconcileSessionAfterInterrupt")(
+    function* (input: {
+      readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
+      readonly instanceId: ProviderInstanceId;
+      readonly threadId: ThreadId;
+      readonly runtimeMode?: ProviderSession["runtimeMode"];
+    }) {
+      // An interrupt notification is normally enough to settle the projection,
+      // but a provider can lose that notification at a process/transport
+      // boundary. Read the provider's own session state after the interrupt so
+      // the projection does not remain Working forever.
+      const sessions = yield* input.adapter.listSessions().pipe(
+        Effect.tapError((cause) =>
+          Effect.logWarning("provider interrupt reconciliation session read failed", {
+            provider: input.adapter.provider,
+            providerInstanceId: input.instanceId,
+            threadId: input.threadId,
+            cause,
+          }),
+        ),
+        Effect.option,
+      );
+      if (Option.isNone(sessions)) {
+        return;
+      }
+
+      const session = sessions.value.find((entry) => entry.threadId === input.threadId);
+      const createdAt = yield* nowIso;
+      const runtimeState = session ? toRuntimeSessionState(session.status) : "stopped";
+      if (session) {
+        yield* upsertSessionBinding(
+          { ...session, providerInstanceId: input.instanceId },
+          input.threadId,
+          {
+            lastRuntimeEvent: "provider.interrupt.reconcile",
+            lastRuntimeEventAt: createdAt,
+          },
+        );
+      } else {
+        yield* directory.upsert({
+          threadId: input.threadId,
+          provider: input.adapter.provider,
+          providerInstanceId: input.instanceId,
+          ...(input.runtimeMode !== undefined ? { runtimeMode: input.runtimeMode } : {}),
+          status: "stopped",
+          runtimePayload: {
+            activeTurnId: null,
+            lastRuntimeEvent: "provider.interrupt.reconcile",
+            lastRuntimeEventAt: createdAt,
+          },
+        });
+      }
+
+      const eventSequence = yield* Ref.updateAndGet(
+        interruptReconciliationSequence,
+        (sequence) => sequence + 1,
+      );
+      const eventId = EventId.make(`provider-interrupt-reconcile:${eventSequence}`);
+      yield* publishRuntimeEvent({
+        eventId,
+        provider: input.adapter.provider,
+        providerInstanceId: input.instanceId,
+        threadId: input.threadId,
+        createdAt,
+        ...(session?.activeTurnId !== undefined ? { turnId: session.activeTurnId } : {}),
+        type: "session.state.changed",
+        payload: {
+          state: runtimeState,
+          reason: "Provider session state reconciled after interrupt",
+        },
+      });
+    },
+  );
 
   const processRuntimeEvent = (
     source: {
@@ -839,7 +932,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         const routed = yield* resolveRoutableSession({
           threadId: input.threadId,
           operation: "ProviderService.interruptTurn",
-          allowRecovery: true,
+          // Stopping work must never resurrect a provider process solely to
+          // interrupt it. A missing session is itself an authoritative idle
+          // result that the reconciliation below can project as stopped.
+          allowRecovery: false,
         });
         metricProvider = routed.adapter.provider;
         yield* Effect.annotateCurrentSpan({
@@ -848,7 +944,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.thread_id": input.threadId,
           "provider.turn_id": input.turnId,
         });
-        yield* routed.adapter.interruptTurn(routed.threadId, input.turnId);
+        if (routed.isActive) {
+          yield* routed.adapter.interruptTurn(routed.threadId, input.turnId);
+        }
+        yield* reconcileSessionAfterInterrupt({
+          adapter: routed.adapter,
+          instanceId: routed.instanceId,
+          threadId: routed.threadId,
+          ...(routed.runtimeMode !== undefined ? { runtimeMode: routed.runtimeMode } : {}),
+        });
         yield* analytics.record("provider.turn.interrupted", {
           provider: routed.adapter.provider,
         });

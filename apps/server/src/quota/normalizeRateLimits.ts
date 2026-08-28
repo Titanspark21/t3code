@@ -243,6 +243,99 @@ export function normalizeClaudeRateLimits(input: {
 }
 
 /**
+ * Antigravity — bridge-provided rate-limit snapshots.
+ *
+ * Bridges in the wild use both `groups` and `pools`, and name windows either
+ * as a list or as keyed objects. Read those equivalent shapes defensively,
+ * retaining a pool only when at least one window contains an explicit usage
+ * percentage. This keeps an ACP bridge's account metadata from becoming a
+ * guessed quota number.
+ */
+export function normalizeAntigravityRateLimits(input: {
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly payload: unknown;
+  readonly observedAt: string;
+}): AccountQuotaSnapshot | undefined {
+  if (!isRecord(input.payload)) return undefined;
+
+  const outer =
+    readRecord(input.payload, "rateLimits") ??
+    readRecord(input.payload, "rate_limits") ??
+    input.payload;
+  const snapshot = readRecord(outer, "rateLimits") ?? readRecord(outer, "rate_limits") ?? outer;
+  const groupsValue =
+    snapshot["groups"] ?? snapshot["pools"] ?? snapshot["quotaGroups"] ?? snapshot["quota_groups"];
+  const groups: Array<QuotaGroup> = [];
+
+  const candidates: Array<{ readonly key: string; readonly value: unknown }> = Array.isArray(
+    groupsValue,
+  )
+    ? groupsValue.map((value, index) => ({ key: `pool-${index + 1}`, value }))
+    : isRecord(groupsValue)
+      ? Object.entries(groupsValue).map(([key, value]) => ({ key, value }))
+      : [{ key: "default", value: snapshot }];
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate.value)) continue;
+    const group =
+      readRecord(candidate.value, "rateLimits") ??
+      readRecord(candidate.value, "rate_limits") ??
+      candidate.value;
+    const windows: Array<QuotaWindow> = [];
+    const listedWindows = group["windows"] ?? group["limits"];
+    if (Array.isArray(listedWindows)) {
+      for (const value of listedWindows) {
+        const window = normalizeWindow(value);
+        if (window) windows.push(window);
+      }
+    } else {
+      for (const [key, value] of Object.entries(group)) {
+        if (["key", "id", "name", "label", "displayName", "description"].includes(key)) {
+          continue;
+        }
+        const fallbackDurationMins = /(?:five.?hour|5.?hour|primary|short)/i.test(key)
+          ? 300
+          : /(?:weekly|seven.?day|secondary|long)/i.test(key)
+            ? 10_080
+            : undefined;
+        const window = normalizeWindow(value, key, fallbackDurationMins);
+        if (window) windows.push(window);
+      }
+    }
+
+    if (windows.length === 0) continue;
+    const displayName =
+      readNonEmptyString(group["displayName"]) ??
+      readNonEmptyString(group["name"]) ??
+      readNonEmptyString(group["label"]) ??
+      candidate.key;
+    const key =
+      readNonEmptyString(group["key"]) ?? readNonEmptyString(group["id"]) ?? candidate.key;
+    groups.push({ key, displayName, windows });
+  }
+
+  const limitReached =
+    readNonEmptyString(snapshot["limitReached"]) ??
+    readNonEmptyString(snapshot["rateLimitReachedType"]) ??
+    (snapshot["limitReached"] === true ? "rate_limit_reached" : undefined);
+  if (groups.length === 0 && !limitReached) return undefined;
+
+  const planType =
+    readNonEmptyString(snapshot["planType"]) ??
+    readNonEmptyString(snapshot["plan_type"]) ??
+    readNonEmptyString(snapshot["subscriptionType"]) ??
+    readNonEmptyString(snapshot["subscription_type"]);
+  return {
+    providerInstanceId: input.providerInstanceId,
+    groups,
+    source: "provider-event" satisfies QuotaSource,
+    observedAt: input.observedAt,
+    ...(planType ? { planType } : {}),
+    ...(limitReached ? { limitReached } : {}),
+  };
+}
+
+/**
  * Merge a newer sparse update onto the last known snapshot.
  *
  * Required because Codex documents its updates as sparse: a rolling message

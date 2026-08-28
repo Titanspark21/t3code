@@ -18,8 +18,8 @@ Already done upstream, still open boxes in OmniLink's `PLAN.md`:
 - five live providers behind one adapter interface
 - multi-account per provider, including the Codex shared-home + shadow-home pattern
   OmniLink flagged as an unproven spike (`SPEC.md` §5.7)
-- per-turn checkpoints as hidden git refs, with revert — and it reverts the *provider
-  conversation* too, not just the working tree
+- per-turn checkpoints as hidden git refs, with revert — and it reverts the _provider
+  conversation_ too, not just the working tree
 - the whole workspace inspector: diff, file tree + preview, browser preview, terminal
   tabs and splits
 - worktrees, branch toolbar, worktree cleanup
@@ -38,13 +38,13 @@ agent handed back a PR unable to install dependencies.
 
 **OmniLink drove the real interactive TUI in a PTY. T3 Code does not run a TUI at all.**
 
-| | OmniLink | T3 Code |
-|---|---|---|
-| Claude | `claude` TUI in a PTY | `@anthropic-ai/claude-agent-sdk` |
-| Codex | `codex` TUI in a PTY | app-server JSON-RPC (`packages/effect-codex-app-server`) |
-| Cursor / Grok / OpenCode | — | ACP (`packages/effect-acp`) |
-| Chat content | parsed from each CLI's transcript files on disk | the server's own event log |
-| Terminals | the agent's own PTY, shown in xterm | separate user shells (`apps/server/src/terminal/`) |
+|                          | OmniLink                                        | T3 Code                                                  |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------- |
+| Claude                   | `claude` TUI in a PTY                           | `@anthropic-ai/claude-agent-sdk`                         |
+| Codex                    | `codex` TUI in a PTY                            | app-server JSON-RPC (`packages/effect-codex-app-server`) |
+| Cursor / Grok / OpenCode | —                                               | ACP (`packages/effect-acp`)                              |
+| Chat content             | parsed from each CLI's transcript files on disk | the server's own event log                               |
+| Terminals                | the agent's own PTY, shown in xterm             | separate user shells (`apps/server/src/terminal/`)       |
 
 OmniLink `SPEC.md` §4.2 explicitly forbade this ("Do not build on ... the Agent SDK").
 That rule was hedging against Anthropic moving SDK usage off subscription limits onto
@@ -91,16 +91,16 @@ end by construction, which is why this one starts clean from pingdotgg.
 
 Everything from it is preserved in `omni/salvage/`:
 
-| File | What it is |
-|---|---|
-| `titanspark21-fork.patch` | full diff of all six of your commits |
-| `old-fork-commits.bundle` | the six commits as real git objects, authors and dates intact. The old repo is deleted, so this is the only remaining copy. Restore with `git fetch omni/salvage/old-fork-commits.bundle refs/heads/main:old-fork` |
-| `OLD-FORK-SPEC.md` | your design spec for the agy integration |
-| `OLD-FORK_NOTES.md` | setup + build notes, incl. the electron-builder packaging fix |
-| `src/.../GeminiCliHome.ts` | per-instance `HOME`/`USERPROFILE` isolation for agy |
-| `src/.../geminiCliServerManager.ts` | the `agy --print` session manager |
-| `src/.../providerProfilePresets.ts` | one-click Claude 1/2, Antigravity 1/2 presets |
-| `src/.../ClaudeHome.ts` | your `CLAUDE_CONFIG_DIR` work |
+| File                                | What it is                                                                                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `titanspark21-fork.patch`           | full diff of all six of your commits                                                                                                                                                                               |
+| `old-fork-commits.bundle`           | the six commits as real git objects, authors and dates intact. The old repo is deleted, so this is the only remaining copy. Restore with `git fetch omni/salvage/old-fork-commits.bundle refs/heads/main:old-fork` |
+| `OLD-FORK-SPEC.md`                  | your design spec for the agy integration                                                                                                                                                                           |
+| `OLD-FORK_NOTES.md`                 | setup + build notes, incl. the electron-builder packaging fix                                                                                                                                                      |
+| `src/.../GeminiCliHome.ts`          | per-instance `HOME`/`USERPROFILE` isolation for agy                                                                                                                                                                |
+| `src/.../geminiCliServerManager.ts` | the `agy --print` session manager                                                                                                                                                                                  |
+| `src/.../providerProfilePresets.ts` | one-click Claude 1/2, Antigravity 1/2 presets                                                                                                                                                                      |
+| `src/.../ClaudeHome.ts`             | your `CLAUDE_CONFIG_DIR` work                                                                                                                                                                                      |
 
 Three notes on reusing it:
 
@@ -108,7 +108,7 @@ Three notes on reusing it:
    per instance (`apps/server/src/provider/Drivers/ClaudeHome.ts`, documented in
    `docs/user/providers-claude.md`). Don't port it.
 2. **The agy isolation has a real bug.** `makeGeminiCliEnvironment` overrides `HOME` and
-   `USERPROFILE` and passes nothing back. On Windows that redirects *every* child process
+   `USERPROFILE` and passes nothing back. On Windows that redirects _every_ child process
    in the tree — `git` looks for `.gitconfig` in the profile dir, `ssh` for keys, `npm` for
    its cache. Expect commits with no author and push failures. OmniLink `SPEC.md` §5.2 has
    the fix: override `USERPROFILE` only, and pass `HOME`, `APPDATA`, `LOCALAPPDATA` and
@@ -119,16 +119,17 @@ Three notes on reusing it:
 
 ## 4. Decisions taken
 
-| # | Decision | Rationale |
-|---|---|---|
-| 1 | Retire OmniLink `SPEC.md` §4.2, fork t3code | The metering risk it guarded never materialised; this is the only path that ships |
-| 2 | Keep every upstream feature, disable nothing | PR client, SSH environments, cloud, mobile app — all excluded by OmniLink `SPEC.md` §1.1, all shipped upstream. Hiding them costs merge conflicts forever; ignoring them costs nothing |
-| 3 | Build agy | The one genuinely unique provider. Harder than it looks — see PLAN §A |
-| 4 | No permission rule engine | Upstream's four modes are enough for Claude and Codex. agy gets targeted guardrails instead |
-| 5 | Use the upstream mobile app, no PWA | It's free from the stores, it's good, and it talks to this fork's server. A PWA would duplicate it for no gain |
-| 6 | Keep upstream's AI-generated titles | OmniLink `SPEC.md` §8.8 banned them on cost grounds; upstream's are better and the cost is trivial |
-| 7 | `main` mirrors upstream, work on `omni/main`, merge weekly | See `OMNI.md` |
-| 8 | Audit OmniLink's git history for chat data before archiving it | OmniLink `PLAN.md` P2-12 flags tracked `.db-wal` / `.db-shm` journals |
+| #   | Decision                                                       | Rationale                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Retire OmniLink `SPEC.md` §4.2, fork t3code                    | The metering risk it guarded never materialised; this is the only path that ships                                                                                                                                                                                                                                                                                                                           |
+| 2   | Keep every upstream feature, disable nothing                   | PR client, SSH environments, cloud, mobile app — all excluded by OmniLink `SPEC.md` §1.1, all shipped upstream. Hiding them costs merge conflicts forever; ignoring them costs nothing                                                                                                                                                                                                                      |
+| 3   | Build agy                                                      | The one genuinely unique provider. Harder than it looks — see PLAN §A                                                                                                                                                                                                                                                                                                                                       |
+| 4   | No permission rule engine                                      | Upstream's four modes are enough for Claude and Codex. agy gets targeted guardrails instead                                                                                                                                                                                                                                                                                                                 |
+| 5   | Use the upstream mobile app, no PWA                            | It's free from the stores, it's good, and it talks to this fork's server. A PWA would duplicate it for no gain                                                                                                                                                                                                                                                                                              |
+| 6   | Keep upstream's AI-generated titles                            | OmniLink `SPEC.md` §8.8 banned them on cost grounds; upstream's are better and the cost is trivial                                                                                                                                                                                                                                                                                                          |
+| 7   | `main` mirrors upstream, work on `omni/main`, merge weekly     | See `OMNI.md`                                                                                                                                                                                                                                                                                                                                                                                               |
+| 8   | Audit OmniLink's git history for chat data before archiving it | OmniLink `PLAN.md` P2-12 flags tracked `.db-wal` / `.db-shm` journals                                                                                                                                                                                                                                                                                                                                       |
+| 9   | Lift, do not cherry-pick, upstream's usage-limits branch       | Its RPC, persistence, cold-start and copy findings are useful, but its one-snapshot-per-provider keying is incorrect for this multi-account fork and the branch edits 22 upstream-owned files. Keep the fork's `ProviderInstanceId` model and copy only the narrow plumbing patterns into fork-local files. Decided after re-reading `upstream/t3code/usage-limits-analytics` at `500cb9609` on 2026-08-23. |
 
 ## 5. Two things to expect
 

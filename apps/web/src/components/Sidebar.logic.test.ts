@@ -737,11 +737,17 @@ describe("resolveSidebarThreadStatus", () => {
     ).toBe("working");
   });
 
-  it("reports failed only while the session status is error", () => {
+  it("reports failed for error and rate-limited sessions", () => {
     expect(
       resolveSidebarThreadStatus({
         ...idle,
         session: { ...session, status: "error" as const, lastError: "boom" },
+      }),
+    ).toBe("failed");
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        session: { ...session, status: "rate-limited" as const, lastError: "limit" },
       }),
     ).toBe("failed");
     expect(
@@ -1174,6 +1180,22 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
+  it("shows a durable rate-limit status in the legacy pill", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          session: {
+            ...baseThread.session,
+            status: "rate-limited" as const,
+            activeTurnId: null,
+            lastError: "Provider usage limit reached.",
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Rate Limited", pulse: false });
   });
 });
 

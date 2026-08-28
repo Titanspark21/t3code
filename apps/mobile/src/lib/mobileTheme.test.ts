@@ -11,6 +11,7 @@ import {
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemePreviewColors,
   getMobileThemeVariables,
+  MOBILE_THEME_OPTIONS,
   MOBILE_THEME_IDS,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
@@ -68,6 +69,14 @@ describe("mobile themes", () => {
       expect(getMobileThemeVariables(themeId, "light")["--color-screen"]).toMatch(/^#/);
       expect(getMobileThemeVariables(themeId, "dark")["--color-screen"]).toMatch(/^#/);
     }
+  });
+
+  it("offers OmniCode through the native selector and terminal palette", () => {
+    expect(MOBILE_THEME_OPTIONS).toContainEqual({ id: "omni", label: "OmniCode" });
+    const dark = getMobileThemeVariables("omni", "dark");
+    expect(dark["--color-screen"]).toBe("#161b21");
+    expect(dark["--color-primary"]).toBe("#72c6d3");
+    expect(dark["--color-md-code-bg"]).toBe("#1c252e");
   });
 
   it("preserves the existing mobile palette as the default", () => {

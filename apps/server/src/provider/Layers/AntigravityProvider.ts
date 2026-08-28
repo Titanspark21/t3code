@@ -32,6 +32,7 @@ import {
   detailFromResult,
   isCommandLaunchFailureCause,
   isCommandMissingCause,
+  parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
@@ -41,6 +42,7 @@ import {
   parseAntigravityModels,
 } from "../Drivers/AntigravityLaunch.ts";
 import { makeAntigravityEnvironment } from "../Drivers/AntigravityHome.ts";
+import { enrichAntigravitySlashCommands } from "./AntigravitySlashCommands.ts";
 
 const ANTIGRAVITY_PRESENTATION = {
   displayName: "Antigravity",
@@ -226,6 +228,8 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       });
     }
 
+    const parsedVersion = parseGenericCliVersion(`${version.stdout}\n${version.stderr}`);
+    const slashCommands = enrichAntigravitySlashCommands(parsedVersion);
     const discovered = yield* readAntigravityModels(config, environment);
     const models =
       discovered.length > 0
@@ -241,9 +245,10 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
         enabled: config.enabled,
         checkedAt,
         models,
+        slashCommands,
         probe: {
           installed: true,
-          version: version.stdout.trim() || null,
+          version: parsedVersion,
           status: "warning",
           auth: { status: "unknown" },
           message: ANTIGRAVITY_BRIDGE_MISSING_MESSAGE,
@@ -256,9 +261,10 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       enabled: config.enabled,
       checkedAt,
       models,
+      slashCommands,
       probe: {
         installed: true,
-        version: version.stdout.trim() || null,
+        version: parsedVersion,
         status: "ready",
         auth: { status: "authenticated", type: "antigravity", label: "Antigravity CLI" },
       },

@@ -11,6 +11,7 @@ import {
   type CanonicalItemType,
   type CanonicalRequestType,
   type CodexSettings,
+  EventId,
   ProviderDriverKind,
   type ProviderEvent,
   ProviderInstanceId,
@@ -28,6 +29,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -1035,7 +1037,50 @@ function mapToRuntimeEvents(
   if (event.method === "turn/completed") {
     const payload = readPayload(EffectCodexSchema.V2TurnCompletedNotification, event.payload);
     if (!payload) {
-      return [];
+      // Codex has added fields to this notification several times. A strict
+      // decode failure must not strand the orchestration projection in
+      // `running` forever: the method itself is still an authoritative
+      // terminal signal. Keep the raw payload in a warning for diagnosis and
+      // settle the named turn as completed. When the provider omitted the
+      // turn id too, a ready session event is the only safe terminal fallback.
+      const detail = {
+        method: event.method,
+        ...(event.payload !== undefined ? { payload: event.payload } : {}),
+      };
+      const warning = {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "runtime.warning" as const,
+        payload: {
+          message:
+            "Codex returned an undecodable turn/completed payload; using a terminal lifecycle fallback.",
+          detail,
+        },
+      };
+      if (event.turnId) {
+        return [
+          warning,
+          {
+            ...runtimeEventBase(event, canonicalThreadId),
+            type: "turn.completed" as const,
+            turnId: event.turnId,
+            payload: {
+              state: "completed" as const,
+            },
+          },
+        ];
+      }
+      return [
+        warning,
+        {
+          ...runtimeEventBase(event, canonicalThreadId),
+          type: "session.state.changed" as const,
+          payload: {
+            state: "ready" as const,
+            reason: "Codex completed a turn without a usable turn id; session state was repaired.",
+            detail,
+          },
+        },
+      ];
     }
     const errorMessage = trimText(payload.turn.error?.message);
     return [
@@ -1716,7 +1761,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         // this a child of `startSession`, and Effect interrupts a fiber's
         // children when it completes, so the consumer died on return and every
         // runtime event the session emitted afterwards was dropped.
-        const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
+        // This is assigned immediately after `start()` succeeds. Keeping the
+        // context in the closure lets the finalizer distinguish an expected
+        // Stop/close from an event consumer that died while the provider was
+        // still live (for example because canonical event logging failed).
+        let sessionContext: CodexAdapterSessionContext | undefined;
+        const consumeRuntimeEvents = Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
             const runtimeEvents = mapToRuntimeEvents(event, event.threadId);
@@ -1731,7 +1781,48 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
           }),
-        ).pipe(Effect.forkIn(sessionScope));
+        );
+        const eventFiber = yield* consumeRuntimeEvents.pipe(
+          Effect.ensuring(
+            Effect.gen(function* () {
+              if (!sessionContext || sessionContext.stopped) {
+                return;
+              }
+              const createdAt = DateTime.formatIso(yield* DateTime.now);
+              const reason =
+                "Codex provider event consumption ended unexpectedly; session state was repaired.";
+              yield* Effect.logWarning("Codex provider event stream ended unexpectedly", {
+                provider: PROVIDER,
+                providerInstanceId: boundInstanceId,
+                threadId: sessionContext.threadId,
+                reason,
+              });
+              yield* Queue.offer(runtimeEventQueue, {
+                eventId: EventId.make(
+                  `codex-event-stream-ended:${sessionContext.threadId}:${createdAt}`,
+                ),
+                provider: PROVIDER,
+                providerInstanceId: boundInstanceId,
+                threadId: sessionContext.threadId,
+                createdAt,
+                type: "session.state.changed",
+                payload: {
+                  state: "error",
+                  reason,
+                },
+              });
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logError("failed to publish Codex event stream exit repair", {
+                  provider: PROVIDER,
+                  providerInstanceId: boundInstanceId,
+                  cause,
+                }),
+              ),
+            ),
+          ),
+          Effect.forkIn(sessionScope),
+        );
 
         const started = yield* runtime.start().pipe(
           Effect.mapError(
@@ -1752,13 +1843,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ),
         );
 
-        sessions.set(input.threadId, {
+        sessionContext = {
           threadId: input.threadId,
           scope: sessionScope,
           runtime,
           eventFiber,
           stopped: false,
-        });
+        };
+        sessions.set(input.threadId, sessionContext);
         sessionScopeTransferred = true;
 
         return started;

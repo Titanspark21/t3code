@@ -14,7 +14,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
-  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -139,8 +138,17 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
   );
 
   const interruptTurn = vi.fn(
-    (_threadId: ThreadId, _turnId?: TurnId): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.void,
+    (threadId: ThreadId, _turnId?: TurnId): Effect.Effect<void, ProviderAdapterError> =>
+      Effect.sync(() => {
+        const session = sessions.get(threadId);
+        if (!session) return;
+        sessions.set(threadId, {
+          ...session,
+          status: "ready",
+          activeTurnId: undefined,
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        });
+      }),
   );
 
   const respondToRequest = vi.fn(
@@ -928,6 +936,100 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("reconciles provider state after an interrupt", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const session = yield* provider.startSession(asThreadId("thread-interrupt-reconcile"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-interrupt-reconcile"),
+        runtimeMode: "full-access",
+      });
+      routing.codex.updateSession(session.threadId, (existing) => ({
+        ...existing,
+        status: "running",
+        activeTurnId: asTurnId("turn-interrupt-reconcile"),
+      }));
+
+      const eventsRef = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.take(provider.streamEvents, 1).pipe(
+        Stream.runForEach((event) => Ref.update(eventsRef, (current) => [...current, event])),
+        Effect.forkChild,
+      );
+      yield* advanceTestClock(50);
+
+      yield* provider.interruptTurn({
+        threadId: session.threadId,
+        turnId: asTurnId("turn-interrupt-reconcile"),
+      });
+      yield* Fiber.join(consumer);
+
+      const events = yield* Ref.get(eventsRef);
+      assert.deepEqual(
+        events.map((event) => [event.type, event.threadId]),
+        [["session.state.changed", session.threadId]],
+      );
+      const event = events[0];
+      assert.equal(event?.providerInstanceId, codexInstanceId);
+      if (event?.type === "session.state.changed") {
+        assert.equal(event.payload.state, "ready");
+      }
+
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId: session.threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        const runtimePayload = persisted.value.runtimePayload as {
+          activeTurnId?: unknown;
+        } | null;
+        assert.equal(runtimePayload?.activeTurnId, null);
+      }
+      yield* provider.stopSession({ threadId: session.threadId });
+      routing.codex.interruptTurn.mockClear();
+    }),
+  );
+
+  it.effect("settles a persisted binding when the provider session is already gone", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const session = yield* provider.startSession(asThreadId("thread-interrupt-missing"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-interrupt-missing"),
+        runtimeMode: "full-access",
+      });
+      yield* routing.codex.stopSession(session.threadId);
+      routing.codex.interruptTurn.mockClear();
+      const startSessionCallCount = routing.codex.startSession.mock.calls.length;
+
+      const eventsRef = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.take(provider.streamEvents, 1).pipe(
+        Stream.runForEach((event) => Ref.update(eventsRef, (current) => [...current, event])),
+        Effect.forkChild,
+      );
+      yield* advanceTestClock(50);
+
+      yield* provider.interruptTurn({ threadId: session.threadId });
+      yield* Fiber.join(consumer);
+
+      assert.equal(routing.codex.interruptTurn.mock.calls.length, 0);
+      assert.equal(routing.codex.startSession.mock.calls.length, startSessionCallCount);
+      const event = (yield* Ref.get(eventsRef))[0];
+      if (event?.type === "session.state.changed") {
+        assert.equal(event.payload.state, "stopped");
+      } else {
+        assert.fail("expected an authoritative stopped session event");
+      }
+
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId: session.threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        assert.equal(persisted.value.status, "stopped");
+      }
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

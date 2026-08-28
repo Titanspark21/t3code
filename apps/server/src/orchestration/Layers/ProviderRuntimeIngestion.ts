@@ -46,6 +46,10 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
 import { QuotaService } from "../../quota/QuotaService.ts";
+import {
+  formatProviderRateLimitFailure,
+  isProviderRateLimitFailure,
+} from "../providerRateLimit.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -427,13 +431,14 @@ export function runtimeEventToActivities(
     }
 
     case "runtime.error": {
+      const isRateLimited = isProviderRateLimitFailure(event.payload.message);
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
           tone: "error",
           kind: "runtime.error",
-          summary: "Runtime error",
+          summary: isRateLimited ? "Provider usage limit reached" : "Runtime error",
           payload: {
             message: truncateDetail(event.payload.message),
           },
@@ -1572,6 +1577,20 @@ const make = Effect.gen(function* () {
           : null;
 
       if (
+        !shouldApplyThreadLifecycle &&
+        (event.type === "turn.started" || event.type === "turn.completed")
+      ) {
+        yield* Effect.logWarning("ignored stale provider lifecycle event", {
+          eventId: event.eventId,
+          eventType: event.type,
+          threadId: thread.id,
+          eventTurnId,
+          activeTurnId,
+          hasPendingTurnStart,
+        });
+      }
+
+      if (
         event.type === "session.started" ||
         event.type === "session.state.changed" ||
         event.type === "session.exited" ||
@@ -1579,7 +1598,25 @@ const make = Effect.gen(function* () {
         event.type === "turn.started" ||
         event.type === "turn.completed"
       ) {
+        const lifecycleRateLimitDetail =
+          event.type === "session.state.changed" && event.payload.state === "error"
+            ? event.payload.reason
+            : event.type === "turn.completed" &&
+                normalizeRuntimeTurnState(event.payload.state) === "failed"
+              ? event.payload.errorMessage
+              : undefined;
+        const eventIsRateLimited =
+          lifecycleRateLimitDetail !== undefined &&
+          isProviderRateLimitFailure(lifecycleRateLimitDetail);
+        // A rate-limit failure is a user-visible latch. Providers commonly
+        // redraw `ready` or `started` after rejecting a turn; those passive
+        // lifecycle events must not erase the recovery state. A new turn is
+        // the explicit reset path: the command reactor writes `starting`
+        // before provider events arrive, so a real `turn.started` can clear it.
+        const retainsRateLimit =
+          thread.session?.status === "rate-limited" && event.type !== "turn.started";
         const status = (() => {
+          if (retainsRateLimit || eventIsRateLimited) return "rate-limited" as const;
           switch (event.type) {
             case "session.state.changed": {
               const runtimeStatus = orchestrationSessionStatusFromRuntimeState(event.payload.state);
@@ -1611,15 +1648,21 @@ const make = Effect.gen(function* () {
                   )
                 ? null
                 : activeTurnId;
-        const lastError =
-          event.type === "session.state.changed" && event.payload.state === "error"
-            ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
-            : event.type === "turn.completed" &&
-                normalizeRuntimeTurnState(event.payload.state) === "failed"
-              ? (event.payload.errorMessage ?? thread.session?.lastError ?? "Turn failed")
-              : status === "ready"
-                ? null
-                : (thread.session?.lastError ?? null);
+        const lastError = retainsRateLimit
+          ? (thread.session?.lastError ??
+            formatProviderRateLimitFailure("Provider usage limit reached"))
+          : eventIsRateLimited
+            ? formatProviderRateLimitFailure(
+                lifecycleRateLimitDetail ?? "Provider usage limit reached",
+              )
+            : event.type === "session.state.changed" && event.payload.state === "error"
+              ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
+              : event.type === "turn.completed" &&
+                  normalizeRuntimeTurnState(event.payload.state) === "failed"
+                ? (event.payload.errorMessage ?? thread.session?.lastError ?? "Turn failed")
+                : status === "ready"
+                  ? null
+                  : (thread.session?.lastError ?? null);
 
         if (shouldApplyThreadLifecycle) {
           if (event.type === "turn.started" && acceptedTurnStartedSourcePlan !== null) {
@@ -1886,6 +1929,8 @@ const make = Effect.gen(function* () {
 
       if (event.type === "runtime.error") {
         const runtimeErrorMessage = event.payload.message;
+        const eventIsRateLimited = isProviderRateLimitFailure(runtimeErrorMessage);
+        const retainsRateLimit = thread.session?.status === "rate-limited";
 
         const shouldApplyRuntimeError = !STRICT_PROVIDER_LIFECYCLE_GUARD
           ? true
@@ -1898,14 +1943,19 @@ const make = Effect.gen(function* () {
             threadId: thread.id,
             session: {
               threadId: thread.id,
-              status: "error",
+              status: retainsRateLimit || eventIsRateLimited ? "rate-limited" : "error",
               providerName: event.provider,
               ...(event.providerInstanceId !== undefined
                 ? { providerInstanceId: event.providerInstanceId }
                 : {}),
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: eventTurnId ?? null,
-              lastError: runtimeErrorMessage,
+              lastError: retainsRateLimit
+                ? (thread.session?.lastError ??
+                  formatProviderRateLimitFailure("Provider usage limit reached"))
+                : eventIsRateLimited
+                  ? formatProviderRateLimitFailure(runtimeErrorMessage)
+                  : runtimeErrorMessage,
               updatedAt: now,
             },
             createdAt: now,

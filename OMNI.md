@@ -86,24 +86,65 @@ All high-churn, all pure conflict, none of it worth it:
 - root and workspace build/test/lint scripts
 - `.github/workflows/`
 - `infra/`
-- `apps/mobile/` — unless you've decided to own a mobile build
+- `apps/mobile/` — unless the fork feature explicitly crosses mobile. C4 handoff is the
+  deliberate exception: it must preserve the same unsent-draft and lineage behavior on iOS
+  and Android, including the quota-aware target picker.
 
 ### Keep the table below current
 
 This _is_ your merge checklist. Before each sync, it tells you exactly where to look.
 If a change isn't in this table, it shouldn't exist.
 
-| Upstream file                                                      | Change                                                      | Why                                                             | Task |
-| ------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------- | ---- |
-| `packages/contracts/package.json`                                  | added `./quota` and `./antigravity` subpath exports         | so those modules resolve; both schemas live in new files        | B1   |
-| `apps/server/src/provider/builtInDrivers.ts`                       | _(pending)_ one line registering `AntigravityDriver`        | adding a driver needs no other upstream edit                    | A3   |
-| `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` | _(pending)_ subscribe the quota reducer to runtime events   | the only place `account.rate-limits.updated` already lands      | B1b  |
-| `apps/web/src/components/sidebar/SidebarChrome.tsx`                | _(pending)_ one line mounting the quota panel in the footer | both sidebar shells render this footer, so one edit covers both | B2   |
+| Upstream file                                                           | Change                                                      | Why                                                             | Task |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- | ---- |
+| `packages/contracts/package.json`                                       | added `./quota` and `./antigravity` subpath exports         | so those modules resolve; both schemas live in new files        | B1   |
+| `packages/contracts/src/rpc.ts`                                         | added quota snapshot and subscription RPCs                  | quota state must cross the existing typed WebSocket boundary    | B1b  |
+| `packages/client-runtime/src/rpc/client.ts`                             | registered the quota subscription tag                       | lets shared client RPC machinery recognize the live stream      | B1b  |
+| `packages/client-runtime/src/state/server.ts`                           | added quota query and subscription atoms                    | exposes quota through the existing per-environment state layer  | B1b  |
+| `apps/server/src/auth/RpcAuthorization.ts`                              | assigned quota RPCs orchestration-read scope                | quota endpoints follow the existing authorization boundary      | B1b  |
+| `apps/server/src/provider/builtInDrivers.ts`                            | registered `AntigravityDriver`                              | adding a driver needs no other upstream edit                    | A3   |
+| `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`      | feeds runtime events to the fork-local quota service        | the only place `account.rate-limits.updated` already lands      | B1b  |
+| `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts` | covers instance-keyed quota ingestion                       | locks the narrow upstream seam to the intended behavior         | B1b  |
+| `apps/server/src/server.ts`                                             | installs the quota service layer                            | makes one live service available to ingestion and WebSocket RPC | B1b  |
+| `apps/server/src/server.test.ts`                                        | supplies the empty quota test layer                         | keeps server tests explicit about the added dependency          | B1b  |
+| `apps/server/integration/OrchestrationEngineHarness.integration.ts`     | supplies the empty quota test layer                         | keeps the integration harness explicit about the dependency     | B1b  |
+| `apps/server/src/ws.ts`                                                 | handles quota snapshot and live-stream RPCs                 | publishes the instance-keyed read model to clients              | B1b  |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx`                     | mounts the quota panel in the footer                        | both sidebar shells render this footer, so one edit covers both | B2   |
+| `apps/web/src/components/chat/ChatComposer.tsx`                         | passes the active environment to the model picker           | keeps account quota scoped to the thread's environment          | B5   |
+| `apps/web/src/components/chat/ProviderModelPicker.tsx`                  | carries optional environment identity                       | lets reusable picker content resolve the right account snapshot | B5   |
+| `apps/web/src/components/chat/ModelPickerContent.tsx`                   | joins model rows to instance-keyed quota                    | supplies live account detail without per-row subscriptions      | B5   |
+| `apps/web/src/components/chat/ModelListRow.tsx`                         | adds quota detail to the provider/account label             | exposes the same 5-hour/weekly detail from the composer picker  | B5   |
+| `apps/web/src/components/settings/ProviderSettingsPanel.tsx`            | joins provider cards to environment quota                   | keeps Settings account detail on the correct environment        | B5   |
+| `apps/web/src/components/settings/ProviderInstanceCard.tsx`             | adds quota detail to the account heading                    | covers the Settings → Providers entry point                     | B5   |
+| `packages/contracts/src/orchestration.ts`                               | exposes persisted activity append to clients                | handoff lineage uses the existing event-sourced activity path   | C4   |
+| `packages/client-runtime/src/operations/commands.ts`                    | adds the activity append command operation                  | keeps handoff writes on the typed WebSocket boundary            | C4   |
+| `packages/client-runtime/src/state/threadCommands.ts`                   | registers the activity append atom command                  | web and mobile share the same durable lineage mutation          | C4   |
+| `packages/shared/src/handoff.ts`                                        | builds bounded deterministic handoff briefs                 | provider-neutral transfer context works across all clients      | C4   |
+| `packages/shared/src/handoffTargets.ts`                                 | derives quota-group targets and model routing               | web and mobile make the same honest account choice              | C4   |
+| `apps/web/src/components/ChatView.tsx`                                  | writes briefs, creates targets, seeds drafts, links threads | web and desktop get the full handoff flow                       | C4   |
+| `apps/web/src/components/chat/ChatHeader.tsx`                           | adds fork action and lineage breadcrumb                     | source and target threads link back to each other               | C4   |
+| `apps/web/src/components/chat/HandoffTargetDialog.tsx`                  | presents quota groups and remaining percentages             | desktop/web target selection stays provider-neutral             | C4   |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`                | adds native fork actions and draft navigation               | iOS and Android expose the same no-turn handoff flow            | C4   |
+| `apps/mobile/src/features/threads/HandoffTargetPicker.tsx`              | presents a scrollable native quota-group picker             | mobile supports more than the platform alert-button limit       | C4   |
+| `packages/shared/src/themePalettes.ts`                                  | registers the shared OmniCode light/dark palette            | all clients need the same semantic color roles                  | C6   |
+| `apps/web/src/themePalette.ts`                                          | re-exports OmniCode and the built-in registry               | web and desktop consume the shared theme source of truth        | C6   |
+| `apps/web/src/components/settings/ThemeSettings.tsx`                    | renders the shared built-in registry                        | Appearance must expose every reviewed built-in on web/desktop   | C6   |
+| `apps/mobile/src/lib/mobileTheme.ts`                                    | consumes the shared built-in registry                       | mobile native variables and terminal previews stay aligned      | C6   |
+| `docs/user/appearance.md`                                               | documents built-in theme selection and OmniCode             | users need the shipped appearance behavior                      | C6   |
+| `docs/internals/themes.md`                                              | records the cross-surface theme contract                    | maintainers need one source of truth for palette additions      | C6   |
+| `packages/shared/src/providerRateLimit.ts`                              | centralizes explicit provider-limit detection and copy      | server and clients must agree on recoverable failures           | C2   |
+| `apps/mobile/src/features/threads/ThreadRateLimitNotice.tsx`            | shows the in-thread mobile recovery path                    | rate-limited threads must be recoverable on every client        | C2   |
+| `docs/user/usage.md`                                                    | documents rate-limit recovery                               | users need a clear way back after a provider reset              | C2   |
 
-**Conflict warning on the last two.** Upstream's unmerged `t3code/usage-limits-analytics`
-branch edits _both_ of those files for the same feature. If it lands, expect a real conflict
-in each, not a textual one — resolve it by keeping this fork's `ProviderInstanceId` keying
-and dropping theirs. See `omni/PLAN.md` B0.
+The C4 contract change is a narrow exception to the add-files preference: it promotes the
+already-persisted `thread.activity.append` command into the client-dispatchable union rather
+than inventing a second lineage event shape.
+
+**Conflict warning on the B1b/B2 seams.** Upstream's unmerged
+`t3code/usage-limits-analytics` branch edits several of the same RPC, ingestion, WebSocket,
+state and sidebar files for the same feature. If it lands, expect semantic conflicts —
+resolve them by keeping this fork's `ProviderInstanceId` keying rather than upstream's
+one-snapshot-per-provider model. See `omni/PLAN.md` B0.
 
 ---
 

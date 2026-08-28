@@ -9,6 +9,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ProviderTurnStartResult,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -150,6 +151,10 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly sendTurnEffect?: () => Effect.Effect<
+      ProviderTurnStartResult,
+      ProviderAdapterRequestError
+    >;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -229,11 +234,13 @@ describe("ProviderCommandReactor", () => {
         ),
       );
     });
-    const sendTurn = vi.fn((_: unknown) =>
-      Effect.succeed({
-        threadId: ThreadId.make("thread-1"),
-        turnId: asTurnId("turn-1"),
-      }),
+    const sendTurn = vi.fn(
+      (_: unknown) =>
+        input?.sendTurnEffect?.() ??
+        Effect.succeed({
+          threadId: ThreadId.make("thread-1"),
+          turnId: asTurnId("turn-1"),
+        }),
     );
     const interruptTurn = vi.fn((_: unknown) => Effect.void);
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
@@ -656,6 +663,86 @@ describe("ProviderCommandReactor", () => {
       });
 
       yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      readModel = yield* Effect.promise(() => harness.readModel());
+      thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      expect(thread?.session?.status).toBe("starting");
+      expect(thread?.session?.lastError).toBeNull();
+    }),
+  );
+
+  effectIt.effect("surfaces rate limits separately and clears the recovery state on retry", () =>
+    Effect.gen(function* () {
+      let rateLimited = true;
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          sendTurnEffect: () =>
+            rateLimited
+              ? Effect.fail(
+                  new ProviderAdapterRequestError({
+                    provider: "codex",
+                    method: "turn/start",
+                    detail: "HTTP 429: rate limit exceeded",
+                  }),
+                )
+              : Effect.succeed({
+                  threadId: ThreadId.make("thread-1"),
+                  turnId: asTurnId("turn-retry"),
+                }),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-rate-limit-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-rate-limit-1"),
+          role: "user",
+          text: "first attempt",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const readModel = await harness.readModel();
+          return (
+            readModel.threads
+              .find((entry) => entry.id === ThreadId.make("thread-1"))
+              ?.session?.lastError?.startsWith("Provider usage limit reached.") ?? false
+          );
+        }),
+      );
+
+      let readModel = yield* Effect.promise(() => harness.readModel());
+      let thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      expect(thread?.session?.status).toBe("rate-limited");
+      expect(thread?.session?.lastError).toContain("Wait for the provider reset window");
+      expect(
+        thread?.activities.find((activity) => activity.kind === "provider.turn.start.failed"),
+      ).toMatchObject({ summary: "Provider usage limit reached" });
+
+      rateLimited = false;
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-rate-limit-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-rate-limit-2"),
+          role: "user",
+          text: "retry after reset",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      });
+
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
       readModel = yield* Effect.promise(() => harness.readModel());
       thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
       expect(thread?.session?.status).toBe("starting");

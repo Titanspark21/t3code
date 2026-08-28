@@ -1,4 +1,5 @@
 import {
+  EventId,
   type ApprovalRequestId,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
@@ -52,6 +53,17 @@ import {
 } from "@t3tools/shared/model";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
+import {
+  HANDOFF_FILE_NAME,
+  buildHandoffActivity,
+  buildHandoffDocument,
+  buildHandoffPrompt,
+  resolveHandoffLineage,
+} from "@t3tools/shared/handoff";
+import {
+  buildHandoffTargetOptions,
+  type HandoffTargetOption,
+} from "@t3tools/shared/handoffTargets";
 import { truncate } from "@t3tools/shared/String";
 import {
   getTerminalLabel,
@@ -182,7 +194,7 @@ import {
   PaperclipIcon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -203,6 +215,7 @@ import {
   useEnvironmentSettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { useQuota } from "../state/quota";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
@@ -277,6 +290,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
+import { HandoffTargetDialog } from "./chat/HandoffTargetDialog";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -305,6 +319,11 @@ import {
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
+import {
+  isSameInterruptTarget,
+  shouldClearInterruptingTurn,
+  type InterruptingTurnTarget,
+} from "./chat/interruptState";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -1263,6 +1282,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
@@ -1270,6 +1290,9 @@ function ChatViewContent(props: ChatViewProps) {
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const appendThreadActivity = useAtomCommand(threadEnvironment.appendActivity, {
+    reportFailure: false,
+  });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -1433,6 +1456,8 @@ function ChatViewContent(props: ChatViewProps) {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  const [interruptingTurn, setInterruptingTurn] = useState<InterruptingTurnTarget | null>(null);
+  const interruptingTurnRef = useRef<InterruptingTurnTarget | null>(null);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -1772,6 +1797,11 @@ function ChatViewContent(props: ChatViewProps) {
   const activeRunningTurnId =
     (activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null) ??
     (activeLatestTurn?.state === "running" ? activeLatestTurn.turnId : null);
+  const isInterruptingActiveTurn =
+    interruptingTurn !== null &&
+    interruptingTurn.environmentId === environmentId &&
+    interruptingTurn.threadId === (activeThread?.id ?? null) &&
+    interruptingTurn.turnId === activeRunningTurnId;
   // Reading a finished thread clears the sidebar's Done badge. The visit is
   // stamped at the turn's completion time — not now/updatedAt — so it clears
   // exactly the completion the user is looking at: a wake or completion that
@@ -1812,6 +1842,25 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread?.environmentId, activeThread?.projectId],
   );
   const activeProject = useProject(activeProjectRef);
+  const handoffLineage = useMemo(() => {
+    if (!activeThread || !isServerThread) {
+      return null;
+    }
+    return resolveHandoffLineage(activeThread.id, activeThread.activities);
+  }, [activeThread, isServerThread]);
+  const [isHandoffTargetPickerOpen, setIsHandoffTargetPickerOpen] = useState(false);
+  const openHandoffThread = useCallback(() => {
+    if (!handoffLineage || !activeThread) {
+      return;
+    }
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: {
+        environmentId: activeThread.environmentId,
+        threadId: handoffLineage.relatedThreadId,
+      },
+    });
+  }, [activeThread, handoffLineage, navigate]);
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
@@ -2104,6 +2153,7 @@ function ChatViewContent(props: ChatViewProps) {
   const serverConfig = activeThread
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
+  const quota = useQuota();
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
@@ -2404,6 +2454,21 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  useEffect(() => {
+    if (interruptingTurn === null) return;
+    if (
+      shouldClearInterruptingTurn({
+        target: interruptingTurn,
+        activeEnvironmentId: environmentId,
+        activeThreadId: activeThread?.id ?? null,
+        activeTurnId: activeRunningTurnId,
+        phase,
+      })
+    ) {
+      interruptingTurnRef.current = null;
+      setInterruptingTurn(null);
+    }
+  }, [activeRunningTurnId, activeThread?.id, environmentId, interruptingTurn, phase]);
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -4336,6 +4401,16 @@ function ChatViewContent(props: ChatViewProps) {
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const nowMinute = useNowMinute();
+  const handoffTargetOptions = useMemo(() => {
+    if (!activeServerThread || !serverConfig) return [];
+    const snapshots = quota.byEnvironment.get(activeServerThread.environmentId) ?? new Map();
+    return buildHandoffTargetOptions({
+      providers: serverConfig.providers,
+      snapshots,
+      sourceSelection: activeServerThread.modelSelection,
+      nowMs: Date.parse(`${nowMinute}:00.000Z`),
+    });
+  }, [activeServerThread, nowMinute, quota.byEnvironment, serverConfig]);
   const snoozeNow = new Date().toISOString();
   const activeThreadSnoozed =
     activeThreadShell !== null &&
@@ -5160,7 +5235,6 @@ function ChatViewContent(props: ChatViewProps) {
       !activeThread ||
       isSendBusy ||
       isConnecting ||
-      threadDetailLoading ||
       sendInFlightRef.current ||
       feedbackUploadsInFlightRef.current.has(routeThreadKey)
     ) {
@@ -5817,16 +5891,35 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onInterrupt = async () => {
     if (!activeThread) return;
+    const input = buildThreadTurnInterruptInput(activeThread);
+    const target: InterruptingTurnTarget = {
+      environmentId,
+      threadId: activeThread.id,
+      // The provider-facing input uses the session's active id when one is
+      // available. For UI identity, retain the latest running turn fallback
+      // too; otherwise a projection that lost activeTurnId would allow a
+      // second click before the backend reconciliation arrives.
+      turnId: activeRunningTurnId,
+    };
+    if (isSameInterruptTarget(interruptingTurnRef.current, target)) return;
+    interruptingTurnRef.current = target;
+    setInterruptingTurn(target);
     const result = await interruptThreadTurn({
       environmentId,
-      input: buildThreadTurnInterruptInput(activeThread),
+      input,
     });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
+    if (result._tag === "Failure") {
+      if (isSameInterruptTarget(interruptingTurnRef.current, target)) {
+        interruptingTurnRef.current = null;
+        setInterruptingTurn(null);
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          target.threadId,
+          error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+        );
+      }
     }
   };
 
@@ -6306,6 +6399,221 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const openHandoffTargetPicker = useCallback(() => {
+    if (
+      !activeServerThread ||
+      !activeProject ||
+      !isServerThread ||
+      threadDetailLoading ||
+      isSendBusy ||
+      isConnecting ||
+      phase === "running" ||
+      activeEnvironmentUnavailable ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+    if (handoffTargetOptions.length === 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "No handoff targets available",
+          description: "This server has no enabled, ready provider account with a model.",
+        }),
+      );
+      return;
+    }
+    setIsHandoffTargetPickerOpen(true);
+  }, [
+    activeEnvironmentUnavailable,
+    activeProject,
+    activeServerThread,
+    handoffTargetOptions.length,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    phase,
+    threadDetailLoading,
+  ]);
+
+  const onForkToHandoff = useCallback(
+    async (target: HandoffTargetOption) => {
+      if (
+        !activeServerThread ||
+        !activeProject ||
+        !isServerThread ||
+        threadDetailLoading ||
+        isSendBusy ||
+        isConnecting ||
+        phase === "running" ||
+        activeEnvironmentUnavailable ||
+        sendInFlightRef.current
+      ) {
+        return;
+      }
+
+      setIsHandoffTargetPickerOpen(false);
+      const sourceThread = activeServerThread;
+      const targetThreadId = newThreadId();
+      const targetTitle = truncate(`Fork: ${sourceThread.title}`);
+      const createdAt = new Date().toISOString();
+      const artifactPath = HANDOFF_FILE_NAME;
+      const handoffDocument = buildHandoffDocument({
+        thread: sourceThread,
+        project: {
+          id: activeProject.id,
+          title: activeProject.title,
+          workspaceRoot: activeProject.workspaceRoot,
+        },
+        artifactPath,
+      });
+      const handoffPrompt = buildHandoffPrompt(handoffDocument);
+      const lineage = {
+        sourceThreadId: sourceThread.id,
+        targetThreadId,
+        sourceTitle: sourceThread.title,
+        targetTitle,
+        artifactPath,
+      };
+
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      try {
+        const writeResult = await writeProjectFile({
+          environmentId: sourceThread.environmentId,
+          input: {
+            cwd: sourceThread.worktreePath ?? activeProject.workspaceRoot,
+            relativePath: artifactPath,
+            contents: handoffDocument,
+          },
+        });
+        if (writeResult._tag === "Failure") {
+          if (!isAtomCommandInterrupted(writeResult)) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not write handoff brief",
+                description: String(squashAtomCommandFailure(writeResult)),
+              }),
+            );
+          }
+          return;
+        }
+
+        const createResult = await createThread({
+          environmentId: sourceThread.environmentId,
+          input: {
+            threadId: targetThreadId,
+            projectId: sourceThread.projectId,
+            title: targetTitle,
+            modelSelection: target.modelSelection,
+            runtimeMode: sourceThread.runtimeMode,
+            interactionMode: sourceThread.interactionMode,
+            branch: sourceThread.branch,
+            worktreePath: sourceThread.worktreePath,
+            createdAt,
+          },
+        });
+        if (createResult._tag === "Failure") {
+          if (!isAtomCommandInterrupted(createResult)) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not create forked thread",
+                description: String(squashAtomCommandFailure(createResult)),
+              }),
+            );
+          }
+          return;
+        }
+
+        const [sourceActivityResult, targetActivityResult] = await Promise.all([
+          appendThreadActivity({
+            environmentId: sourceThread.environmentId,
+            input: {
+              threadId: sourceThread.id,
+              activity: buildHandoffActivity({
+                activityId: EventId.make(randomUUID()),
+                createdAt,
+                lineage,
+                direction: "source",
+              }),
+              createdAt,
+            },
+          }),
+          appendThreadActivity({
+            environmentId: sourceThread.environmentId,
+            input: {
+              threadId: targetThreadId,
+              activity: buildHandoffActivity({
+                activityId: EventId.make(randomUUID()),
+                createdAt,
+                lineage,
+                direction: "target",
+              }),
+              createdAt,
+            },
+          }),
+        ]);
+        const activityFailure = [sourceActivityResult, targetActivityResult].find(
+          (result) => result._tag === "Failure",
+        );
+        if (activityFailure?._tag === "Failure" && !isAtomCommandInterrupted(activityFailure)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Fork created without lineage markers",
+              description: String(squashAtomCommandFailure(activityFailure)),
+            }),
+          );
+        }
+
+        setComposerDraftPrompt(
+          scopeThreadRef(sourceThread.environmentId, targetThreadId),
+          handoffPrompt,
+        );
+        const navigateResult = await settlePromise(() =>
+          navigate({
+            to: "/$environmentId/$threadId",
+            params: {
+              environmentId: sourceThread.environmentId,
+              threadId: targetThreadId,
+            },
+          }),
+        );
+        if (navigateResult._tag === "Failure" && !isAtomCommandInterrupted(navigateResult)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Fork created",
+              description: "The new thread is ready in the thread list.",
+            }),
+          );
+        }
+      } finally {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      }
+    },
+    [
+      activeEnvironmentUnavailable,
+      activeProject,
+      activeServerThread,
+      appendThreadActivity,
+      beginLocalDispatch,
+      createThread,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      navigate,
+      phase,
+      resetLocalDispatch,
+      setComposerDraftPrompt,
+      threadDetailLoading,
+      writeProjectFile,
+    ],
+  );
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -6747,13 +7055,24 @@ function ChatViewContent(props: ChatViewProps) {
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            handoffLineage={handoffLineage}
             onNewThreadInProject={handleNewThreadInActiveProject}
+            onForkThread={openHandoffTargetPicker}
+            onOpenHandoffThread={openHandoffThread}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
         </WorkspacePageHeader>
+
+        <HandoffTargetDialog
+          open={isHandoffTargetPickerOpen}
+          options={handoffTargetOptions}
+          sourceTitle={activeServerThread?.title}
+          onOpenChange={setIsHandoffTargetPickerOpen}
+          onSelect={(target) => void onForkToHandoff(target)}
+        />
 
         <ThreadErrorBanner
           error={visibleThreadError}
@@ -6925,6 +7244,7 @@ function ChatViewContent(props: ChatViewProps) {
                             forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
                             projectSelectionRequired={isLocalDraftThread && activeProject === null}
                             phase={phase}
+                            isInterrupting={isInterruptingActiveTurn}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
                             sendDisabledReason={

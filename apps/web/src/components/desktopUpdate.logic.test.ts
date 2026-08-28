@@ -197,6 +197,12 @@ describe("desktop update UI helpers", () => {
     );
   });
 
+  it("builds release URLs for a fork update repository", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.34", "TitansparkDev/t3code")).toBe(
+      "https://github.com/TitansparkDev/t3code/releases/tag/v0.0.34",
+    );
+  });
+
   it("omits the release URL when the updater does not report a version", () => {
     expect(getDesktopUpdateReleaseUrl(null)).toBeNull();
     expect(getDesktopUpdateReleaseUrl("  ")).toBeNull();

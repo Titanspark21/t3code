@@ -95,7 +95,8 @@ function hasOpenBlockingRequest(thread: {
  * turn's requestedAt with the message time, clearing this), and only within
  * the adoption grace window — historical threads whose last user message
  * postdates their turn timestamps (older-server data, mid-turn messages)
- * must not be blocked forever. A failed session start (status "error")
+ * must not be blocked forever. A failed session start (status "error" or
+ * "rate-limited")
  * clears the block immediately.
  *
  * The age check is bounded on BOTH sides: message timestamps are
@@ -136,6 +137,7 @@ function threadHasQueuedTurnStart(
   const queuedAgeMs = Date.parse(occurredAt) - latestUserMessageAtMs;
   return (
     thread.session?.status !== "error" &&
+    thread.session?.status !== "rate-limited" &&
     Number.isFinite(latestUserMessageAtMs) &&
     latestUserMessageAtMs > latestTurnAtMs &&
     Math.abs(queuedAgeMs) <= QUEUED_TURN_START_GRACE_MS

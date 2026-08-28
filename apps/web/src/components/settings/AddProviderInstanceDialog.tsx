@@ -36,6 +36,7 @@ import {
   type WizardNavigation,
 } from "./AddProviderInstanceDialog.logic";
 import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
+import { getProviderProfilePresets } from "./providerProfilePresets";
 
 const PROVIDER_ACCENT_SWATCHES = [
   "#2563eb",
@@ -154,6 +155,7 @@ export function AddProviderInstanceDialog({
     () => deriveProviderSettingsFields(driverOption),
     [driverOption],
   );
+  const profilePresets = useMemo(() => getProviderProfilePresets(driver), [driver]);
   const instanceIdError = validateInstanceId(instanceId, existingIds);
   const showInstanceIdError = hasAttemptedSubmit && instanceIdError !== null;
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
@@ -312,6 +314,27 @@ export function AddProviderInstanceDialog({
                     );
                   })}
                 </RadioGroup>
+                {profilePresets.length > 0 ? (
+                  <div className="mt-2 grid gap-2">
+                    <span className="text-xs font-medium text-foreground">Quick setup</span>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {profilePresets.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className="rounded-lg bg-card px-3 py-2 text-left text-xs text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5"
+                          onClick={() => {
+                            setLabel(preset.displayName);
+                            setConfigDraft({ ...configDraft, ...preset.config });
+                          }}
+                        >
+                          <span className="block font-medium text-foreground">{preset.label}</span>
+                          <span className="mt-0.5 block">{preset.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <label className={cn("grid gap-2", wizardStep !== 1 && "hidden")}>

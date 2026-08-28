@@ -530,7 +530,7 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
 
   it.effect("does not unsettle for session stop/error status writes", () =>
     Effect.gen(function* () {
-      for (const status of ["stopped", "error", "ready", "idle"] as const) {
+      for (const status of ["stopped", "error", "rate-limited", "ready", "idle"] as const) {
         const result = yield* decideOrchestrationCommand({
           command: {
             type: "thread.session.set",

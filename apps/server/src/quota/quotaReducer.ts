@@ -21,6 +21,7 @@ import type {
 
 import {
   mergeQuotaSnapshots,
+  normalizeAntigravityRateLimits,
   normalizeClaudeRateLimits,
   normalizeCodexRateLimits,
 } from "./normalizeRateLimits.ts";
@@ -44,6 +45,8 @@ function normalizerFor(driverKind: string) {
       return normalizeCodexRateLimits;
     case "claudeAgent":
       return normalizeClaudeRateLimits;
+    case "antigravity":
+      return normalizeAntigravityRateLimits;
     default:
       return undefined;
   }

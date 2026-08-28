@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnId,
+  type ProviderSession,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -43,7 +44,25 @@ const makeThread = (
   },
 });
 
-const makeProviderService = (liveThreadIds: ReadonlyArray<ThreadId> = []) =>
+const makeLiveProviderSession = (
+  threadId: ThreadId,
+  status: ProviderSession["status"] = "running",
+  activeTurnId?: TurnId,
+): ProviderSession => ({
+  provider: ProviderDriverKind.make("codex"),
+  providerInstanceId,
+  status,
+  runtimeMode: "full-access",
+  threadId,
+  createdAt: updatedAt,
+  updatedAt,
+  ...(activeTurnId ? { activeTurnId } : {}),
+});
+
+const makeProviderService = (
+  liveThreadIds: ReadonlyArray<ThreadId> = [],
+  liveSessions?: ReadonlyArray<ProviderSession>,
+) =>
   ({
     startSession: () => Effect.die("unused"),
     sendTurn: () => Effect.die("unused"),
@@ -51,7 +70,10 @@ const makeProviderService = (liveThreadIds: ReadonlyArray<ThreadId> = []) =>
     respondToRequest: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     stopSession: () => Effect.die("unused"),
-    listSessions: () => Effect.succeed(liveThreadIds.map((threadId) => ({ threadId }) as never)),
+    listSessions: () =>
+      Effect.succeed(
+        liveSessions ?? liveThreadIds.map((threadId) => makeLiveProviderSession(threadId)),
+      ),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
@@ -67,6 +89,7 @@ const queryWithThreads = (threads: ReadonlyArray<ReturnType<typeof makeThread>>)
 const runReconciliation = (input: {
   readonly threads: ReadonlyArray<ReturnType<typeof makeThread>>;
   readonly liveThreadIds?: ReadonlyArray<ThreadId>;
+  readonly liveSessions?: ReadonlyArray<ProviderSession>;
   readonly directory: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
   readonly dispatch: OrchestrationEngine.OrchestrationEngineService["Service"]["dispatch"];
 }) =>
@@ -77,7 +100,7 @@ const runReconciliation = (input: {
     ),
     Effect.provideService(
       ProviderService.ProviderService,
-      makeProviderService(input.liveThreadIds),
+      makeProviderService(input.liveThreadIds, input.liveSessions),
     ),
     Effect.provideService(ProviderSessionDirectory.ProviderSessionDirectory, input.directory),
     Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
@@ -159,6 +182,74 @@ it.effect("reconciles multiple active and archived orphans but skips live sessio
           assert.deepStrictEqual(binding.runtimePayload, { activeTurnId: null });
           assert.deepStrictEqual(binding.resumeCursor, { cursor: binding.threadId });
         }
+      }),
+    ),
+  );
+});
+
+it.effect("repairs a persisted running projection when a live provider is already idle", () => {
+  const thread = makeThread("thread-live-idle", "running", TurnId.make("stale-turn"));
+  const dispatched: OrchestrationCommand[] = [];
+  const upserts: ProviderSessionDirectory.ProviderRuntimeBinding[] = [];
+
+  return runReconciliation({
+    threads: [thread],
+    liveSessions: [makeLiveProviderSession(thread.id, "ready")],
+    directory: {
+      getBinding: () =>
+        Effect.succeed(
+          Option.some({
+            threadId: thread.id,
+            provider: ProviderDriverKind.make("codex"),
+            providerInstanceId,
+            status: "running" as const,
+            resumeCursor: { threadId: "provider-thread" },
+            runtimePayload: { activeTurnId: "stale-turn", cwd: "/workspace" },
+          }),
+        ),
+      upsert: (binding) => Effect.sync(() => upserts.push(binding)),
+      getProvider: () => Effect.die("unused"),
+      listThreadIds: () => Effect.die("unused"),
+      listBindings: () => Effect.die("unused"),
+    },
+    dispatch: (command) =>
+      Effect.sync(() => dispatched.push(command)).pipe(Effect.as({ sequence: dispatched.length })),
+  }).pipe(
+    Effect.tap(() =>
+      Effect.sync(() => {
+        assert.equal(dispatched.length, 1);
+        const command = dispatched[0];
+        assert.equal(command?.type, "thread.session.set");
+        if (command?.type !== "thread.session.set") {
+          return;
+        }
+        assert.equal(command.session.status, "ready");
+        assert.equal(command.session.activeTurnId, null);
+        assert.equal(command.session.lastError, null);
+
+        assert.equal(upserts.length, 1);
+        const binding = upserts[0];
+        assert.ok(binding);
+        assert.equal(binding.status, "running");
+        assert.deepStrictEqual(binding.resumeCursor, { threadId: "provider-thread" });
+        assert.deepStrictEqual(
+          binding.runtimePayload && {
+            ...(binding.runtimePayload as Record<string, unknown>),
+            lastRuntimeEventAt: undefined,
+          },
+          {
+            activeTurnId: null,
+            cwd: "/workspace",
+            providerStatus: "ready",
+            lastError: null,
+            lastRuntimeEvent: "provider.startup.reconcile",
+            lastRuntimeEventAt: undefined,
+          },
+        );
+        assert.match(
+          String((binding.runtimePayload as Record<string, unknown>).lastRuntimeEventAt),
+          /^\d{4}-\d{2}-\d{2}T/,
+        );
       }),
     ),
   );

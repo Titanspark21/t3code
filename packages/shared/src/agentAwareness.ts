@@ -83,7 +83,11 @@ function resolveThreadAwarenessPhase(
   if (thread.hasPendingUserInput) {
     return "waiting_for_input";
   }
-  if (thread.session?.status === "error" || thread.latestTurn?.state === "error") {
+  if (
+    thread.session?.status === "error" ||
+    thread.session?.status === "rate-limited" ||
+    thread.latestTurn?.state === "error"
+  ) {
     return "failed";
   }
   if (thread.session?.status === "starting") {

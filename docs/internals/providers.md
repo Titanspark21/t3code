@@ -65,6 +65,11 @@ only the currently binding window, so its adapter also makes the SDK's full usag
 session initialization and after binding-window updates, throttled to one request per three minutes.
 The full response is reduced to subscription and rate-limit fields before it enters orchestration.
 
+The web, desktop, and mobile handoff pickers consume that same instance-keyed stream. They show one
+choice per published quota group, sort fresh groups by remaining capacity, and keep stale or missing
+figures explicitly unlabeled. Selecting a group resolves to the configured account and a model from
+that account; pool names are matched to model metadata when the provider publishes multiple pools.
+
 ## Server-side workers
 
 Provider work flows through three queue-backed workers. All three are built with

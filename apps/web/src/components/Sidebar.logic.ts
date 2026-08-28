@@ -132,7 +132,8 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
-    | "Plan Ready";
+    | "Plan Ready"
+    | "Rate Limited";
   colorClass: string;
   dotClass: string;
   pulse: boolean;
@@ -144,6 +145,7 @@ export interface ThreadStatusPill {
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 6,
   "Awaiting Input": 5,
+  "Rate Limited": 5,
   Working: 4,
   Connecting: 4,
   "Plan Ready": 3,
@@ -491,7 +493,7 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   }
   // A failed session outranks lingering background liveness: the user must
   // see the failure, not a stale Working (review finding).
-  if (thread.session?.status === "error") {
+  if (thread.session?.status === "error" || thread.session?.status === "rate-limited") {
     return "failed";
   }
   // Background work outlives the turn: fleets read as working; monitoring
@@ -680,6 +682,15 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
+    };
+  }
+
+  if (thread.session?.status === "rate-limited") {
+    return {
+      label: "Rate Limited",
+      colorClass: "text-rose-600 dark:text-rose-300/90",
+      dotClass: "bg-rose-500 dark:bg-rose-300/90",
+      pulse: false,
     };
   }
 

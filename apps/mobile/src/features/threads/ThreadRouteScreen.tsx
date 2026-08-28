@@ -7,13 +7,25 @@ import {
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
+import { EventId, EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
+import { QUOTA_CONTRACT_VERSION } from "@t3tools/contracts/quota";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { Platform, ScrollView, View } from "react-native";
+import {
+  HANDOFF_FILE_NAME,
+  buildHandoffActivity,
+  buildHandoffDocument,
+  buildHandoffPrompt,
+  resolveHandoffLineage,
+} from "@t3tools/shared/handoff";
+import {
+  buildHandoffTargetOptions,
+  type HandoffTargetOption,
+} from "@t3tools/shared/handoffTargets";
+import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
@@ -27,6 +39,7 @@ import {
 } from "../../components/AndroidScreenHeader";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { uuidv4 } from "../../lib/uuid";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
 
@@ -62,6 +75,9 @@ import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-s
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import { projectEnvironment } from "../../state/projects";
+import { serverEnvironment } from "../../state/server";
+import { setComposerDraftText } from "../../state/use-composer-drafts";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
 import {
@@ -75,6 +91,7 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
+import { HandoffTargetPicker } from "./HandoffTargetPicker";
 
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
@@ -214,6 +231,11 @@ function ThreadRouteContent(
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
+  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const appendThreadActivity = useAtomCommand(threadEnvironment.appendActivity, {
+    reportFailure: false,
+  });
+  const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const navigation = useNavigation();
   const params = props.route.params;
   const environmentIdRaw = firstRouteParam(params.environmentId);
@@ -283,6 +305,9 @@ function ThreadRouteContent(
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeConnectionError = routeEnvironmentRuntime?.connectionError ?? null;
+  const quotaQuery = useEnvironmentQuery(
+    environmentId ? serverEnvironment.quota({ environmentId, input: {} }) : null,
+  );
   const selectedThreadWithDraftSettings = useMemo(
     () =>
       selectedThread
@@ -295,12 +320,46 @@ function ThreadRouteContent(
         : null,
     [composer.interactionMode, composer.modelSelection, composer.runtimeMode, selectedThread],
   );
+  const quotaNowMs = Math.floor(Date.now() / 60_000) * 60_000;
+  const handoffTargetOptions = useMemo(() => {
+    const serverConfig = routeEnvironmentRuntime?.serverConfig;
+    if (!selectedThread || !serverConfig) return [];
+    const quotaSummary =
+      quotaQuery.data?.contractVersion === QUOTA_CONTRACT_VERSION ? quotaQuery.data : null;
+    const snapshots = new Map(
+      (quotaSummary?.snapshots ?? []).map((snapshot) => [snapshot.providerInstanceId, snapshot]),
+    );
+    return buildHandoffTargetOptions({
+      providers: serverConfig.providers,
+      snapshots,
+      sourceSelection:
+        selectedThreadWithDraftSettings?.modelSelection ?? selectedThread.modelSelection,
+      nowMs: quotaNowMs,
+    });
+  }, [
+    quotaNowMs,
+    quotaQuery.data,
+    routeEnvironmentRuntime?.serverConfig,
+    selectedThread,
+    selectedThreadWithDraftSettings?.modelSelection,
+  ]);
+  const [isForkingHandoff, setIsForkingHandoff] = useState(false);
+  const [isHandoffTargetPickerOpen, setIsHandoffTargetPickerOpen] = useState(false);
+  const handoffLineage = useMemo(() => {
+    if (!selectedThread || !selectedThreadDetail) {
+      return null;
+    }
+    return resolveHandoffLineage(selectedThread.id, selectedThreadDetail.activities);
+  }, [selectedThread, selectedThreadDetail]);
 
   /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
+    handoffLineage
+      ? `${handoffLineage.direction === "source" ? "Forked to" : "Forked from"} ${handoffLineage.relatedTitle}`
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -332,6 +391,175 @@ function ThreadRouteContent(
     }
     onReconnectEnvironment(environmentId);
   }, [environmentId, onReconnectEnvironment]);
+
+  const handleForkHandoff = useCallback(
+    async (target: HandoffTargetOption) => {
+      if (
+        !selectedThread ||
+        !selectedThreadDetail ||
+        !selectedThreadProject ||
+        isForkingHandoff ||
+        routeConnectionState !== "connected"
+      ) {
+        return;
+      }
+
+      setIsHandoffTargetPickerOpen(false);
+      const sourceThread = selectedThreadDetail;
+      const targetThreadId = ThreadId.make(uuidv4());
+      const targetTitle = `Fork: ${sourceThread.title}`;
+      const createdAt = new Date().toISOString();
+      const artifactPath = HANDOFF_FILE_NAME;
+      const handoffDocument = buildHandoffDocument({
+        thread: sourceThread,
+        project: {
+          id: selectedThreadProject.id,
+          title: selectedThreadProject.title,
+          workspaceRoot: selectedThreadProject.workspaceRoot,
+        },
+        artifactPath,
+      });
+      const handoffPrompt = buildHandoffPrompt(handoffDocument);
+      const lineage = {
+        sourceThreadId: sourceThread.id,
+        targetThreadId,
+        sourceTitle: sourceThread.title,
+        targetTitle,
+        artifactPath,
+      };
+
+      setIsForkingHandoff(true);
+      try {
+        const writeResult = await writeProjectFile({
+          environmentId: selectedThread.environmentId,
+          input: {
+            cwd: sourceThread.worktreePath ?? selectedThreadProject.workspaceRoot,
+            relativePath: artifactPath,
+            contents: handoffDocument,
+          },
+        });
+        if (writeResult._tag === "Failure") {
+          Alert.alert("Could not write handoff brief", "The fork was not created.");
+          return;
+        }
+
+        const createResult = await createThread({
+          environmentId: selectedThread.environmentId,
+          input: {
+            threadId: targetThreadId,
+            projectId: sourceThread.projectId,
+            title: targetTitle,
+            modelSelection: target.modelSelection,
+            runtimeMode: sourceThread.runtimeMode,
+            interactionMode: sourceThread.interactionMode,
+            branch: sourceThread.branch,
+            worktreePath: sourceThread.worktreePath,
+            createdAt,
+          },
+        });
+        if (createResult._tag === "Failure") {
+          Alert.alert(
+            "Could not create forked thread",
+            "The handoff brief was written, but no thread was created.",
+          );
+          return;
+        }
+
+        const [sourceActivityResult, targetActivityResult] = await Promise.all([
+          appendThreadActivity({
+            environmentId: selectedThread.environmentId,
+            input: {
+              threadId: sourceThread.id,
+              activity: buildHandoffActivity({
+                activityId: EventId.make(uuidv4()),
+                createdAt,
+                lineage,
+                direction: "source",
+              }),
+              createdAt,
+            },
+          }),
+          appendThreadActivity({
+            environmentId: selectedThread.environmentId,
+            input: {
+              threadId: targetThreadId,
+              activity: buildHandoffActivity({
+                activityId: EventId.make(uuidv4()),
+                createdAt,
+                lineage,
+                direction: "target",
+              }),
+              createdAt,
+            },
+          }),
+        ]);
+        const activityFailed =
+          sourceActivityResult._tag === "Failure" || targetActivityResult._tag === "Failure";
+        setComposerDraftText(
+          scopedThreadKey(selectedThread.environmentId, targetThreadId),
+          handoffPrompt,
+        );
+        await navigation.navigate("Thread", {
+          environmentId: String(selectedThread.environmentId),
+          threadId: String(targetThreadId),
+        });
+        if (activityFailed) {
+          Alert.alert(
+            "Fork created",
+            "The handoff draft is ready, but lineage markers could not be saved.",
+          );
+        }
+      } finally {
+        setIsForkingHandoff(false);
+      }
+    },
+    [
+      appendThreadActivity,
+      createThread,
+      isForkingHandoff,
+      navigation,
+      routeConnectionState,
+      selectedThread,
+      selectedThreadDetail,
+      selectedThreadProject,
+      writeProjectFile,
+    ],
+  );
+  const openHandoffTargetPicker = useCallback(() => {
+    if (
+      !selectedThread ||
+      !selectedThreadDetail ||
+      !selectedThreadProject ||
+      isForkingHandoff ||
+      routeConnectionState !== "connected"
+    ) {
+      return;
+    }
+    if (handoffTargetOptions.length === 0) {
+      Alert.alert(
+        "No handoff targets available",
+        "This server has no enabled provider account with a usable model.",
+      );
+      return;
+    }
+    setIsHandoffTargetPickerOpen(true);
+  }, [
+    handoffTargetOptions.length,
+    isForkingHandoff,
+    routeConnectionState,
+    selectedThread,
+    selectedThreadDetail,
+    selectedThreadProject,
+  ]);
+  const handleOpenHandoffThread = useCallback(() => {
+    if (!selectedThread || !handoffLineage) {
+      return;
+    }
+    void navigation.navigate("Thread", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(handoffLineage.relatedThreadId),
+    });
+  }, [handoffLineage, navigation, selectedThread]);
 
   /* ─── Git action progress (for overlay banner) ──────────────────── */
   const gitActionProgressTarget = useMemo(
@@ -637,6 +865,42 @@ function ThreadRouteContent(
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
+  const compactRightHeaderItemsWithHandoff = useMemo<NativeHeaderItems>(
+    () =>
+      selectedThreadDetail === null
+        ? compactRightHeaderItems
+        : [
+            ...(handoffLineage === null
+              ? []
+              : [
+                  withNativeGlassHeaderItem({
+                    accessibilityLabel:
+                      handoffLineage.direction === "source"
+                        ? "Open forked thread"
+                        : "Open source thread",
+                    icon: { name: "arrow.triangle.branch", type: "sfSymbol" as const },
+                    identifier: "thread-compact-open-handoff",
+                    onPress: handleOpenHandoffThread,
+                    type: "button" as const,
+                  }),
+                ]),
+            withNativeGlassHeaderItem({
+              accessibilityLabel: "Fork with handoff",
+              icon: { name: "arrow.triangle.branch", type: "sfSymbol" as const },
+              identifier: "thread-compact-fork-handoff",
+              onPress: openHandoffTargetPicker,
+              type: "button" as const,
+            }),
+            ...compactRightHeaderItems,
+          ],
+    [
+      compactRightHeaderItems,
+      openHandoffTargetPicker,
+      handleOpenHandoffThread,
+      handoffLineage,
+      selectedThreadDetail,
+    ],
+  );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       {
@@ -675,8 +939,42 @@ function ThreadRouteContent(
         onPress: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
         type: "button" as const,
       }),
+      ...(selectedThreadDetail === null
+        ? []
+        : [
+            ...(handoffLineage === null
+              ? []
+              : [
+                  withNativeGlassHeaderItem({
+                    accessibilityLabel:
+                      handoffLineage.direction === "source"
+                        ? "Open forked thread"
+                        : "Open source thread",
+                    icon: { name: "arrow.triangle.branch", type: "sfSymbol" as const },
+                    identifier: "thread-left-open-handoff",
+                    onPress: handleOpenHandoffThread,
+                    type: "button" as const,
+                  }),
+                ]),
+            withNativeGlassHeaderItem({
+              accessibilityLabel: "Fork with handoff",
+              icon: { name: "arrow.triangle.branch", type: "sfSymbol" as const },
+              identifier: "thread-left-fork-handoff",
+              onPress: openHandoffTargetPicker,
+              type: "button" as const,
+            }),
+          ]),
     ],
-    [panes.primarySidebarVisible, props.onReturnToThread, navigation, togglePrimarySidebar],
+    [
+      openHandoffTargetPicker,
+      handleOpenHandoffThread,
+      handoffLineage,
+      navigation,
+      panes.primarySidebarVisible,
+      props.onReturnToThread,
+      selectedThreadDetail,
+      togglePrimarySidebar,
+    ],
   );
   const androidHeaderActions = useMemo<ReadonlyArray<AndroidHeaderAction>>(() => {
     if (Platform.OS !== "android") return [];
@@ -703,6 +1001,21 @@ function ThreadRouteContent(
         onPress: () => handleOpenTerminal(null),
       });
     }
+    if (handoffLineage !== null) {
+      actions.push({
+        accessibilityLabel:
+          handoffLineage.direction === "source" ? "Open forked thread" : "Open source thread",
+        icon: "arrow.triangle.branch",
+        onPress: handleOpenHandoffThread,
+      });
+    }
+    if (selectedThreadDetail !== null) {
+      actions.push({
+        accessibilityLabel: "Fork with handoff",
+        icon: "arrow.triangle.branch",
+        onPress: openHandoffTargetPicker,
+      });
+    }
     actions.push({
       accessibilityLabel: "Open git controls",
       icon: "point.topleft.down.curvedto.point.bottomright.up",
@@ -722,8 +1035,12 @@ function ThreadRouteContent(
     handleOpenTerminal,
     handleOpenGitInspector,
     handleToggleInspector,
+    openHandoffTargetPicker,
+    handleOpenHandoffThread,
+    handoffLineage,
     props.onReturnToThread,
     selectedThreadCwd,
+    selectedThreadDetail,
     selectedThreadProject?.workspaceRoot,
   ]);
 
@@ -815,6 +1132,13 @@ function ThreadRouteContent(
   return (
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
+      <HandoffTargetPicker
+        options={handoffTargetOptions}
+        sourceTitle={selectedThread.title}
+        visible={isHandoffTargetPickerOpen}
+        onClose={() => setIsHandoffTargetPickerOpen(false)}
+        onSelect={(target) => void handleForkHandoff(target)}
+      />
       <NativeStackScreenOptions
         options={{
           // Android draws its own in-flow header (AndroidScreenHeader below);
@@ -845,7 +1169,10 @@ function ThreadRouteContent(
           // reserved for future breadcrumbs/status).
           unstable_headerRightItems:
             Platform.OS === "ios"
-              ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
+              ? () =>
+                  layout.usesSplitView
+                    ? threadCenterHeaderItems
+                    : compactRightHeaderItemsWithHandoff
               : undefined,
           unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
         }}

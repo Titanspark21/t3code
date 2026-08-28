@@ -889,6 +889,63 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("settles malformed terminal notifications with a warning and lifecycle fallback", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-malformed-turn-completed"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-malformed"),
+        payload: { turn: { status: "new-status-from-a-future-codex" } },
+      });
+
+      const events = yield* Fiber.join(eventsFiber);
+      NodeAssert.equal(events.length, 2);
+      NodeAssert.equal(events[0]?.type, "runtime.warning");
+      NodeAssert.equal(events[1]?.type, "turn.completed");
+      if (events[1]?.type !== "turn.completed") {
+        return;
+      }
+      NodeAssert.equal(events[1].turnId, "turn-malformed");
+      NodeAssert.equal(events[1].payload.state, "completed");
+    }),
+  );
+
+  it.effect("repairs the session when a malformed terminal notification has no turn id", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-malformed-turn-completed-without-id"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-1"),
+        payload: { result: "future-codex-shape" },
+      });
+
+      const events = yield* Fiber.join(eventsFiber);
+      NodeAssert.equal(events[0]?.type, "runtime.warning");
+      NodeAssert.equal(events[1]?.type, "session.state.changed");
+      if (events[1]?.type !== "session.state.changed") {
+        return;
+      }
+      NodeAssert.equal(events[1].payload.state, "ready");
+    }),
+  );
+
   it.effect("maps retryable Codex error notifications to runtime.warning", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

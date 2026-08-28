@@ -11,7 +11,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, GitForkIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -45,6 +45,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -65,8 +66,15 @@ interface ChatHeaderProps {
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
   gitCwd: string | null;
+  readonly handoffLineage?: {
+    readonly direction: "source" | "target";
+    readonly relatedThreadId: ThreadId;
+    readonly relatedTitle: string;
+  } | null;
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
+  onForkThread: () => void;
+  onOpenHandoffThread?: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -134,8 +142,11 @@ export const ChatHeader = memo(function ChatHeader({
   availableEditors,
   rightPanelOpen,
   gitCwd,
+  handoffLineage,
   onOpenPullRequest,
   onNewThreadInProject,
+  onForkThread,
+  onOpenHandoffThread,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
@@ -372,6 +383,36 @@ export const ChatHeader = memo(function ChatHeader({
             </Tooltip>
           )}
         </WorkspaceBreadcrumbItem>
+        {handoffLineage && onOpenHandoffThread ? (
+          <>
+            <WorkspaceBreadcrumbSeparator />
+            <WorkspaceBreadcrumbItem>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={`${handoffLineage.direction === "source" ? "Forked to" : "Forked from"} ${handoffLineage.relatedTitle}`}
+                      onClick={onOpenHandoffThread}
+                      className="inline-flex min-w-0 max-w-48 cursor-pointer items-center gap-1 rounded-sm text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  }
+                >
+                  <GitForkIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="truncate">
+                    {handoffLineage.direction === "source" ? "Forked to" : "Forked from"}{" "}
+                    {handoffLineage.relatedTitle}
+                  </span>
+                </TooltipTrigger>
+                <TooltipPopup side="top">
+                  {handoffLineage.direction === "source"
+                    ? "Open forked thread"
+                    : "Open source thread"}
+                </TooltipPopup>
+              </Tooltip>
+            </WorkspaceBreadcrumbItem>
+          </>
+        ) : null}
       </WorkspaceBreadcrumb>
       <div
         data-chat-header-actions
@@ -399,6 +440,24 @@ export const ChatHeader = memo(function ChatHeader({
             availableEditors={availableEditors}
             openInCwd={openInCwd}
           />
+        )}
+        {isServerThread && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Fork with handoff"
+                  onClick={onForkThread}
+                />
+              }
+            >
+              <GitForkIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Fork with handoff</TooltipPopup>
+          </Tooltip>
         )}
         {activeProjectName && (
           <GitActionsControl

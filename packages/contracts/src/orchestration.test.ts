@@ -298,6 +298,29 @@ it.effect("accepts arbitrary file uploads on client thread turns", () =>
   }),
 );
 
+it.effect("accepts client activity append commands", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeClientOrchestrationCommand({
+      type: "thread.activity.append",
+      commandId: "cmd-handoff-1",
+      threadId: "thread-1",
+      activity: {
+        id: "activity-handoff-1",
+        tone: "info",
+        kind: "thread.handoff",
+        summary: "Forked to another thread",
+        payload: { targetThreadId: "thread-2" },
+        turnId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.type, "thread.activity.append");
+    if (parsed.type !== "thread.activity.append") return;
+    assert.strictEqual(parsed.activity.kind, "thread.handoff");
+  }),
+);
+
 it.effect("accepts bootstrap metadata in thread.turn.start", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadTurnStartCommand({
@@ -835,6 +858,22 @@ it.effect("decodes orchestration session runtime mode defaults", () =>
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
+  }),
+);
+
+it.effect("decodes the durable provider rate-limited session status", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationSession({
+      threadId: "thread-1",
+      status: "rate-limited",
+      providerName: "codex",
+      providerSessionId: null,
+      providerThreadId: null,
+      activeTurnId: null,
+      lastError: "Provider usage limit reached. Try again later.",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.status, "rate-limited");
   }),
 );
 

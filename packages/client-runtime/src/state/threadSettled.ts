@@ -119,8 +119,9 @@ export function hasQueuedTurnStart(
 ): boolean {
   if (shell.latestUserMessageAt == null) return false;
   // A failed session start clears the queued state: the failure is already
-  // visible (status edge / error).
-  if (shell.session?.status === "error") return false;
+  // visible (status edge / error). Rate limits are deliberately latched until
+  // the next send, so the same rule applies to their distinct status.
+  if (shell.session?.status === "error" || shell.session?.status === "rate-limited") return false;
   const messageAt = Date.parse(shell.latestUserMessageAt);
   if (Number.isNaN(messageAt)) return false;
   const nowMs = Date.parse(options.now);
@@ -191,7 +192,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   // now". session.updatedAt stamps the status edge, so an error newer than
   // the snooze is new information.
   if (
-    shell.session?.status === "error" &&
+    (shell.session?.status === "error" || shell.session?.status === "rate-limited") &&
     (shell.snoozedAt == null || Date.parse(shell.session.updatedAt) > Date.parse(shell.snoozedAt))
   ) {
     return true;

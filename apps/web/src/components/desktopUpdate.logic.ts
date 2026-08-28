@@ -2,7 +2,10 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/con
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_TAG_URL = "https://github.com/pingdotgg/t3code/releases/tag";
+const DESKTOP_UPDATE_REPOSITORY =
+  (import.meta.env.VITE_T3CODE_DESKTOP_UPDATE_REPOSITORY as string | undefined)?.trim() ||
+  "pingdotgg/t3code";
+const DESKTOP_RELEASE_TAG_URL = `https://github.com/${DESKTOP_UPDATE_REPOSITORY}/releases/tag`;
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -14,10 +17,18 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
 }
 
 /** Release notes for an exact downloaded build; nightly suffixes are part of the tag. */
-export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
+export function getDesktopUpdateReleaseUrl(
+  version: string | null,
+  repository = DESKTOP_UPDATE_REPOSITORY,
+): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
-  return `${DESKTOP_RELEASE_TAG_URL}/v${encodeURIComponent(normalizedVersion)}`;
+  const normalizedRepository = repository.trim() || DESKTOP_UPDATE_REPOSITORY;
+  const releaseTagUrl =
+    normalizedRepository === DESKTOP_UPDATE_REPOSITORY
+      ? DESKTOP_RELEASE_TAG_URL
+      : `https://github.com/${normalizedRepository}/releases/tag`;
+  return `${releaseTagUrl}/v${encodeURIComponent(normalizedVersion)}`;
 }
 
 export function resolveDesktopUpdateButtonAction(
