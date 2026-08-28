@@ -1,5 +1,6 @@
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
+import * as Schema from "effect/Schema";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   ApprovalRequestId,
@@ -8,6 +9,8 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
+  ProviderApprovalOption,
+  ProviderRequestKind,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -116,10 +119,15 @@ const derivedWorkLogEntryByActivity = new WeakMap<
 
 export interface PendingApproval {
   requestId: ApprovalRequestId;
-  requestKind: "command" | "file-read" | "file-change";
+  requestKind: ProviderRequestKind;
   createdAt: string;
   detail?: string;
+  appName?: string;
+  options?: ReadonlyArray<ProviderApprovalOption>;
 }
+
+const isProviderRequestKind = Schema.is(ProviderRequestKind);
+const isProviderApprovalOption = Schema.is(ProviderApprovalOption);
 
 export interface PendingUserInput {
   requestId: ApprovalRequestId;
@@ -271,6 +279,17 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogEntry): boole
   return workEntryIndicatesToolFailureFromOutput(entry, false);
 }
 
+/** Severe failures keep the red treatment ordinary tool failures lost: runtime
+ *  errors and orchestration `*.failed` activities (provider.turn.start.failed,
+ *  checkpoint.capture.failed, ...) mean the turn or a core side effect broke,
+ *  not that a command exited nonzero. */
+export function workEntrySignalsSevereFailure(entry: WorkLogEntry): boolean {
+  return (
+    entry.sourceActivityKind === "runtime.error" ||
+    entry.sourceActivityKind?.endsWith(".failed") === true
+  );
+}
+
 /** Tool/command row completed without failure (blue check affordance). */
 export function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
   if (!workLogEntryIsToolLike(entry)) {
@@ -385,6 +404,8 @@ function requestKindFromRequestType(requestType: unknown): PendingApproval["requ
     case "file_change_approval":
     case "apply_patch_approval":
       return "file-change";
+    case "mcp_elicitation_approval":
+      return "mcp-elicitation";
     default:
       return null;
   }
@@ -422,15 +443,16 @@ export function derivePendingApprovals(
         ? ApprovalRequestId.make(payload.requestId)
         : null;
     const requestKind =
-      payload &&
-      (payload.requestKind === "command" ||
-        payload.requestKind === "file-read" ||
-        payload.requestKind === "file-change")
+      payload && isProviderRequestKind(payload.requestKind)
         ? payload.requestKind
         : payload
           ? requestKindFromRequestType(payload.requestType)
           : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
+    const appName = payload && typeof payload.appName === "string" ? payload.appName : undefined;
+    const options = Array.isArray(payload?.options)
+      ? payload.options.filter(isProviderApprovalOption)
+      : undefined;
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
       openByRequestId.set(requestId, {
@@ -438,6 +460,8 @@ export function derivePendingApprovals(
         requestKind,
         createdAt: activity.createdAt,
         ...(detail ? { detail } : {}),
+        ...(appName ? { appName } : {}),
+        ...(options && options.length > 0 ? { options } : {}),
       });
       continue;
     }
@@ -857,11 +881,23 @@ export function deriveWorkLogEntries(
     if (activity.kind === "tool.progress") continue;
     if (activity.kind === "context-window.updated") continue;
     if (activity.summary === "Checkpoint captured") continue;
+    if (isNoContentRuntimeWarning(activity)) continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
   return collapseDerivedWorkLogEntries(entries);
+}
+
+/** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
+ *  commands_changed, ...) as runtime warnings. The suffix comes from
+ *  describeUnknownSdkMessage in the Claude adapter; a row with no displayable
+ *  text carries nothing a user can act on, so it does not render. */
+function isNoContentRuntimeWarning(activity: OrchestrationThreadActivity): boolean {
+  return (
+    activity.kind === "runtime.warning" &&
+    activity.summary.endsWith("(no displayable text content)")
+  );
 }
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {
