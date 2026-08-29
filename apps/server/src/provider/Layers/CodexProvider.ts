@@ -45,6 +45,7 @@ const CODEX_PRESENTATION = {
 
 export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
+  readonly rateLimits?: CodexSchema.V2GetAccountRateLimitsResponse;
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
@@ -318,103 +319,109 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
-const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
-  readonly binaryPath: string;
-  readonly homePath?: string;
-  readonly launchArgs?: string;
-  readonly cwd: string;
-  readonly customModels?: ReadonlyArray<string>;
-  readonly environment?: NodeJS.ProcessEnv;
-}) {
-  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
-  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
-  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
-  // Expand here for parity with `CodexTextGeneration`/`CodexSessionRuntime`.
-  const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const environment = {
-    ...input.environment,
-    ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
-  };
-  const child = yield* withVerifiedSpawnCommand(
-    input.binaryPath,
-    codexAppServerArgs(input.launchArgs),
-    {
-      env: environment,
-      extendEnv: true,
-      promoteEnvironments: [environment, ...(input.environment ? [input.environment] : [])],
-    },
-    (candidate) =>
-      spawner
-        .spawn(
-          ChildProcess.make(candidate.command, candidate.args, {
-            cwd: input.cwd,
-            env: candidate.environment,
-            extendEnv: true,
-            forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
-            shell: candidate.shell,
-          }),
-        )
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new CodexErrors.CodexAppServerSpawnError({
-                command: `${input.binaryPath} app-server`,
-                cause,
-              }),
+export const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(
+  function* (input: {
+    readonly binaryPath: string;
+    readonly homePath?: string;
+    readonly launchArgs?: string;
+    readonly cwd: string;
+    readonly customModels: ReadonlyArray<string>;
+    readonly environment?: NodeJS.ProcessEnv;
+  }) {
+    // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
+    // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
+    // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
+    // Expand here for parity with `CodexTextGeneration`/`CodexSessionRuntime`.
+    const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const environment = {
+      ...input.environment,
+      ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
+    };
+    const child = yield* withVerifiedSpawnCommand(
+      input.binaryPath,
+      codexAppServerArgs(input.launchArgs),
+      {
+        env: environment,
+        extendEnv: true,
+        promoteEnvironments: [environment, ...(input.environment ? [input.environment] : [])],
+      },
+      (candidate) =>
+        spawner
+          .spawn(
+            ChildProcess.make(candidate.command, candidate.args, {
+              cwd: input.cwd,
+              env: candidate.environment,
+              extendEnv: true,
+              forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
+              shell: candidate.shell,
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new CodexErrors.CodexAppServerSpawnError({
+                  command: `${input.binaryPath} app-server`,
+                  cause,
+                }),
+            ),
           ),
-        ),
-  );
-  const clientContext = yield* Layer.build(CodexClient.layerChildProcess(child));
-  const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
-    Effect.provide(clientContext),
-  );
+    );
+    const clientContext = yield* Layer.build(CodexClient.layerChildProcess(child));
+    const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
+      Effect.provide(clientContext),
+    );
 
-  const initialize = yield* client.request("initialize", {
-    clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
-      version: "0.1.0",
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
-  });
-  yield* client.notify("initialized", undefined);
+    const initialize = yield* client.request("initialize", {
+      clientInfo: {
+        name: "t3code_desktop",
+        title: "T3 Code Desktop",
+        version: "0.1.0",
+      },
+      capabilities: {
+        experimentalApi: true,
+      },
+    });
+    yield* client.notify("initialized", undefined);
 
-  // Extract the version string after the first '/' in userAgent, up to the next space or the end
-  const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
-  const version = versionMatch ? versionMatch[1] : undefined;
+    // Extract the version string after the first '/' in userAgent, up to the next space or the end
+    const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
+    const version = versionMatch ? versionMatch[1] : undefined;
 
-  const accountResponse = yield* client.request("account/read", {});
-  if (!accountResponse.account && accountResponse.requiresOpenaiAuth) {
+    const accountResponse = yield* client.request("account/read", {});
+    if (!accountResponse.account && accountResponse.requiresOpenaiAuth) {
+      return {
+        account: accountResponse,
+        version,
+        models: appendCustomCodexModels([], input.customModels ?? []),
+        skills: [],
+      } satisfies CodexAppServerProviderSnapshot;
+    }
+
+    const [skillsResponse, models, rateLimits] = yield* Effect.all(
+      [
+        client.request("skills/list", {
+          cwds: [input.cwd],
+        }),
+        requestAllCodexModels(client),
+        client
+          .request("account/rateLimits/read", undefined)
+          .pipe(Effect.orElseSucceed(() => undefined)),
+      ],
+      { concurrency: "unbounded" },
+    );
+
     return {
       account: accountResponse,
+      ...(rateLimits ? { rateLimits } : {}),
       version,
-      models: appendCustomCodexModels([], input.customModels ?? []),
-      skills: [],
+      models: applyPreferredCodexDefaultModel(
+        appendCustomCodexModels(models, input.customModels ?? []),
+      ),
+      skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
     } satisfies CodexAppServerProviderSnapshot;
-  }
-
-  const [skillsResponse, models] = yield* Effect.all(
-    [
-      client.request("skills/list", {
-        cwds: [input.cwd],
-      }),
-      requestAllCodexModels(client),
-    ],
-    { concurrency: "unbounded" },
-  );
-
-  return {
-    account: accountResponse,
-    version,
-    models: applyPreferredCodexDefaultModel(
-      appendCustomCodexModels(models, input.customModels ?? []),
-    ),
-    skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
-  } satisfies CodexAppServerProviderSnapshot;
-});
+  },
+);
 
 const emptyCodexModelsFromSettings = (codexSettings: CodexSettings): ServerProvider["models"] => {
   const models = new Set<string>();

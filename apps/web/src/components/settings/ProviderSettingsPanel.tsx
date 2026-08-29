@@ -862,26 +862,20 @@ export function EnvironmentProviderSettings({
               >
                 <ProviderLastChecked lastCheckedAt={lastCheckedAt} />
                 {!readOnly ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          size="icon-micro"
-                          variant="ghost-muted"
-                          disabled={isRefreshingProviders}
-                          onClick={() => void refreshProviders()}
-                          aria-label="Refresh provider status"
-                        >
-                          {isRefreshingProviders ? (
-                            <LoaderIcon className="size-3 animate-spin" />
-                          ) : (
-                            <RefreshCwIcon className="size-3" />
-                          )}
-                        </Button>
-                      }
-                    />
-                    <TooltipPopup side="top">Refresh provider status</TooltipPopup>
-                  </Tooltip>
+                  <Button
+                    size="icon-micro"
+                    variant="ghost-muted"
+                    disabled={isRefreshingProviders}
+                    onClick={() => void refreshProviders()}
+                    aria-label="Refresh provider status"
+                    title="Refresh provider status"
+                  >
+                    {isRefreshingProviders ? (
+                      <LoaderIcon className="size-3 animate-spin" />
+                    ) : (
+                      <RefreshCwIcon className="size-3" />
+                    )}
+                  </Button>
                 ) : null}
               </div>
             </div>

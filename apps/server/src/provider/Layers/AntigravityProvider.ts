@@ -8,10 +8,8 @@
  *    catalogue rots silently, and a picker offering models the CLI no longer
  *    accepts is worse than a short one.
  *
- * 2. **An unconfigured ACP bridge is a first-class state.** `agy` has no native
- *    ACP mode yet (google-antigravity/antigravity-cli#31), so this driver needs
- *    a bridge process. A missing bridge produces an actionable message here
- *    rather than an opaque spawn failure at the first turn.
+ * 2. **The ACP bridge is bundled.** `agy` has no native ACP mode yet, so T3
+ *    supplies a bridge process and still allows advanced users to override it.
  *
  * @module provider/Layers/AntigravityProvider
  */
@@ -56,17 +54,6 @@ const MODELS_PROBE_TIMEOUT_MS = 20_000;
 const ANTIGRAVITY_DOCS_URL = "https://antigravity.google/docs/cli";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
-
-/**
- * Shown when no ACP bridge is configured. Names the reason and the fix, because
- * "Antigravity is unavailable" with no explanation is the failure mode this
- * driver is most likely to hit on a fresh install.
- */
-export const ANTIGRAVITY_BRIDGE_MISSING_MESSAGE = [
-  "No ACP bridge is configured for this Antigravity instance.",
-  "The Antigravity CLI does not speak Agent Client Protocol natively yet, so T3 Code needs a bridge command to drive it.",
-  "Set one in this provider's settings.",
-].join(" ");
 
 function resolveBinary(config: AntigravitySettings): string {
   return config.binaryPath.trim() || "agy";
@@ -235,26 +222,6 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       discovered.length > 0
         ? providerModelsFromSettings(discovered, config.customModels, EMPTY_CAPABILITIES)
         : fallbackModels;
-
-    // The CLI works but we still cannot drive it without a bridge. Report that
-    // as a warning with the fix rather than as healthy — a green provider that
-    // fails on the first turn is the worse outcome.
-    if (config.bridgeCommand.trim().length === 0) {
-      return buildServerProvider({
-        presentation: ANTIGRAVITY_PRESENTATION,
-        enabled: config.enabled,
-        checkedAt,
-        models,
-        slashCommands,
-        probe: {
-          installed: true,
-          version: parsedVersion,
-          status: "warning",
-          auth: { status: "unknown" },
-          message: ANTIGRAVITY_BRIDGE_MISSING_MESSAGE,
-        },
-      });
-    }
 
     return buildServerProvider({
       presentation: ANTIGRAVITY_PRESENTATION,

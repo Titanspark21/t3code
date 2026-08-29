@@ -64,7 +64,7 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
     ),
   );
 
-  it.effect("keeps commands available when the bridge warning is shown", () =>
+  it.effect("uses the bundled bridge when no override is configured", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const binaryPath = yield* makeFakeAntigravity();
@@ -72,8 +72,8 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
           decodeAntigravitySettings({ enabled: true, binaryPath }),
         );
 
-        expect(snapshot.status).toBe("warning");
-        expect(snapshot.message).toContain("No ACP bridge is configured");
+        expect(snapshot.status).toBe("ready");
+        expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.slashCommands).not.toHaveLength(0);
       }),
     ),

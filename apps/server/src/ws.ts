@@ -60,6 +60,7 @@ import {
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  type ProviderRuntimeEvent,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -1585,10 +1586,19 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverRefreshProviders]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverRefreshProviders,
-            (input.instanceId !== undefined
-              ? providerRegistry.refreshInstance(input.instanceId)
-              : providerRegistry.refresh()
-            ).pipe(Effect.map((providers) => ({ providers }))),
+            Effect.gen(function* () {
+              const providers = yield* input.instanceId !== undefined
+                ? providerRegistry.refreshInstance(input.instanceId)
+                : providerRegistry.refresh();
+              const quotaEvents = yield* (
+                providerService.refreshQuota?.(input.instanceId) ??
+                  Effect.succeed([] as ReadonlyArray<ProviderRuntimeEvent>)
+              );
+              // Ingest synchronously so the command's follow-up quota read
+              // cannot race the normal provider-event ingestion subscriber.
+              yield* Effect.forEach(quotaEvents, quota.ingest, { discard: true });
+              return { providers };
+            }),
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.providerUploadFeedback]: (input) =>

@@ -50,6 +50,14 @@ export const make = Effect.gen(function* () {
     if (providerInstanceId === undefined) return;
 
     yield* SubscriptionRef.updateSome(state, (current) => {
+      const existing = current.get(providerInstanceId);
+      // A manual refresh is ingested synchronously by the RPC and also
+      // arrives a moment later through ProviderRuntimeIngestion. Ignore that
+      // same event timestamp on the second path instead of publishing the
+      // same snapshot twice.
+      if (existing && existing.observedAt === event.createdAt) {
+        return Option.none();
+      }
       const next = applyQuotaEvent(current, {
         providerInstanceId,
         driverKind: event.provider,

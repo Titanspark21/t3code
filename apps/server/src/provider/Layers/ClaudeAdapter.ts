@@ -3541,6 +3541,87 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  /**
+   * Read Claude's account usage on demand. Claude only exposes this control
+   * request on a query runtime, so an idle account gets a short, prompt-less
+   * query solely for the account endpoint. It never sends a user turn.
+   */
+  const refreshQuota: NonNullable<ClaudeAdapterShape["refreshQuota"]> = Effect.fn(
+    "refreshClaudeQuota",
+  )(function* () {
+    const activeContext = Array.from(sessions.values()).find((context) => !context.stopped);
+    let usage: SDKControlGetUsageResponse | undefined;
+    let threadId = ThreadId.make(`quota-refresh-${boundInstanceId}`);
+    let providerRefs: NonNullable<ProviderRuntimeEvent["providerRefs"]> = {};
+
+    if (activeContext?.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) {
+      threadId = activeContext.session.threadId;
+      providerRefs = nativeProviderRefs(activeContext);
+      usage = yield* Effect.promise(async () => {
+        try {
+          return await activeContext.query
+            .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET!();
+        } catch {
+          return undefined;
+        }
+      });
+    } else {
+      const standaloneUsage = yield* Effect.promise(async () => {
+        const prompt: AsyncIterable<SDKUserMessage> = {
+          [Symbol.asyncIterator]: () => ({
+            next: () => new Promise<IteratorResult<SDKUserMessage>>(() => undefined),
+          }),
+        };
+        const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+        let quotaQuery: ClaudeQueryRuntime | undefined;
+        try {
+          quotaQuery = createQuery({
+            prompt,
+            options: {
+              cwd: serverConfig.cwd,
+              pathToClaudeCodeExecutable: claudeSdkExecutablePath,
+              systemPrompt: { type: "preset", preset: "claude_code" },
+              settingSources: [...CLAUDE_SETTING_SOURCES],
+              permissionMode: "bypassPermissions",
+              allowDangerouslySkipPermissions: true,
+              includePartialMessages: false,
+              env: claudeEnvironment,
+              additionalDirectories: [serverConfig.cwd, serverConfig.attachmentsDir],
+              ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
+            },
+          });
+          if (quotaQuery.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) {
+            return await quotaQuery.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+          }
+        } catch {
+          return undefined;
+        } finally {
+          quotaQuery?.close();
+        }
+        return undefined;
+      }).pipe(Effect.timeoutOption("45 seconds"));
+      usage = Option.getOrUndefined(standaloneUsage);
+    }
+
+    if (!usage?.rate_limits) return undefined;
+    const stamp = yield* makeEventStamp();
+    return {
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      providerInstanceId: boundInstanceId,
+      createdAt: stamp.createdAt,
+      threadId,
+      providerRefs,
+      type: "account.rate-limits.updated",
+      payload: {
+        rateLimits: {
+          subscription_type: usage.subscription_type,
+          rate_limits: usage.rate_limits,
+        },
+      },
+    } satisfies ProviderRuntimeEvent;
+  });
+
   const refreshAccountUsageSnapshot = (context: ClaudeSessionContext) =>
     emitAccountUsageSnapshot(context).pipe(
       Effect.ignoreCause({ log: true }),
@@ -4797,6 +4878,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
+    refreshQuota,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

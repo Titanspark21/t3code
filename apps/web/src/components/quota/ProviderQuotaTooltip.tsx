@@ -20,14 +20,14 @@ export function ProviderQuotaTooltip({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={trigger} />
+      <TooltipTrigger render={<span className="inline-flex">{trigger}</span>} />
       <TooltipPopup className={snapshot ? undefined : "max-w-56"} side={side}>
         {snapshot ? (
           <QuotaAccountDetails nowMs={nowMs} snapshot={snapshot} />
         ) : driverKind === "codex" ||
           driverKind === "claudeAgent" ||
           driverKind === "antigravity" ? (
-          "No quota data yet. Send a message with this account, then refresh limits."
+          "No quota data returned yet. Try Refresh all account limits again."
         ) : (
           "This provider does not expose subscription quota to OmniCode yet."
         )}

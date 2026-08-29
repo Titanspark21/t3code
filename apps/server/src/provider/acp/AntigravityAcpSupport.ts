@@ -6,11 +6,9 @@
  * to this agent — how to spawn it, which auth method to name, and how model
  * selection maps.
  *
- * The one structural difference from Grok and Cursor is that the spawn command
- * is **user-configured** rather than fixed. `agy` has no native ACP mode yet
- * (google-antigravity/antigravity-cli#31), so a bridge process stands in. That
- * makes the spawn input untrusted in a way the other providers' is not, which
- * is why `buildAntigravityAcpSpawnInput` filters it.
+ * `agy` has no native ACP mode yet, so T3 ships a small stream-JSON bridge. A
+ * user-configured bridge is still supported for installations that need one,
+ * but blank bridge settings use the built-in bridge automatically.
  *
  * @module provider/acp/AntigravityAcpSupport
  */
@@ -59,9 +57,7 @@ export interface AntigravityAcpSpawnResult {
 export class AntigravityBridgeNotConfiguredError extends Error {
   readonly _tag = "AntigravityBridgeNotConfiguredError";
   constructor() {
-    super(
-      "No ACP bridge command is configured for this Antigravity instance. Set one in the provider's settings.",
-    );
+    super("The built-in Antigravity ACP bridge could not locate the T3 CLI entrypoint.");
   }
 }
 
@@ -81,10 +77,18 @@ export function buildAntigravityAcpSpawnInput(
   cwd: string,
   environment?: NodeJS.ProcessEnv,
 ): AntigravityAcpSpawnResult {
-  const command = settings.bridgeCommand.trim();
-  if (command.length === 0) throw new AntigravityBridgeNotConfiguredError();
-
-  const { args, removed } = stripPermissionBypassFlags(settings.bridgeArgs);
+  const configuredCommand = settings.bridgeCommand.trim();
+  const entrypoint = process.argv[1]?.trim();
+  const command = configuredCommand || process.execPath;
+  const configuredArgs = stripPermissionBypassFlags(settings.bridgeArgs);
+  const args = configuredCommand
+    ? configuredArgs.args
+    : entrypoint
+      ? [entrypoint, "antigravity-acp-bridge"]
+      : (() => {
+          throw new AntigravityBridgeNotConfiguredError();
+        })();
+  const removed = configuredCommand ? configuredArgs.removed : [];
   const isolated = makeAntigravityEnvironment(settings, environment ?? process.env);
 
   return {

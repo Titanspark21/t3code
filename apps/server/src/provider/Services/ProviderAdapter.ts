@@ -117,6 +117,12 @@ export interface ProviderAdapterShape<TError> {
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
 
   /**
+   * Fetch the provider's current account limits without starting a user turn.
+   * Providers that do not expose an account-quota endpoint leave this unset.
+   */
+  readonly refreshQuota?: () => Effect.Effect<ProviderRuntimeEvent | undefined, TError>;
+
+  /**
    * Upload a thread to the provider when the adapter supports feedback.
    */
   readonly uploadFeedback?: (

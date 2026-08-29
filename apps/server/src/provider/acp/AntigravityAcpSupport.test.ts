@@ -4,7 +4,6 @@ import * as NodePath from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
-  AntigravityBridgeNotConfiguredError,
   buildAntigravityAcpSpawnInput,
   resolveAntigravityAcpModelId,
 } from "./AntigravityAcpSupport.ts";
@@ -60,14 +59,14 @@ describe("buildAntigravityAcpSpawnInput", () => {
     expect(result.removedFlags).toEqual(["--dangerously-skip-permissions"]);
   });
 
-  it("refuses to spawn when no bridge is configured", () => {
-    expect(() =>
-      buildAntigravityAcpSpawnInput(
-        { ...settings, bridgeCommand: "   " },
-        "/work/project",
-        environment,
-      ),
-    ).toThrow(AntigravityBridgeNotConfiguredError);
+  it("uses the built-in bridge when no bridge is configured", () => {
+    const result = buildAntigravityAcpSpawnInput(
+      { ...settings, bridgeCommand: "   " },
+      "/work/project",
+      environment,
+    );
+    expect(result.spawn.command).toBe(process.execPath);
+    expect(result.spawn.args.at(-1)).toBe("antigravity-acp-bridge");
   });
 });
 

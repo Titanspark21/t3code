@@ -472,6 +472,33 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("refreshes Claude account usage without sending a user turn", () => {
+    const harness = makeHarness({
+      usageResponse: {
+        subscription_type: "max",
+        rate_limits: {
+          five_hour: { utilization: 12, resets_at: "2026-08-30T05:00:00.000Z" },
+        },
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const event = yield* adapter.refreshQuota!();
+      assert.equal(event?.type, "account.rate-limits.updated");
+      assert.equal(harness.getUsageCalls(), 1);
+      assert.equal(harness.query.closeCalls, 0);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("loads Claude filesystem settings sources for SDK sessions", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

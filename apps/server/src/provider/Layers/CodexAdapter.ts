@@ -79,6 +79,7 @@ const PROVIDER = ProviderDriverKind.make("codex");
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly refreshQuota?: () => Effect.Effect<unknown, never>;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -1690,6 +1691,22 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
   const serverConfig = yield* Effect.service(ServerConfig);
+  const makeEventStamp = () =>
+    Effect.all({
+      eventId: crypto.randomUUIDv4.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "crypto/randomUUIDv4",
+              detail: "Failed to generate Codex quota refresh identifier.",
+              cause,
+            }),
+        ),
+        Effect.map((id) => EventId.make(id)),
+      ),
+      createdAt: Effect.map(DateTime.now, DateTime.formatIso),
+    });
   const nativeEventLogger =
     options?.nativeEventLogger ??
     (options?.nativeEventLogPath !== undefined
@@ -2081,6 +2098,25 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       discard: true,
     }).pipe(Effect.asVoid);
 
+  const refreshQuota: NonNullable<CodexAdapterShape["refreshQuota"]> | undefined =
+    options?.refreshQuota
+      ? Effect.fn("refreshCodexQuota")(function* () {
+          const rateLimits = yield* options.refreshQuota!();
+          if (rateLimits === undefined) return undefined;
+          const stamp = yield* makeEventStamp();
+          return {
+            type: "account.rate-limits.updated",
+            eventId: stamp.eventId,
+            provider: PROVIDER,
+            providerInstanceId: boundInstanceId,
+            createdAt: stamp.createdAt,
+            threadId: ThreadId.make(`quota-refresh-${boundInstanceId}`),
+            payload: { rateLimits },
+            providerRefs: {},
+          } satisfies ProviderRuntimeEvent;
+        })
+      : undefined;
+
   yield* Effect.acquireRelease(Effect.void, () =>
     stopAll().pipe(
       Effect.andThen(Queue.shutdown(runtimeEventQueue)),
@@ -2105,6 +2141,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
+    ...(refreshQuota ? { refreshQuota } : {}),
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

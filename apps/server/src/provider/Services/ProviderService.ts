@@ -99,6 +99,11 @@ export interface ProviderServiceShape {
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
 
+  /** Refresh account limits for one instance, or all configured instances. */
+  readonly refreshQuota?: (
+    instanceId?: ProviderInstanceId,
+  ) => Effect.Effect<ReadonlyArray<ProviderRuntimeEvent>>;
+
   /**
    * Roll back provider conversation state by a number of turns.
    */

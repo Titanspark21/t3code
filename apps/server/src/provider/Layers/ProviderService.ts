@@ -1181,6 +1181,41 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getInstanceInfo: ProviderServiceMethod<"getInstanceInfo"> = (instanceId) =>
     registry.getInstanceInfo(instanceId);
 
+  const refreshQuota: ProviderServiceMethod<"refreshQuota"> = (instanceId) =>
+    Effect.gen(function* () {
+      const entries = yield* getAdapterEntries;
+      const selected =
+        instanceId === undefined
+          ? entries
+          : entries.filter(([candidateId]) => candidateId === instanceId);
+      const refreshed: Array<ProviderRuntimeEvent> = [];
+
+      for (const [candidateId, adapter] of selected) {
+        if (!adapter.refreshQuota) continue;
+        const refreshAdapterQuota = adapter.refreshQuota;
+        if (!refreshAdapterQuota) continue;
+        const event = yield* refreshAdapterQuota().pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("provider quota refresh failed", {
+              provider: adapter.provider,
+              providerInstanceId: candidateId,
+              cause,
+            }),
+          ),
+          Effect.option,
+        );
+        if (Option.isNone(event) || event.value === undefined) continue;
+        const quotaEvent = event.value;
+
+        const source = { instanceId: candidateId, provider: adapter.provider };
+        const canonicalEvent = correlateRuntimeEventWithInstance(source, quotaEvent);
+        yield* processRuntimeEvent(source, quotaEvent);
+        refreshed.push(canonicalEvent);
+      }
+
+      return refreshed;
+    });
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1333,6 +1368,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    refreshQuota,
     rollbackConversation,
     uploadFeedback,
     // Each access creates a fresh PubSub subscription so that multiple
