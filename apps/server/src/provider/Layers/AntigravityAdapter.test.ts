@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -24,7 +24,9 @@ import { ProviderAdapterRequestError } from "../Errors.ts";
 import { makeAntigravityAdapter } from "./AntigravityAdapter.ts";
 
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
-const mockAgentPath = NodePath.resolve("apps/server/scripts/acp-mock-agent.ts");
+const mockAgentPath = NodeURL.fileURLToPath(
+  new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+);
 const testLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3code-antigravity-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
