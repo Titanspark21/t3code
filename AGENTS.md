@@ -154,3 +154,9 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Handed back — unfinished work an agent stopped on
+
+- [ ] **Work in the T3 code fork. Inspect the existing implementation and plan before editing. Implement and test: (1) make Anti** — handed back on 2026-08-30 by t3code-2. <!-- job:97d3e0e5 -->
+      Its work is on branch `agent/97d3e0e5-work-in-the-t3-code-fork-inspect-t` and its checkout was kept.
+      The ChatGPT generation ended before finish_job. Resume from the preserved branch and inspect existing commits first.
