@@ -1,6 +1,7 @@
 import {
   CommandId,
   MessageId,
+  type OrchestrationThreadShell,
   ScheduledTask,
   ScheduledTaskError,
   ScheduledTaskId,
@@ -139,6 +140,13 @@ function iso(value: DateTime.DateTime): string {
 
 function automationPrompt(task: ScheduledTask): string {
   return `[Scheduled task: ${task.title}]\n\n${task.prompt}`;
+}
+
+export function isRestartInterruptedBeforeTurn(
+  thread: Pick<OrchestrationThreadShell, "latestTurn" | "session" | "backgroundLiveness">,
+): boolean {
+  const sessionBusy = thread.session?.status === "starting" || thread.session?.status === "running";
+  return thread.latestTurn === null && !sessionBusy && (thread.backgroundLiveness ?? null) === null;
 }
 
 function nextRunAt(
@@ -560,6 +568,7 @@ export const layer = Layer.effect(
 
     const waitForThread = Effect.fn("ScheduledTaskService.waitForThread")(function* (
       threadId: ThreadId,
+      restartRecovery = false,
     ) {
       const startedAt = DateTime.toEpochMillis(yield* DateTime.now);
       while (true) {
@@ -615,6 +624,13 @@ export const layer = Layer.effect(
         }
         const sessionBusy =
           thread.session?.status === "starting" || thread.session?.status === "running";
+        if (restartRecovery && isRestartInterruptedBeforeTurn(thread)) {
+          return {
+            succeeded: false,
+            retryable: true,
+            error: "Run was interrupted by a server restart before its turn started.",
+          } as const;
+        }
         if (
           thread.latestTurn?.state === "completed" &&
           !sessionBusy &&
@@ -910,15 +926,20 @@ export const layer = Layer.effect(
       yield* Effect.forEach(
         due,
         ({ task, dueAt }) =>
-          (isMissedFixedTimeRun(task.schedule, dueAt, now)
-            ? recordMissedRun(task, now)
-            : runTask(task, "scheduled")
-          ).pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("Scheduled task run failed", { taskId: task.id, cause }),
-            ),
-          ),
-        { concurrency: 1, discard: true },
+          isMissedFixedTimeRun(task.schedule, dueAt, now)
+            ? recordMissedRun(task, now).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Scheduled task run failed", { taskId: task.id, cause }),
+                ),
+              )
+            : runTask(task, "scheduled").pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Scheduled task run failed", { taskId: task.id, cause }),
+                ),
+                Effect.forkScoped({ startImmediately: true }),
+                Effect.asVoid,
+              ),
+        { concurrency: "unbounded", discard: true },
       );
     });
 
@@ -979,7 +1000,7 @@ export const layer = Layer.effect(
               );
             }
 
-            const outcome = yield* waitForThread(run.threadId);
+            const outcome = yield* waitForThread(run.threadId, true);
             const settleError = yield* settleThread(run.threadId, run.id, run.attemptCount);
             const result: AttemptResult = outcome.succeeded
               ? settleError === null
@@ -1016,6 +1037,7 @@ export const layer = Layer.effect(
                 return next;
               }),
             ),
+            Effect.forkScoped({ startImmediately: true }),
           );
         }
       },

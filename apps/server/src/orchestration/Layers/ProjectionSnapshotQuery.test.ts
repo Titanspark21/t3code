@@ -1902,6 +1902,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         deduped.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-active"), "user"]],
       );
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({ query: "needle", limit: 1 })).matches.map(
+          (match) => match.threadId,
+        ),
+        [ThreadId.make("thread-active")],
+      );
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,
