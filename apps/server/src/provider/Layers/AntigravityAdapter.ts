@@ -15,7 +15,7 @@ import {
   ProviderInstanceId,
   RuntimeRequestId,
   type RuntimeMode,
-  type ThreadId,
+  ThreadId,
   TurnId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -24,7 +24,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
@@ -72,6 +71,7 @@ import {
 } from "../acp/AntigravityAcpSupport.ts";
 import { isAntigravityProjectTrustRequest } from "../acp/AntigravityTrust.ts";
 import { isAntigravityRateLimitsMethod } from "../acp/AntigravityRateLimits.ts";
+import { readAntigravityUsage } from "./AntigravityProvider.ts";
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -295,7 +295,6 @@ export function makeAntigravityAdapter(
 ) {
   return Effect.gen(function* () {
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("antigravity");
-    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const serverConfig = yield* Effect.service(ServerConfig);
@@ -513,6 +512,12 @@ export function makeAntigravityAdapter(
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
+            sessionOptions: {
+              ...(antigravityModelSelection?.model
+                ? { model: antigravityModelSelection.model }
+                : {}),
+              runtimeMode: input.runtimeMode,
+            },
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
             ...(mcpSession
@@ -893,22 +898,11 @@ export function makeAntigravityAdapter(
                   detail: `Invalid attachment id '${attachment.id}'.`,
                 });
               }
-              const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapterRequestError({
-                      provider: PROVIDER,
-                      method: "session/prompt",
-                      detail: cause.message,
-                      cause,
-                    }),
-                ),
-              );
-              promptParts.push({
-                type: "image",
-                data: Buffer.from(bytes).toString("base64"),
-                mimeType: attachment.mimeType,
-              });
+              // AGY's stream-json input contract accepts text blocks only.
+              // ProviderService has already appended this attachment's saved
+              // path to the text prompt, so keep the file available to AGY's
+              // tools without sending an unsupported image block that would
+              // terminate the whole stream session.
             }
           }
 
@@ -1056,6 +1050,33 @@ export function makeAntigravityAdapter(
     const stopAll: AntigravityAdapterShape["stopAll"] = () =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true });
 
+    const refreshQuota: NonNullable<AntigravityAdapterShape["refreshQuota"]> = Effect.fn(
+      "refreshAntigravityQuota",
+    )(function* () {
+      const settings = options?.resolveSettings
+        ? yield* options.resolveSettings
+        : antigravitySettings;
+      const rateLimits = yield* readAntigravityUsage(
+        settings,
+        options?.environment ?? process.env,
+      ).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+        Effect.provideService(Crypto.Crypto, crypto),
+      );
+      if (!rateLimits) return undefined;
+      const stamp = yield* makeEventStamp();
+      return {
+        type: "account.rate-limits.updated",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        providerInstanceId: boundInstanceId,
+        createdAt: stamp.createdAt,
+        threadId: ThreadId.make(`quota-refresh-${boundInstanceId}`),
+        payload: { rateLimits },
+        providerRefs: {},
+      } satisfies ProviderRuntimeEvent;
+    });
+
     yield* Effect.addFinalizer(() =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
         Effect.catch((cause) =>
@@ -1082,6 +1103,7 @@ export function makeAntigravityAdapter(
       listSessions,
       hasSession,
       stopAll,
+      refreshQuota,
       streamEvents,
     } satisfies AntigravityAdapterShape;
   });

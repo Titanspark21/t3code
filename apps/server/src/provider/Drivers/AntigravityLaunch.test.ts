@@ -7,6 +7,7 @@ import {
   antigravityModeFlags,
   isPermissionBypassFlag,
   parseAntigravityModels,
+  parseAntigravityUsage,
   stripPermissionBypassFlags,
 } from "./AntigravityLaunch.ts";
 
@@ -98,6 +99,9 @@ describe("parseAntigravityModels", () => {
       ].join("\n"),
     );
     expect(models.map((m) => m.slug)).toEqual(["gemini-3.5-flash-high", "gemini-3.1-pro-low"]);
+    expect(models[0]?.name).toBe("Fast, high reasoning");
+    expect(models[0]?.family).toBe("google");
+    expect(models[1]?.family).toBe("google");
   });
 
   it("extracts the reasoning tier baked into the id", () => {
@@ -120,6 +124,24 @@ describe("parseAntigravityModels", () => {
     expect(parseAntigravityModels("Error: not logged in")).toEqual([]);
   });
 
+  it("preserves the two published usage pools", () => {
+    const usage = parseAntigravityUsage(
+      [
+        "Gemini Models\tWeekly Limit Remaining\t95%\t2026-09-04T04:24:01Z",
+        "Gemini Models\tFive Hour Limit Remaining\t93%\t2026-08-30T07:00:01Z",
+        "Claude and GPT models\tWeekly Limit Remaining\t30%\t2026-09-01T06:42:57Z",
+        "Claude and GPT models\tFive Hour Limit Remaining\t37%\t2026-08-30T07:00:13Z",
+      ].join("\n"),
+    );
+    expect(usage?.groups.map((group) => group.key)).toEqual(["gemini", "claude-gpt"]);
+    expect(usage?.groups[0]?.windows[0]).toMatchObject({
+      label: "Weekly Limit",
+      usedPercent: 5,
+      windowDurationMins: 10_080,
+    });
+    expect(usage?.groups[1]?.windows[1]?.usedPercent).toBe(63);
+  });
+
   it("de-duplicates repeated ids", () => {
     const models = parseAntigravityModels("gemini-3.5-flash-high\ngemini-3.5-flash-high");
     expect(models).toHaveLength(1);
@@ -128,10 +150,16 @@ describe("parseAntigravityModels", () => {
 
 describe("antigravityModelDisplayName", () => {
   it("keeps version numbers intact", () => {
-    expect(antigravityModelDisplayName("gemini-3.5-flash-high")).toBe("Gemini 3.5 Flash High");
+    expect(antigravityModelDisplayName("gemini-3.5-flash-high")).toBe("Gemini 3.5 Flash (High)");
   });
 
   it("uppercases known acronyms", () => {
-    expect(antigravityModelDisplayName("gpt-oss-120b-medium")).toBe("GPT OSS 120b Medium");
+    expect(antigravityModelDisplayName("gpt-oss-120b-medium")).toBe("GPT-OSS 120B (Medium)");
+  });
+
+  it("formats thinking models like the provider picker", () => {
+    expect(antigravityModelDisplayName("claude-opus-4-6-thinking")).toBe(
+      "Claude Opus 4.6 (Thinking)",
+    );
   });
 });

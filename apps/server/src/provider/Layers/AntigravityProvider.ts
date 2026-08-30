@@ -37,6 +37,7 @@ import {
 } from "../providerSnapshot.ts";
 import {
   antigravityModelDisplayName,
+  parseAntigravityUsage,
   parseAntigravityModels,
 } from "../Drivers/AntigravityLaunch.ts";
 import { makeAntigravityEnvironment } from "../Drivers/AntigravityHome.ts";
@@ -77,6 +78,10 @@ const runAntigravityCommand = (
           ChildProcess.make(candidate.command, candidate.args, {
             env: candidate.environment,
             shell: candidate.shell,
+            // `agy models` is a non-interactive command, but the CLI keeps
+            // reading stdin unless it receives EOF. Leaving the pipe open
+            // makes the probe time out and discards an otherwise valid list.
+            stdin: "ignore",
           }),
         ),
       isCommandLaunchFailureCause,
@@ -109,13 +114,37 @@ export const readAntigravityModels = Effect.fn("readAntigravityModels")(function
   if (command.code !== 0) return [];
 
   return parseAntigravityModels(command.stdout).map(
-    (model): ServerProviderModel => ({
+    (model, index): ServerProviderModel => ({
       slug: model.slug,
       name: model.name || antigravityModelDisplayName(model.slug),
+      subProvider: model.family === "google" ? "Google" : "Other models",
       isCustom: false,
+      ...(index === 0 ? { isDefault: true } : {}),
       capabilities: EMPTY_CAPABILITIES,
     }),
   );
+});
+
+/** Read the provider-owned split quota report without starting an agent turn. */
+export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* (
+  config: AntigravitySettings,
+  baseEnvironment: NodeJS.ProcessEnv,
+): Effect.fn.Return<
+  ReturnType<typeof parseAntigravityUsage>,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+> {
+  const environment = makeAntigravityEnvironment(config, baseEnvironment);
+  const result = yield* runAntigravityCommand(
+    config,
+    ["-p", "/usage", "--output-format", "text"],
+    environment,
+  ).pipe(Effect.timeoutOption(MODELS_PROBE_TIMEOUT_MS), Effect.result);
+  if (Result.isFailure(result) || Option.isNone(result.success)) return undefined;
+
+  const command = result.success.value;
+  if (command.code !== 0) return undefined;
+  return parseAntigravityUsage(command.stdout);
 });
 
 export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProviderStatus")(

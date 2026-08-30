@@ -17,7 +17,7 @@ import {
 } from "@t3tools/contracts/quota";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
@@ -57,11 +57,13 @@ export interface QuotaView {
   >;
   readonly isPending: boolean;
   readonly isSettling: boolean;
+  readonly isRefreshing: boolean;
   readonly refresh: () => void;
 }
 
 export function useQuota(): QuotaView {
   const environments = useAtomValue(quotaAtom);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const snapshots = useMemo(
     () =>
@@ -90,17 +92,22 @@ export function useQuota(): QuotaView {
   }, [environments]);
 
   const refresh = useCallback(() => {
-    for (const environment of environments) {
+    if (isRefreshing || environments.length === 0) return;
+
+    setIsRefreshing(true);
+    const refreshes = environments.map((environment) => {
       const target = { environmentId: environment.environmentId, input: {} };
-      void runAtomCommand(appAtomRegistry, serverEnvironment.refreshProviders, target, {
+      return runAtomCommand(appAtomRegistry, serverEnvironment.refreshProviders, target, {
         label: "refresh account limits",
         reportFailure: false,
         reportDefect: false,
       }).then(() => {
         appAtomRegistry.refresh(serverEnvironment.quota(target));
       });
-    }
-  }, [environments]);
+    });
+
+    void Promise.allSettled(refreshes).then(() => setIsRefreshing(false));
+  }, [environments, isRefreshing]);
 
   const answered = environments.filter((environment) => environment.summary !== null).length;
   const stillReporting = environments.filter(
@@ -112,6 +119,7 @@ export function useQuota(): QuotaView {
     byEnvironment,
     isPending: answered === 0 && stillReporting > 0,
     isSettling: stillReporting > 0,
+    isRefreshing,
     refresh,
   };
 }

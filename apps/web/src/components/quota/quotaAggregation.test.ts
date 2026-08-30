@@ -3,8 +3,11 @@ import type { AccountQuotaSnapshot, QuotaGroup } from "@t3tools/contracts/quota"
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  antigravityQuotaWindow,
+  averageAntigravityQuotaWindow,
   accountQuotaRemainingPercent,
   groupQuotaPanelAccounts,
+  quotaWindowForKind,
   summarizeAntigravityQuota,
   type QuotaAggregationAccount,
 } from "./quotaAggregation";
@@ -45,6 +48,54 @@ function account(
 }
 
 describe("quotaAggregation", () => {
+  it("selects the requested 5-hour and weekly windows", () => {
+    const value = snapshot("codex-1", [
+      {
+        key: "default",
+        displayName: "Subscription",
+        windows: [
+          { kind: "short", usedPercent: 20 },
+          { kind: "long", usedPercent: 60 },
+        ],
+      },
+    ]);
+
+    expect(quotaWindowForKind(value, "short", NOW)?.usedPercent).toBe(20);
+    expect(quotaWindowForKind(value, "long", NOW)?.usedPercent).toBe(60);
+  });
+
+  it("averages Antigravity weekly pools independently", () => {
+    const first = snapshot("agy-one", [
+      { key: "gemini", displayName: "Gemini Models", windows: [{ kind: "long", usedPercent: 20 }] },
+      {
+        key: "claude-gpt",
+        displayName: "Claude and GPT models",
+        windows: [{ kind: "long", usedPercent: 60 }],
+      },
+    ]);
+    const second = snapshot("agy-two", [
+      { key: "gemini", displayName: "Gemini Models", windows: [{ kind: "long", usedPercent: 40 }] },
+      {
+        key: "claude-gpt",
+        displayName: "Claude and GPT models",
+        windows: [{ kind: "long", usedPercent: 80 }],
+      },
+    ]);
+
+    expect(antigravityQuotaWindow(first, "gemini", NOW)?.usedPercent).toBe(20);
+    expect(
+      averageAntigravityQuotaWindow([account("one", first), account("two", second)], "gemini", NOW)
+        ?.usedPercent,
+    ).toBe(30);
+    expect(
+      averageAntigravityQuotaWindow(
+        [account("one", first), account("two", second)],
+        "claude-gpt",
+        NOW,
+      )?.usedPercent,
+    ).toBe(70);
+  });
+
   it("collapses the same labeled account across environments", () => {
     const rows = groupQuotaPanelAccounts([
       {

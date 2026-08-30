@@ -48,6 +48,15 @@ describe("buildAntigravityAcpSpawnInput", () => {
     expect(result.spawn.env?.["AGY_BINARY"]).toBe("/opt/agy/bin/agy");
   });
 
+  it("passes the selected model and safe runtime mode to the built-in bridge", () => {
+    const result = buildAntigravityAcpSpawnInput(settings, "/work/project", environment, {
+      model: "gemini-3.7-flash-medium",
+      runtimeMode: "full-access",
+    });
+    expect(result.spawn.env?.["AGY_MODEL"]).toBe("gemini-3.7-flash-medium");
+    expect(result.spawn.env?.["AGY_MODE"]).toBe("accept-edits");
+  });
+
   it("strips a permission bypass pasted into the bridge arguments", () => {
     // The guardrail must survive user-editable settings, or it is not a guarantee.
     const result = buildAntigravityAcpSpawnInput(

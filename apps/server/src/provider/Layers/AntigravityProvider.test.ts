@@ -6,7 +6,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { AntigravitySettings } from "@t3tools/contracts/antigravity";
 
-import { checkAntigravityProviderStatus } from "./AntigravityProvider.ts";
+import { checkAntigravityProviderStatus, readAntigravityUsage } from "./AntigravityProvider.ts";
 
 const decodeAntigravitySettings = Schema.decodeSync(AntigravitySettings);
 
@@ -23,7 +23,8 @@ const makeFakeAntigravity = Effect.fn("makeFakeAntigravity")(function* () {
     [
       "#!/bin/sh",
       'if [ "$1" = "--version" ]; then printf "agy 1.1.7\\n"; exit 0; fi',
-      'if [ "$1" = "models" ]; then printf "gemini-2.5-pro\\n"; exit 0; fi',
+      'if [ "$1" = "models" ]; then printf "gemini-2.5-pro\\n"; read ignored; exit 0; fi',
+      'if [ "$1" = "-p" ] && [ "$2" = "/usage" ]; then printf "Gemini Models\\tWeekly Limit Remaining\\t80%%\\t2026-09-04T04:24:01Z\\n"; read ignored; exit 0; fi',
       "exit 1",
       "",
     ].join("\n"),
@@ -49,13 +50,18 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
         expect(snapshot.version).toBe("1.1.7");
         expect(snapshot.models.map((model) => model.slug)).toEqual(["gemini-2.5-pro"]);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual([
-          "help",
+          "agents",
+          "changelog",
           "config",
-          "settings",
+          "credits",
+          "effort",
+          "exit",
+          "help",
+          "hooks",
           "model",
-          "planning",
-          "mcp",
-          "quit",
+          "permissions",
+          "skills",
+          "usage",
         ]);
         expect(snapshot.slashCommands.every((command) => command.support === "supported")).toBe(
           true,
@@ -75,6 +81,23 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
         expect(snapshot.status).toBe("ready");
         expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.slashCommands).not.toHaveLength(0);
+      }),
+    ),
+  );
+});
+
+it.layer(NodeServices.layer)("readAntigravityUsage", (it) => {
+  it.effect("reads the split quota report through the verified CLI", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const binaryPath = yield* makeFakeAntigravity();
+        const usage = yield* readAntigravityUsage(
+          decodeAntigravitySettings({ enabled: true, binaryPath }),
+          process.env,
+        );
+
+        expect(usage?.groups[0]?.key).toBe("gemini");
+        expect(usage?.groups[0]?.windows[0]?.usedPercent).toBe(20);
       }),
     ),
   );

@@ -20,10 +20,11 @@ import * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
+import type { RuntimeMode } from "@t3tools/contracts";
 
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { makeAntigravityEnvironment } from "../Drivers/AntigravityHome.ts";
-import { stripPermissionBypassFlags } from "../Drivers/AntigravityLaunch.ts";
+import { antigravityModeFlags, stripPermissionBypassFlags } from "../Drivers/AntigravityLaunch.ts";
 
 /**
  * Most community ACP bridges do not implement a distinct auth step — the
@@ -54,6 +55,13 @@ export interface AntigravityAcpSpawnResult {
   readonly removedFlags: ReadonlyArray<string>;
 }
 
+export interface AntigravityAcpSessionOptions {
+  /** Exact slug from `agy models`; passed before the stream starts. */
+  readonly model?: string | undefined;
+  /** Runtime permission mode; mapped to AGY's safe `--mode` values. */
+  readonly runtimeMode?: RuntimeMode | undefined;
+}
+
 export class AntigravityBridgeNotConfiguredError extends Error {
   readonly _tag = "AntigravityBridgeNotConfiguredError";
   constructor() {
@@ -76,6 +84,7 @@ export function buildAntigravityAcpSpawnInput(
   settings: AntigravityAcpSettings,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  sessionOptions?: AntigravityAcpSessionOptions,
 ): AntigravityAcpSpawnResult {
   const configuredCommand = settings.bridgeCommand.trim();
   const entrypoint = process.argv[1]?.trim();
@@ -90,6 +99,10 @@ export function buildAntigravityAcpSpawnInput(
         })();
   const removed = configuredCommand ? configuredArgs.removed : [];
   const isolated = makeAntigravityEnvironment(settings, environment ?? process.env);
+  const modeFlags = sessionOptions?.runtimeMode
+    ? antigravityModeFlags({ runtimeMode: sessionOptions.runtimeMode })
+    : [];
+  const mode = modeFlags[1];
 
   return {
     spawn: {
@@ -99,6 +112,8 @@ export function buildAntigravityAcpSpawnInput(
       env: {
         ...isolated,
         [ANTIGRAVITY_BINARY_ENV]: settings.binaryPath.trim() || "agy",
+        ...(sessionOptions?.model?.trim() ? { AGY_MODEL: sessionOptions.model.trim() } : {}),
+        ...(mode ? { AGY_MODE: mode } : {}),
       },
     },
     removedFlags: removed,
@@ -112,6 +127,7 @@ interface AntigravityAcpRuntimeInput extends Omit<
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly settings: AntigravityAcpSettings;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly sessionOptions?: AntigravityAcpSessionOptions;
 }
 
 export const makeAntigravityAcpRuntime = (
@@ -122,7 +138,12 @@ export const makeAntigravityAcpRuntime = (
   Crypto.Crypto | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { spawn } = buildAntigravityAcpSpawnInput(input.settings, input.cwd, input.environment);
+    const { spawn } = buildAntigravityAcpSpawnInput(
+      input.settings,
+      input.cwd,
+      input.environment,
+      input.sessionOptions,
+    );
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,

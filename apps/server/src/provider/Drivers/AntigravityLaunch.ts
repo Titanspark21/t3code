@@ -91,6 +91,21 @@ export interface AntigravityModel {
   readonly name: string;
   /** Reasoning tier when the model id encodes one, e.g. `-high`. */
   readonly effort?: string;
+  /** The quota family published by Antigravity's usage command. */
+  readonly family: "google" | "other";
+}
+
+export interface AntigravityUsagePayload {
+  readonly groups: ReadonlyArray<{
+    readonly key: "gemini" | "claude-gpt";
+    readonly displayName: string;
+    readonly windows: ReadonlyArray<{
+      readonly label: string;
+      readonly usedPercent: number;
+      readonly windowDurationMins: number;
+      readonly resetsAt?: string;
+    }>;
+  }>;
 }
 
 const EFFORT_SUFFIXES = ["high", "medium", "low"] as const;
@@ -111,7 +126,9 @@ export function parseAntigravityModels(stdout: string): ReadonlyArray<Antigravit
   const models: Array<AntigravityModel> = [];
 
   for (const rawLine of stdout.split(/\r?\n/)) {
-    // Strip common list decoration, then take the first token.
+    // Strip common list decoration, then take the first token. The CLI usually
+    // separates the slug and its human label with a tab, but accepting any
+    // whitespace keeps this compatible with older and redirected output.
     const line = rawLine.trim().replace(/^[-*•\s]+/, "");
     if (line.length === 0) continue;
 
@@ -126,9 +143,11 @@ export function parseAntigravityModels(stdout: string): ReadonlyArray<Antigravit
     seen.add(candidate);
 
     const effort = EFFORT_SUFFIXES.find((suffix) => candidate.endsWith(`-${suffix}`));
+    const description = line.slice(candidate.length).trim();
     models.push({
       slug: candidate,
-      name: antigravityModelDisplayName(candidate),
+      name: description || antigravityModelDisplayName(candidate),
+      family: candidate.startsWith("gemini-") ? "google" : "other",
       ...(effort ? { effort } : {}),
     });
   }
@@ -143,12 +162,107 @@ export function parseAntigravityModels(stdout: string): ReadonlyArray<Antigravit
  * this only affects what the picker shows.
  */
 export function antigravityModelDisplayName(slug: string): string {
+  const gemini = /^gemini-(\d+)[.-](\d+)-(flash|pro)(?:-(high|medium|low))?$/u.exec(slug);
+  if (gemini) {
+    const major = gemini[1]!;
+    const minor = gemini[2]!;
+    const family = gemini[3]!;
+    const effort = gemini[4];
+    return `Gemini ${major}.${minor} ${capitalize(family)}${effort ? ` (${capitalize(effort)})` : ""}`;
+  }
+
+  const claude = /^claude-(sonnet|opus)-(\d+)-(\d+)(?:-(thinking))?$/u.exec(slug);
+  if (claude) {
+    const family = claude[1]!;
+    const major = claude[2]!;
+    const minor = claude[3]!;
+    const thinking = claude[4];
+    return `Claude ${capitalize(family)} ${major}.${minor}${thinking ? " (Thinking)" : ""}`;
+  }
+
+  const gptOss = /^gpt-oss-(\d+)(b)?(?:-(high|medium|low))?$/u.exec(slug);
+  if (gptOss) {
+    const size = gptOss[1]!;
+    const billions = gptOss[2];
+    const effort = gptOss[3];
+    return `GPT-OSS ${size}${billions ? "B" : ""}${effort ? ` (${capitalize(effort)})` : ""}`;
+  }
+
   return slug
     .split("-")
     .map((part) => {
       if (/^\d/.test(part)) return part;
       if (part === "gpt" || part === "oss") return part.toUpperCase();
-      return part.charAt(0).toUpperCase() + part.slice(1);
+      return capitalize(part);
     })
     .join(" ");
+}
+
+/**
+ * Parse the tabular output of `agy -p /usage`.
+ *
+ * Antigravity publishes remaining quota while T3's shared contract stores
+ * usage. Keep the conversion here, at the provider boundary, and retain the
+ * two independent pools exactly as the CLI reports them.
+ */
+export function parseAntigravityUsage(stdout: string): AntigravityUsagePayload | undefined {
+  const groups = new Map<
+    "gemini" | "claude-gpt",
+    {
+      readonly key: "gemini" | "claude-gpt";
+      readonly displayName: string;
+      readonly windows: Array<{
+        readonly label: string;
+        readonly usedPercent: number;
+        readonly windowDurationMins: number;
+        readonly resetsAt?: string;
+      }>;
+    }
+  >();
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const fields = line.includes("\t")
+      ? line.split(/\t+/u).map((field) => field.trim())
+      : /^(.+?)\s{2,}(.+?)\s+(\d+(?:\.\d+)?)%\s*(.*)$/u.exec(line)?.slice(1);
+    if (!fields || fields.length < 3) continue;
+
+    const displayName = fields[0];
+    const label = fields[1];
+    const remaining = Number.parseFloat(fields[2]!.replace(/%$/u, ""));
+    if (!displayName || !label || !Number.isFinite(remaining)) continue;
+
+    const boundedRemaining = Math.min(100, Math.max(0, remaining));
+    const key = /gemini|google/iu.test(displayName) ? "gemini" : "claude-gpt";
+    const existing = groups.get(key) ?? {
+      key,
+      displayName,
+      windows: [],
+    };
+    const windowDurationMins = /five.?hour|5.?hour/iu.test(label)
+      ? 300
+      : /week|seven.?day/iu.test(label)
+        ? 10_080
+        : 0;
+    if (windowDurationMins === 0) continue;
+
+    const resetCandidate = fields[3]?.trim();
+    const resetsAt =
+      resetCandidate && !Number.isNaN(Date.parse(resetCandidate)) ? resetCandidate : undefined;
+    existing.windows.push({
+      label: label.replace(/\s+remaining$/iu, ""),
+      usedPercent: 100 - boundedRemaining,
+      windowDurationMins,
+      ...(resetsAt ? { resetsAt } : {}),
+    });
+    groups.set(key, existing);
+  }
+
+  const parsed = [...groups.values()].filter((group) => group.windows.length > 0);
+  return parsed.length > 0 ? { groups: parsed } : undefined;
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

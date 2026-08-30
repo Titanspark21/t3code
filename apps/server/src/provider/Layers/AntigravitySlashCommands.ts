@@ -1,11 +1,12 @@
 /**
  * Verified Antigravity CLI slash-command metadata.
  *
- * Antigravity's ACP bridge may expose commands at runtime, but not every
- * bridge forwards that optional notification. Keep this small catalogue to
- * commands verified in the provider's own documentation and never infer the
- * rest of the TUI menu. The provider snapshot still gates each entry against
- * the installed CLI version.
+ * Antigravity's ACP bridge may expose commands at runtime, but the stream-JSON
+ * protocol does not forward slash commands to the long-lived process. These
+ * are the commands the CLI advertises from `agy -p /help`; the built-in bridge
+ * executes them as one-shot CLI reports instead of sending them into the
+ * stream. The provider snapshot still gates each entry against the installed
+ * CLI version.
  *
  * @module provider/Layers/AntigravitySlashCommands
  */
@@ -20,55 +21,90 @@ interface AntigravitySlashCommandMetadata {
   readonly minimumVersion: string;
 }
 
-/** Verified from Antigravity CLI documentation and the fork's 1.1.5 probe notes. */
+/** Verified against the current `agy -p /help` output (CLI 1.1.22). */
 const ANTIGRAVITY_SLASH_COMMAND_METADATA: ReadonlyArray<AntigravitySlashCommandMetadata> = [
   {
-    name: "help",
-    syntax: "/help",
-    description: "Open Antigravity's help, command, and shortcut tabs.",
+    name: "agents",
+    syntax: "/agents",
+    description: "List available custom agents.",
+    sideEffects: "Read-only.",
+    minimumVersion: "1.1.7",
+  },
+  {
+    name: "changelog",
+    syntax: "/changelog",
+    description: "Show Antigravity release notes and changes.",
     sideEffects: "Read-only.",
     minimumVersion: "1.1.7",
   },
   {
     name: "config",
-    syntax: "/config",
-    description: "Open Antigravity configuration.",
+    syntax: "/config (settings)",
+    description: "Open Antigravity's settings panel.",
     sideEffects: "Changes settings only if you make a selection in the panel.",
     minimumVersion: "1.1.7",
   },
   {
-    name: "settings",
-    syntax: "/settings",
-    description: "Open Antigravity settings.",
-    sideEffects: "Changes settings only if you make a selection in the panel.",
+    name: "credits",
+    syntax: "/credits",
+    description: "Show remaining G1 credits and purchase links.",
+    sideEffects: "Read-only.",
+    minimumVersion: "1.1.7",
+  },
+  {
+    name: "effort",
+    syntax: "/effort",
+    description: "Set the reasoning effort for subsequent turns.",
+    sideEffects: "Changes the reasoning effort for the session.",
+    minimumVersion: "1.1.7",
+  },
+  {
+    name: "exit",
+    syntax: "/exit (quit)",
+    description: "Exit the Antigravity CLI session.",
+    sideEffects: "Ends the provider session; the conversation remains resumable.",
+    minimumVersion: "1.1.7",
+  },
+  {
+    name: "help",
+    syntax: "/help",
+    description: "Show available commands and keybindings.",
+    sideEffects: "Read-only.",
+    minimumVersion: "1.1.7",
+  },
+  {
+    name: "hooks",
+    syntax: "/hooks",
+    description: "Manage hook configurations for tool events.",
+    sideEffects: "Changes hooks only if you make a selection in the panel.",
     minimumVersion: "1.1.7",
   },
   {
     name: "model",
     syntax: "/model",
-    description: "Choose the model for this Antigravity session.",
-    sideEffects: "Changes the model for subsequent turns.",
+    description: "Choose the model for subsequent turns.",
+    sideEffects: "Changes the model selection for the session.",
     minimumVersion: "1.1.7",
   },
   {
-    name: "planning",
-    syntax: "/planning",
-    description: "Enable Antigravity planning mode.",
-    sideEffects: "Changes the agent to planning behavior.",
+    name: "permissions",
+    syntax: "/permissions",
+    description: "Manage tool permissions.",
+    sideEffects: "Changes permissions only if you make a selection in the panel.",
     minimumVersion: "1.1.7",
   },
   {
-    name: "mcp",
-    syntax: "/mcp",
-    description: "Inspect configured MCP servers and tools.",
-    sideEffects: "Read-only until you choose a management action.",
+    name: "skills",
+    syntax: "/skills",
+    description: "List available skills.",
+    sideEffects: "Read-only.",
     minimumVersion: "1.1.7",
   },
   {
-    name: "quit",
-    syntax: "/quit",
-    description: "Exit Antigravity CLI.",
-    sideEffects: "Ends the provider session; the conversation remains resumable.",
+    name: "usage",
+    syntax: "/usage (quota)",
+    description: "View model quota usage.",
+    sideEffects: "Read-only.",
     minimumVersion: "1.1.7",
   },
 ];

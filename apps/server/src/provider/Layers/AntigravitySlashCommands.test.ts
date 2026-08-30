@@ -7,20 +7,25 @@ describe("enrichAntigravitySlashCommands", () => {
     const commands = enrichAntigravitySlashCommands("agy 1.1.7");
 
     expect(commands.map((command) => command.name)).toEqual([
-      "help",
+      "agents",
+      "changelog",
       "config",
-      "settings",
+      "credits",
+      "effort",
+      "exit",
+      "help",
+      "hooks",
       "model",
-      "planning",
-      "mcp",
-      "quit",
+      "permissions",
+      "skills",
+      "usage",
     ]);
     expect(commands.every((command) => command.support === "supported")).toBe(true);
     expect(commands.every((command) => command.duringWork === "idle-only")).toBe(true);
     expect(commands.every((command) => command.output === "conversation")).toBe(true);
     expect(commands.find((command) => command.name === "model")).toMatchObject({
       syntax: "/model",
-      sideEffects: "Changes the model for subsequent turns.",
+      sideEffects: "Changes the model selection for the session.",
       minimumVersion: "1.1.7",
     });
   });

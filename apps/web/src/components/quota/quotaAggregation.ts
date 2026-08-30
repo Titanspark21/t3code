@@ -2,6 +2,8 @@ import {
   isQuotaSnapshotStale,
   primaryQuotaWindow,
   type AccountQuotaSnapshot,
+  type QuotaGroup,
+  type QuotaWindow,
 } from "@t3tools/contracts/quota";
 import type { ProviderDriverKind } from "@t3tools/contracts";
 
@@ -18,6 +20,73 @@ export type QuotaPanelRow<TAccount extends QuotaAggregationAccount> = {
   readonly kind: "account";
   readonly account: TAccount;
 };
+
+export type QuotaWindowKindForDisplay = "short" | "long";
+
+/** Pick the most constrained window of one duration from a provider snapshot. */
+export function quotaWindowForKind(
+  snapshot: AccountQuotaSnapshot | undefined,
+  kind: QuotaWindowKindForDisplay,
+  nowMs: number = Date.now(),
+): QuotaWindow | undefined {
+  if (!snapshot || isQuotaSnapshotStale(snapshot, nowMs)) return undefined;
+  const windows = snapshot.groups.flatMap((group) => group.windows);
+  const matching = windows.filter((window) => window.kind === kind);
+  if (matching.length > 0) return primaryQuotaWindow(matching);
+
+  // Some Claude SDK versions omit duration metadata but retain a descriptive
+  // label. This fallback keeps those readings visible without using position
+  // in the provider's response as an implicit contract.
+  const labelPattern = kind === "short" ? /5.?hour|session/i : /week|seven.?day/i;
+  return primaryQuotaWindow(windows.filter((window) => labelPattern.test(window.label ?? "")));
+}
+
+export type AntigravityQuotaPool = "gemini" | "claude-gpt";
+
+function groupMatchesPool(group: QuotaGroup, pool: AntigravityQuotaPool): boolean {
+  const identity = `${group.key} ${group.displayName}`.toLowerCase();
+  return pool === "gemini" ? /gemini|google/.test(identity) : /claude|gpt|other/.test(identity);
+}
+
+/** Find one Antigravity pool's weekly window. */
+export function antigravityQuotaWindow(
+  snapshot: AccountQuotaSnapshot | undefined,
+  pool: AntigravityQuotaPool,
+  nowMs: number = Date.now(),
+): QuotaWindow | undefined {
+  if (!snapshot || isQuotaSnapshotStale(snapshot, nowMs)) return undefined;
+  const group = snapshot.groups.find((candidate) => groupMatchesPool(candidate, pool));
+  if (!group) return undefined;
+  const weekly = group.windows.filter(
+    (window) => window.kind === "long" || /week|seven.?day/i.test(window.label ?? ""),
+  );
+  return primaryQuotaWindow(weekly);
+}
+
+/**
+ * Average one Antigravity pool across fresh accounts. The returned window is
+ * intentionally reset-less: five accounts do not have one honest reset time.
+ */
+export function averageAntigravityQuotaWindow(
+  accounts: ReadonlyArray<QuotaAggregationAccount>,
+  pool: AntigravityQuotaPool,
+  nowMs: number,
+): QuotaWindow | undefined {
+  const windows = accounts.flatMap((account) => {
+    const snapshot = account.snapshot;
+    if (!snapshot || isQuotaSnapshotStale(snapshot, nowMs)) return [];
+    const window = antigravityQuotaWindow(snapshot, pool, nowMs);
+    return window ? [window] : [];
+  });
+  if (windows.length === 0) return undefined;
+
+  return {
+    kind: "long",
+    label: "Weekly limit",
+    usedPercent: windows.reduce((sum, window) => sum + window.usedPercent, 0) / windows.length,
+    windowDurationMins: 10_080,
+  };
+}
 
 /**
  * Keep one row per configured account label across all connected environments.

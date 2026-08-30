@@ -2535,9 +2535,15 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.subscribeQuota]: (_input) =>
-          observeRpcStream(WS_METHODS.subscribeQuota, quota.changes, {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcStream(
+            WS_METHODS.subscribeQuota,
+            Stream.unwrap(
+              quota.readSummary.pipe(
+                Effect.map((latest) => Stream.concat(Stream.make(latest), quota.changes)),
+              ),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
       });
     }),
   );
