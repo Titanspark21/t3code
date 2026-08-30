@@ -64,28 +64,53 @@ export function antigravityQuotaWindow(
 }
 
 /**
- * Average one Antigravity pool across fresh accounts. The returned window is
- * intentionally reset-less: five accounts do not have one honest reset time.
+ * Average one Antigravity pool across fresh accounts. A reset is carried onto
+ * the aggregate only when every contributing account publishes the same one;
+ * otherwise the UI labels the aggregate as having varying reset times.
  */
 export function averageAntigravityQuotaWindow(
   accounts: ReadonlyArray<QuotaAggregationAccount>,
   pool: AntigravityQuotaPool,
   nowMs: number,
 ): QuotaWindow | undefined {
-  const windows = accounts.flatMap((account) => {
-    const snapshot = account.snapshot;
-    if (!snapshot || isQuotaSnapshotStale(snapshot, nowMs)) return [];
-    const window = antigravityQuotaWindow(snapshot, pool, nowMs);
-    return window ? [window] : [];
-  });
+  const windows = freshAntigravityQuotaWindows(accounts, pool, nowMs);
   if (windows.length === 0) return undefined;
+
+  const resetTimes = new Set(windows.map((window) => window.resetsAt));
+  const sharedReset = resetTimes.size === 1 ? windows[0]?.resetsAt : undefined;
 
   return {
     kind: "long",
     label: "Weekly limit",
     usedPercent: windows.reduce((sum, window) => sum + window.usedPercent, 0) / windows.length,
     windowDurationMins: 10_080,
+    ...(sharedReset ? { resetsAt: sharedReset } : {}),
   };
+}
+
+/** Return a compact label when an aggregate cannot have one honest reset time. */
+export function antigravityAggregateResetLabel(
+  accounts: ReadonlyArray<QuotaAggregationAccount>,
+  pool: AntigravityQuotaPool,
+  nowMs: number,
+): string | undefined {
+  const windows = freshAntigravityQuotaWindows(accounts, pool, nowMs);
+  if (windows.length === 0) return undefined;
+  const resetTimes = new Set(windows.map((window) => window.resetsAt ?? "missing"));
+  return resetTimes.size > 1 ? "reset varies" : undefined;
+}
+
+function freshAntigravityQuotaWindows(
+  accounts: ReadonlyArray<QuotaAggregationAccount>,
+  pool: AntigravityQuotaPool,
+  nowMs: number,
+): ReadonlyArray<QuotaWindow> {
+  return accounts.flatMap((account) => {
+    const snapshot = account.snapshot;
+    if (!snapshot || isQuotaSnapshotStale(snapshot, nowMs)) return [];
+    const window = antigravityQuotaWindow(snapshot, pool, nowMs);
+    return window ? [window] : [];
+  });
 }
 
 /**

@@ -24,6 +24,41 @@ export function formatQuotaReset(resetsAt: string | undefined, nowMs: number): s
   return `Resets in ${Math.floor(hours / 24)}d`;
 }
 
+/**
+ * Compact reset text for the sidebar: a live countdown for the 5-hour window,
+ * and the actual local weekday/time for the weekly window.
+ */
+export function formatQuotaResetAtGlance(
+  resetsAt: string | undefined,
+  nowMs: number,
+  kind: QuotaWindow["kind"],
+): string {
+  if (!resetsAt) return "reset n/a";
+  const resetMs = Date.parse(resetsAt);
+  if (Number.isNaN(resetMs)) return "reset unavailable";
+
+  const remainingMs = resetMs - nowMs;
+  if (remainingMs <= 0) return kind === "long" ? "reset now" : "now";
+
+  if (kind === "long") {
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(resetMs));
+  }
+
+  const minutes = Math.ceil(remainingMs / 60_000);
+  if (minutes < 60) return `in ${Math.max(1, minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  const minuteRemainder = minutes % 60;
+  if (hours < 24) {
+    return minuteRemainder > 0 ? `in ${hours}h ${minuteRemainder}m` : `in ${hours}h`;
+  }
+  return `in ${Math.floor(hours / 24)}d`;
+}
+
 export function formatQuotaAge(observedAt: string, nowMs: number): string {
   const observedMs = Date.parse(observedAt);
   if (Number.isNaN(observedMs)) return "unknown age";

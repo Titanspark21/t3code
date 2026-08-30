@@ -124,6 +124,64 @@ function normalizeWindow(
 }
 
 /**
+ * Antigravity's ACP bridge publishes quota as `remaining_fraction`, while
+ * older bridge builds have used explicit remaining-percent fields. Keep that
+ * conversion here instead of making every consumer know which side of the
+ * percentage the provider reports.
+ */
+function normalizeAntigravityWindow(
+  value: unknown,
+  fallbackLabel?: string,
+  fallbackDurationMins?: number,
+): QuotaWindow | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const explicitUsed = readUsedPercent(
+    value["usedPercent"] ?? value["used_percent"] ?? value["utilization"],
+  );
+  const remainingPercent = readFiniteNumber(
+    value["remainingPercent"] ?? value["remaining_percent"],
+  );
+  const remainingFraction = readFiniteNumber(
+    value["remaining_fraction"] ?? value["remainingFraction"],
+  );
+  const usedPercent =
+    explicitUsed ??
+    (remainingPercent === undefined
+      ? remainingFraction === undefined
+        ? undefined
+        : readUsedPercent(100 - Math.min(1, Math.max(0, remainingFraction)) * 100)
+      : readUsedPercent(100 - Math.min(100, Math.max(0, remainingPercent))));
+  if (usedPercent === undefined) return undefined;
+
+  const windowHint = readNonEmptyString(value["window"]);
+  const hintedDurationMins = windowHint
+    ? /(?:five.?hour|5.?hour|5h|session)/i.test(windowHint)
+      ? 300
+      : /(?:weekly|week|seven.?day|7d)/i.test(windowHint)
+        ? 10_080
+        : undefined
+    : undefined;
+  const windowDurationMins =
+    readFiniteNumber(value["windowDurationMins"] ?? value["window_minutes"]) ??
+    hintedDurationMins ??
+    fallbackDurationMins;
+  const rawReset =
+    value["resetsAt"] ?? value["resets_at"] ?? value["resetTime"] ?? value["reset_time"];
+  const resetsAt = isoFromProviderReset(rawReset);
+  const rawLabel = readNonEmptyString(value["label"]) ?? readNonEmptyString(value["name"]);
+  const label = (rawLabel ?? fallbackLabel)?.replace(/\s+remaining$/iu, "");
+
+  return {
+    kind: quotaWindowKindFromDuration(windowDurationMins),
+    usedPercent,
+    ...(label ? { label } : {}),
+    ...(resetsAt ? { resetsAt } : {}),
+    ...(windowDurationMins !== undefined && windowDurationMins > 0 ? { windowDurationMins } : {}),
+  };
+}
+
+/**
  * Codex — `account/rateLimits/updated`, schema
  * `V2AccountRateLimitsUpdatedNotification` in `packages/effect-codex-app-server`.
  *
@@ -282,10 +340,10 @@ export function normalizeAntigravityRateLimits(input: {
       readRecord(candidate.value, "rate_limits") ??
       candidate.value;
     const windows: Array<QuotaWindow> = [];
-    const listedWindows = group["windows"] ?? group["limits"];
+    const listedWindows = group["windows"] ?? group["limits"] ?? group["buckets"];
     if (Array.isArray(listedWindows)) {
       for (const value of listedWindows) {
-        const window = normalizeWindow(value);
+        const window = normalizeAntigravityWindow(value);
         if (window) windows.push(window);
       }
     } else {
@@ -298,7 +356,7 @@ export function normalizeAntigravityRateLimits(input: {
           : /(?:weekly|seven.?day|secondary|long)/i.test(key)
             ? 10_080
             : undefined;
-        const window = normalizeWindow(value, key, fallbackDurationMins);
+        const window = normalizeAntigravityWindow(value, key, fallbackDurationMins);
         if (window) windows.push(window);
       }
     }
@@ -309,8 +367,14 @@ export function normalizeAntigravityRateLimits(input: {
       readNonEmptyString(group["name"]) ??
       readNonEmptyString(group["label"]) ??
       candidate.key;
-    const key =
+    const rawKey =
       readNonEmptyString(group["key"]) ?? readNonEmptyString(group["id"]) ?? candidate.key;
+    const identity = `${rawKey} ${displayName}`;
+    const key = /gemini|google/i.test(identity)
+      ? "gemini"
+      : /claude|gpt/i.test(identity)
+        ? "claude-gpt"
+        : rawKey;
     groups.push({ key, displayName, windows });
   }
 

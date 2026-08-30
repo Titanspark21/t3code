@@ -273,6 +273,51 @@ describe("normalizeAntigravityRateLimits", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("converts Antigravity structured remaining fractions and keeps full windows", () => {
+    const snapshot = normalizeAntigravityRateLimits({
+      providerInstanceId: "antigravity-1" as ProviderInstanceId,
+      observedAt,
+      payload: {
+        groups: [
+          {
+            name: "Gemini Models",
+            buckets: [
+              {
+                name: "Weekly Limit Remaining",
+                window: "weekly",
+                remaining_fraction: 1,
+                reset_time: "2026-08-30T04:24:00.000Z",
+              },
+            ],
+          },
+          {
+            name: "Claude and GPT models",
+            buckets: [
+              {
+                name: "Weekly Limit Remaining",
+                window: "weekly",
+                remaining_fraction: 0.94,
+                reset_time: "2026-08-30T04:24:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(snapshot?.groups.map((group) => group.key)).toEqual(["gemini", "claude-gpt"]);
+    expect(snapshot?.groups[0]?.windows[0]).toMatchObject({
+      kind: "long",
+      usedPercent: 0,
+      resetsAt: "2026-08-30T04:24:00.000Z",
+    });
+    expect(snapshot?.groups[1]?.windows[0]).toMatchObject({
+      kind: "long",
+      usedPercent: 6,
+      resetsAt: "2026-08-30T04:24:00.000Z",
+    });
+  });
 });
 
 describe("mergeQuotaSnapshots", () => {

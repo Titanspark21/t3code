@@ -1,4 +1,5 @@
 import { isQuotaSnapshotStale } from "@t3tools/contracts/quota";
+import type { QuotaWindow } from "@t3tools/contracts/quota";
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -8,8 +9,9 @@ import { useEnvironments } from "../../state/environments";
 import { useQuota } from "../../state/quota";
 import { PROVIDER_ICON_BY_PROVIDER } from "../chat/providerIconUtils";
 import { Gemini, type Icon } from "../Icons";
-import { quotaRemainingPercent } from "./quotaFormat";
+import { formatQuotaResetAtGlance, quotaRemainingPercent } from "./quotaFormat";
 import {
+  antigravityAggregateResetLabel,
   antigravityQuotaWindow,
   averageAntigravityQuotaWindow,
   groupQuotaPanelAccounts,
@@ -97,7 +99,7 @@ export const QuotaPanel = memo(function QuotaPanel() {
 
   return (
     <div className="mb-1 rounded-lg border border-border/65 bg-sidebar-accent/25 p-1.5">
-      <div className="mb-1 flex items-center justify-between px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="mb-1.5 flex items-center justify-between px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>Limits</span>
         <button
           aria-label="Refresh all account limits"
@@ -108,12 +110,12 @@ export const QuotaPanel = memo(function QuotaPanel() {
           type="button"
         >
           <RefreshCwIcon
-            className={`size-2.5 ${quota.isRefreshing ? "animate-spin" : ""}`}
+            className={`size-3 ${quota.isRefreshing ? "animate-spin" : ""}`}
             aria-hidden="true"
           />
         </button>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {standardAccounts.length > 0 ? (
           <QuotaSection title="Codex & Claude">
             {standardAccounts.map((account) => (
@@ -147,7 +149,7 @@ export const QuotaPanel = memo(function QuotaPanel() {
 function QuotaSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-0.5" aria-label={title}>
-      <h3 className="px-1 text-[10px] font-semibold text-muted-foreground">{title}</h3>
+      <h3 className="px-1 text-[11px] font-semibold text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
@@ -164,11 +166,19 @@ const StandardQuotaRow = memo(function StandardQuotaRow({
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[instance.driverKind] ?? null;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-sidebar-accent">
+    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-sidebar-accent">
       <AccountName account={account} ProviderIcon={ProviderIcon} />
-      <QuotaMetric label="5h" stale={stale} window={quotaWindowForKind(snapshot, "short", nowMs)} />
+      <QuotaMetric
+        label="5h"
+        kind="short"
+        nowMs={nowMs}
+        stale={stale}
+        window={quotaWindowForKind(snapshot, "short", nowMs)}
+      />
       <QuotaMetric
         label="Week"
+        kind="long"
+        nowMs={nowMs}
         stale={stale}
         window={quotaWindowForKind(snapshot, "long", nowMs)}
       />
@@ -198,27 +208,34 @@ const AntigravityAggregateRow = memo(function AntigravityAggregateRow({
 }) {
   const gemini = averageAntigravityQuotaWindow(accounts, "gemini", nowMs);
   const claudeGpt = averageAntigravityQuotaWindow(accounts, "claude-gpt", nowMs);
+  const geminiResetLabel = antigravityAggregateResetLabel(accounts, "gemini", nowMs);
+  const claudeGptResetLabel = antigravityAggregateResetLabel(accounts, "claude-gpt", nowMs);
   const ProviderIcon = Gemini;
 
   return (
     <button
       aria-expanded={expanded}
       aria-label={`${expanded ? "Hide" : "Show"} individual Antigravity account limits`}
-      className="grid w-full grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_auto] items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_auto] items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onToggle}
       type="button"
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <ProviderIcon className="size-3.5 shrink-0" />
         <span className="min-w-0">
-          <span className="block truncate text-[11px] leading-tight">Antigravity</span>
-          <span className="block truncate text-[9px] text-muted-foreground">
+          <span className="block truncate text-xs leading-tight">Antigravity</span>
+          <span className="block truncate text-[10px] text-muted-foreground">
             {accounts.length} account{accounts.length === 1 ? "" : "s"}
           </span>
         </span>
       </span>
-      <QuotaMetric label="Gemini" window={gemini} />
-      <QuotaMetric label="Claude + GPT" window={claudeGpt} />
+      <QuotaMetric label="Gemini" nowMs={nowMs} resetLabel={geminiResetLabel} window={gemini} />
+      <QuotaMetric
+        label="Claude + GPT"
+        nowMs={nowMs}
+        resetLabel={claudeGptResetLabel}
+        window={claudeGpt}
+      />
       <ChevronDownIcon
         aria-hidden="true"
         className={`size-3 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -237,17 +254,19 @@ const AntigravityAccountRow = memo(function AntigravityAccountRow({
   const snapshot = account.snapshot;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] items-center gap-1.5 rounded-md px-1.5 py-1">
-      <span className="truncate pl-5 text-[10px] text-muted-foreground">
+    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5">
+      <span className="truncate pl-5 text-[11px] text-muted-foreground">
         {account.instance.displayName}
       </span>
       <QuotaMetric
         label="Gemini"
+        nowMs={nowMs}
         stale={stale}
         window={antigravityQuotaWindow(snapshot, "gemini", nowMs)}
       />
       <QuotaMetric
         label="Claude + GPT"
+        nowMs={nowMs}
         stale={stale}
         window={antigravityQuotaWindow(snapshot, "claude-gpt", nowMs)}
       />
@@ -283,29 +302,49 @@ function AccountName({
           />
         ) : null}
       </span>
-      <span className="truncate text-[11px] leading-tight">{account.instance.displayName}</span>
+      <span className="truncate text-xs leading-tight">{account.instance.displayName}</span>
     </span>
   );
 }
 
 function QuotaMetric({
   label,
+  kind,
+  nowMs,
+  resetLabel,
   stale = false,
   window,
 }: {
   label: string;
+  kind?: QuotaWindow["kind"];
+  nowMs: number;
+  resetLabel?: string | undefined;
   stale?: boolean;
-  window: ReturnType<typeof quotaWindowForKind>;
+  window: QuotaWindow | undefined;
 }) {
   const remaining = !stale && window ? quotaRemainingPercent(window.usedPercent) : undefined;
+  const reset =
+    !stale && window
+      ? (resetLabel ??
+        formatQuotaResetAtGlance(
+          window.resetsAt,
+          nowMs,
+          window.kind === "unknown" ? (kind ?? window.kind) : window.kind,
+        ))
+      : undefined;
   return (
     <span className="min-w-0 space-y-0.5">
-      <span className="flex items-center justify-between gap-1 text-[9px] leading-none text-muted-foreground">
+      <span className="flex items-center justify-between gap-1 text-[10px] leading-none text-muted-foreground">
         <span className="truncate">{label}</span>
-        <span className="tabular-nums font-medium text-foreground/80">
+        <span className="text-[11px] font-semibold tabular-nums text-foreground/80">
           {stale ? "stale" : remaining === undefined ? "—" : `${remaining}%`}
         </span>
       </span>
+      {reset ? (
+        <span className="block truncate text-[9px] leading-none text-muted-foreground/80">
+          {reset}
+        </span>
+      ) : null}
       <span className="block h-0.5 overflow-hidden rounded-full bg-foreground/10">
         <span
           className={
