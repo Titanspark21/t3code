@@ -25,16 +25,27 @@ interface JsonRpcMessage {
   readonly params?: unknown;
 }
 
-interface AgyEvent {
+export interface AgyEvent {
   readonly event?: unknown;
   readonly conversation_id?: unknown;
   readonly step_update?: unknown;
   readonly result?: unknown;
 }
 
-interface AgyModelState {
+export interface AgyModelState {
   readonly availableModels: ReadonlyArray<{ readonly modelId: string; readonly name: string }>;
   readonly currentModelId: string;
+}
+
+const DEFAULT_AGY_STREAM_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+const AGY_STARTUP_TIMEOUT_MS = 120_000;
+const DIAGNOSTIC_TAIL_LIMIT = 8_192;
+
+function agyStreamTimeoutMs(): number {
+  const configured = Number(NodeProcess.env.AGY_STREAM_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured >= 1_000
+    ? Math.floor(configured)
+    : DEFAULT_AGY_STREAM_TIMEOUT_MS;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -79,6 +90,20 @@ function writeResult(id: JsonRpcId, result: unknown): void {
 
 function writeError(id: JsonRpcId, code: number, message: string): void {
   writeJson({ id, error: { code, message } });
+}
+
+export interface AgyPromptSession {
+  readonly sessionId: string;
+  readonly cwd: string;
+  sendPrompt(text: string): void;
+  nextEvent(milliseconds?: number): Promise<AgyEvent>;
+  close(): void;
+}
+
+export type AgySessionUpdateWriter = (sessionId: string, update: JsonRecord) => void;
+
+function writeSessionUpdate(sessionId: string, update: JsonRecord): void {
+  writeJson({ method: "session/update", params: { sessionId, update } });
 }
 
 function timeout<T>(promise: Promise<T>, milliseconds: number, detail: string): Promise<T> {
@@ -191,7 +216,7 @@ async function runStandaloneCommand(cwd: string, command: string): Promise<strin
   return result.stdout.trim() || result.stderr.trim() || "Antigravity command completed.";
 }
 
-class AgySession {
+export class AgySession {
   sessionId: string;
   readonly cwd: string;
   child!: NodeChildProcess.ChildProcessWithoutNullStreams;
@@ -204,6 +229,9 @@ class AgySession {
   }> = [];
   private closed = false;
   private exited = false;
+  private terminalError: Error | undefined;
+  private stdoutDiagnosticTail = "";
+  private stderrTail = "";
   private processGeneration = 0;
   private conversationId: string | undefined;
 
@@ -220,7 +248,11 @@ class AgySession {
       this.modelState.currentModelId !== "default" ? this.modelState.currentModelId : undefined;
     const mode = NodeProcess.env.AGY_MODE?.trim();
     const generation = ++this.processGeneration;
+    this.closed = false;
     this.exited = false;
+    this.terminalError = undefined;
+    this.stdoutDiagnosticTail = "";
+    this.stderrTail = "";
     this.child = NodeChildProcess.spawn(
       binary,
       [
@@ -244,12 +276,15 @@ class AgySession {
         const parsed = JSON.parse(line) as AgyEvent;
         this.enqueue(parsed);
       } catch {
-        // The CLI may write human diagnostics to stdout on a failed startup.
-        // ACP must remain JSONL, so ignore that line and let the timeout report
-        // a useful bridge failure to the parent.
+        // Keep stdout valid ACP JSONL while retaining the provider's human
+        // diagnostics for the terminal error surfaced to T3.
+        this.stdoutDiagnosticTail = this.appendDiagnostic(this.stdoutDiagnosticTail, line);
       }
     });
-    this.child.stderr.resume();
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk: string) => {
+      this.stderrTail = this.appendDiagnostic(this.stderrTail, chunk);
+    });
     this.child.once("error", (error) => {
       if (generation === this.processGeneration) this.fail(error);
     });
@@ -264,6 +299,32 @@ class AgySession {
     });
   }
 
+  private appendDiagnostic(current: string, value: string): string {
+    const next = `${current}${current ? "\n" : ""}${value}`.trim();
+    return next.length <= DIAGNOSTIC_TAIL_LIMIT ? next : next.slice(-DIAGNOSTIC_TAIL_LIMIT);
+  }
+
+  private diagnosticError(error: Error): Error {
+    const diagnostics = [this.stderrTail.trim(), this.stdoutDiagnosticTail.trim()].filter(Boolean);
+    return diagnostics.length === 0
+      ? error
+      : new Error(`${error.message}\n\nAntigravity diagnostics:\n${diagnostics.join("\n")}`, {
+          cause: error,
+        });
+  }
+
+  private terminateChild(): void {
+    this.lines.close();
+    this.child.stdin.destroy();
+    this.child.kill("SIGTERM");
+    const child = this.child;
+    // @effect-diagnostics-next-line globalTimers:off - standalone Node bridge cleanup.
+    const forceKillTimer = NodeTimers.setTimeout(() => {
+      if (!this.exited) child.kill("SIGKILL");
+    }, 1_000);
+    forceKillTimer.unref();
+  }
+
   private enqueue(event: AgyEvent): void {
     const waiter = this.waiters.shift();
     if (waiter) {
@@ -274,22 +335,45 @@ class AgySession {
   }
 
   private fail(error: Error): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) waiter.reject(error);
+    if (this.closed || this.terminalError) return;
+    this.terminalError = this.diagnosticError(error);
+    for (const waiter of this.waiters.splice(0)) waiter.reject(this.terminalError);
+    this.terminateChild();
   }
 
-  nextEvent(milliseconds = 120_000): Promise<AgyEvent> {
+  nextEvent(milliseconds = agyStreamTimeoutMs()): Promise<AgyEvent> {
     if (this.queuedEvents.length > 0) return Promise.resolve(this.queuedEvents.shift()!);
+    if (this.terminalError) return Promise.reject(this.terminalError);
     if (this.closed) return Promise.reject(new Error("Antigravity CLI session is closed."));
-    return timeout(
-      new Promise<AgyEvent>((resolve, reject) => this.waiters.push({ resolve, reject })),
-      milliseconds,
-      "Timed out waiting for Antigravity CLI stream output.",
-    );
+    return new Promise<AgyEvent>((resolve, reject) => {
+      let timer: NodeJS.Timeout | undefined;
+      const waiter = {
+        resolve: (event: AgyEvent) => {
+          if (timer) NodeTimers.clearTimeout(timer);
+          resolve(event);
+        },
+        reject: (error: Error) => {
+          if (timer) NodeTimers.clearTimeout(timer);
+          reject(error);
+        },
+      };
+      this.waiters.push(waiter);
+      // @effect-diagnostics-next-line globalTimers:off - standalone Node bridge timeout.
+      timer = NodeTimers.setTimeout(() => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        const error = new Error(
+          `Timed out waiting ${milliseconds}ms for Antigravity CLI stream output.`,
+        );
+        this.fail(error);
+        reject(this.terminalError ?? error);
+      }, milliseconds);
+      timer.unref();
+    });
   }
 
   sendPrompt(text: string): void {
+    if (this.terminalError) throw this.terminalError;
     if (this.closed || !this.child.stdin.writable) {
       throw new Error("Antigravity CLI session is closed.");
     }
@@ -298,12 +382,30 @@ class AgySession {
 
   async waitForInit(): Promise<void> {
     for (;;) {
-      const event = await this.nextEvent();
+      const event = await this.nextEvent(AGY_STARTUP_TIMEOUT_MS);
       if (event.event === "init") {
         this.conversationId = stringValue(event.conversation_id) ?? this.conversationId;
         return;
       }
     }
+  }
+
+  async cancelAndRestart(): Promise<void> {
+    if (this.closed) return;
+    const conversationId = this.conversationId;
+    const oldChild = this.child;
+    this.processGeneration += 1;
+    const cancelled = new Error("Antigravity prompt was cancelled.");
+    for (const waiter of this.waiters.splice(0)) waiter.reject(cancelled);
+    this.queuedEvents.splice(0);
+    this.lines.close();
+    oldChild.stdin.destroy();
+    oldChild.kill("SIGTERM");
+    // @effect-diagnostics-next-line globalTimers:off - standalone Node bridge cleanup.
+    const forceKillTimer = NodeTimers.setTimeout(() => oldChild.kill("SIGKILL"), 1_000);
+    forceKillTimer.unref();
+    this.startChild(conversationId);
+    await this.waitForInit();
   }
 
   async setModel(modelId: string): Promise<void> {
@@ -347,18 +449,10 @@ class AgySession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.lines.close();
-    this.child.stdin.destroy();
-    this.child.kill("SIGTERM");
-    // A provider process can be waiting inside its auth/network stack and not
-    // react to SIGTERM promptly. The bridge must still honor ACP close/cancel
-    // and never leave an orphaned account process behind.
-    const child = this.child;
-    // @effect-diagnostics-next-line globalTimers:off - standalone Node bridge cleanup.
-    const forceKillTimer = NodeTimers.setTimeout(() => {
-      if (!this.exited) child.kill("SIGKILL");
-    }, 1_000);
-    forceKillTimer.unref();
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.reject(new Error("Antigravity CLI session was closed."));
+    }
+    this.terminateChild();
   }
 }
 
@@ -392,6 +486,55 @@ async function createSession(
   }
 }
 
+function antigravityToolKind(toolName: string): string {
+  const normalized = toolName.toLowerCase();
+  if (/read|cat|view/.test(normalized)) return "read";
+  if (/write|edit|patch|replace/.test(normalized)) return "edit";
+  if (/delete|remove/.test(normalized)) return "delete";
+  if (/move|rename/.test(normalized)) return "move";
+  if (/search|find|grep|glob|list/.test(normalized)) return "search";
+  if (/run|command|shell|terminal|exec/.test(normalized)) return "execute";
+  if (/fetch|http|web/.test(normalized)) return "fetch";
+  if (/think|plan/.test(normalized)) return "think";
+  return "other";
+}
+
+function antigravityToolStatus(
+  step: JsonRecord,
+): "pending" | "in_progress" | "completed" | "failed" {
+  const state = stringValue(step.state)?.toUpperCase();
+  if (state === "ACTIVE" || state === "RUNNING") return "in_progress";
+  if (state === "DONE" || state === "COMPLETED" || state === "SUCCESS") return "completed";
+  if (state === "FAILED" || state === "ERROR") return "failed";
+  return "pending";
+}
+
+function antigravityToolUpdate(
+  step: JsonRecord,
+  seenToolCallIds: Set<string>,
+): JsonRecord | undefined {
+  if (stringValue(step.step_type)?.toLowerCase() !== "tool") return undefined;
+  const stepIndex = numberValue(step.step_index);
+  const toolCallId = `agy-step-${stepIndex ?? seenToolCallIds.size}`;
+  const title = stringValue(step.tool_name) ?? "Antigravity tool";
+  const status = antigravityToolStatus(step);
+  const toolInfo = step.tool_info;
+  const firstUpdate = !seenToolCallIds.has(toolCallId);
+  if (firstUpdate) seenToolCallIds.add(toolCallId);
+
+  return {
+    sessionUpdate: firstUpdate ? "tool_call" : "tool_call_update",
+    toolCallId,
+    ...(firstUpdate ? { title, kind: antigravityToolKind(title) } : {}),
+    status,
+    ...(toolInfo === undefined
+      ? {}
+      : status === "completed" || status === "failed"
+        ? { rawOutput: toolInfo }
+        : { rawInput: toolInfo }),
+  };
+}
+
 function resultUsage(result: JsonRecord): JsonRecord | undefined {
   const usage = isRecord(result.usage) ? result.usage : undefined;
   if (!usage) return undefined;
@@ -408,7 +551,11 @@ function resultUsage(result: JsonRecord): JsonRecord | undefined {
   return { inputTokens, outputTokens, totalTokens };
 }
 
-async function promptSession(session: AgySession, params: unknown): Promise<JsonRecord> {
+export async function promptSession(
+  session: AgyPromptSession,
+  params: unknown,
+  writeUpdate: AgySessionUpdateWriter = writeSessionUpdate,
+): Promise<JsonRecord> {
   const text = promptText(params);
   if (!text) throw new Error("Antigravity ACP bridge received an empty prompt.");
 
@@ -421,15 +568,9 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
       return { stopReason: "end_turn" };
     }
     const report = await runStandaloneCommand(session.cwd, text.trim());
-    writeJson({
-      method: "session/update",
-      params: {
-        sessionId: session.sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: report },
-        },
-      },
+    writeUpdate(session.sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: report },
     });
     return {
       stopReason: "end_turn",
@@ -441,6 +582,7 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
 
   session.sendPrompt(text);
   let emittedText = false;
+  const seenToolCallIds = new Set<string>();
 
   for (;;) {
     const event = await session.nextEvent();
@@ -449,17 +591,13 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
       const delta = stringValue(step.text_delta);
       if (delta) {
         emittedText = true;
-        writeJson({
-          method: "session/update",
-          params: {
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: delta },
-            },
-          },
+        writeUpdate(session.sessionId, {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: delta },
         });
       }
+      const toolUpdate = antigravityToolUpdate(step, seenToolCallIds);
+      if (toolUpdate) writeUpdate(session.sessionId, toolUpdate);
       continue;
     }
 
@@ -467,20 +605,33 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
     if (!result) continue;
     const status = stringValue(result.status);
     const response = stringValue(result.response);
+    if (status !== "SUCCESS") {
+      const detail =
+        response ??
+        stringValue(result.error) ??
+        stringValue(result.message) ??
+        stringValue(result.detail) ??
+        `Antigravity prompt failed with status ${status ?? "unknown"}.`;
+      throw new Error(detail);
+    }
     if (response && !emittedText) {
-      writeJson({
-        method: "session/update",
-        params: {
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: response },
-          },
+      emittedText = true;
+      writeUpdate(session.sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: response },
+      });
+    }
+    if (!emittedText) {
+      writeUpdate(session.sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Antigravity completed the task without a text response.",
         },
       });
     }
     return {
-      stopReason: status === "SUCCESS" ? "end_turn" : "refusal",
+      stopReason: "end_turn",
       ...(resultUsage(result) ? { usage: resultUsage(result) } : {}),
       ...(isRecord(params) && stringValue(params.messageId)
         ? { userMessageId: params.messageId }
@@ -572,7 +723,7 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
       }
       case "session/cancel": {
         const session = sessions.get(sessionIdFrom(message.params));
-        session?.close();
+        if (session) await session.cancelAndRestart();
         return;
       }
       case "session/close": {

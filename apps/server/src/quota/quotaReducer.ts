@@ -77,13 +77,29 @@ export function applyQuotaEvent(state: QuotaState, input: QuotaEventInput): Quot
     payload: input.event.payload,
     observedAt: input.observedAt,
   });
-  if (!snapshot) return state;
+  if (!snapshot) {
+    // Claude and Antigravity probes are point-in-time reads. If one explicitly
+    // publishes no usable quota, retaining its old snapshot would present stale
+    // numbers as current telemetry. Codex is different: its events are sparse,
+    // so an empty update is not evidence that previously observed windows
+    // disappeared.
+    if (input.driverKind === "codex" || !state.has(input.providerInstanceId)) return state;
+    const next = new Map(state);
+    next.delete(input.providerInstanceId);
+    return next;
+  }
 
   const previous = state.get(input.providerInstanceId);
-  const merged = mergeQuotaSnapshots(previous, snapshot);
+  // Codex can publish one rate-limit window at a time, so preserve its
+  // documented sparse-update semantics. Claude and Antigravity probes are
+  // point-in-time reads: carrying a missing pool/window forward makes stale
+  // telemetry look freshly observed and can copy an old value onto an idle
+  // account. Replace those snapshots wholesale so missing data stays unknown.
+  const nextSnapshot =
+    input.driverKind === "codex" ? mergeQuotaSnapshots(previous, snapshot) : snapshot;
 
   const next = new Map(state);
-  next.set(input.providerInstanceId, merged);
+  next.set(input.providerInstanceId, nextSnapshot);
   return next;
 }
 

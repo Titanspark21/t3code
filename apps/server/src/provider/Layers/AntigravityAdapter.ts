@@ -865,6 +865,7 @@ export function makeAntigravityAdapter(
           }
           ctx.session = {
             ...ctx.session,
+            status: "running",
             activeTurnId: turnId,
             updatedAt: yield* nowIso,
           };
@@ -919,10 +920,14 @@ export function makeAntigravityAdapter(
               prompt: promptParts,
             })
             .pipe(
+              Effect.tapError(() => Effect.ignore(ctx.acp.drainEvents)),
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
             );
+          // Flush the ACP event queue before publishing the terminal turn so
+          // final progress/content cannot arrive after the UI marks it idle.
+          yield* ctx.acp.drainEvents;
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) {
@@ -939,8 +944,17 @@ export function makeAntigravityAdapter(
 
           // Only the last remaining prompt settles the turn — a steer-
           // superseded prompt resolving (usually cancelled) while another is
-          // in flight or pending must leave the merged turn running.
+          // in flight or pending must leave the merged turn running. Clear the
+          // active turn before publishing the terminal event so foreground and
+          // background consumers cannot observe a completed turn as still busy.
           if (ctx.promptsInFlight === 1) {
+            const { activeTurnId: _activeTurnId, ...settledSession } = ctx.session;
+            ctx.activeTurnId = undefined;
+            ctx.session = {
+              ...settledSession,
+              status: "ready",
+              updatedAt: yield* nowIso,
+            };
             yield* offerRuntimeEvent({
               type: "turn.completed",
               ...(yield* makeEventStamp()),
@@ -960,6 +974,47 @@ export function makeAntigravityAdapter(
             resumeCursor: ctx.session.resumeCursor,
           };
         }).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              // ACP request failures previously escaped without a terminal
+              // runtime event, leaving the UI in a permanent working state. A
+              // failed steering prompt does not settle a still-running sibling;
+              // otherwise publish one failed completion and clear turn state.
+              if (ctx.promptsInFlight === 1 && ctx.activeTurnId === turnId) {
+                const { activeTurnId: _activeTurnId, ...settledSession } = ctx.session;
+                ctx.activeTurnId = undefined;
+                ctx.session = {
+                  ...settledSession,
+                  status: "ready",
+                  updatedAt: yield* nowIso,
+                };
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                yield* offerRuntimeEvent({
+                  type: "runtime.error",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: {
+                    message: errorMessage,
+                    class: "provider_error",
+                  },
+                });
+                yield* offerRuntimeEvent({
+                  type: "turn.completed",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: {
+                    state: "failed",
+                    errorMessage,
+                  },
+                });
+              }
+              return yield* error;
+            }),
+          ),
           Effect.ensuring(
             Effect.sync(() => {
               ctx.promptsInFlight = Math.max(0, ctx.promptsInFlight - 1);
@@ -971,6 +1026,7 @@ export function makeAntigravityAdapter(
     const interruptTurn: AntigravityAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+        const interruptedTurnId = ctx.activeTurnId ?? ctx.session.activeTurnId;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
@@ -979,6 +1035,25 @@ export function makeAntigravityAdapter(
             ),
           ),
         );
+        yield* Effect.ignore(ctx.acp.drainEvents);
+        ctx.promptsInFlight = 0;
+        ctx.activeTurnId = undefined;
+        const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
+        ctx.session = {
+          ...readySession,
+          status: "ready",
+          updatedAt: yield* nowIso,
+        };
+        if (interruptedTurnId) {
+          yield* offerRuntimeEvent({
+            type: "turn.completed",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId,
+            turnId: interruptedTurnId,
+            payload: { state: "cancelled", stopReason: "cancelled" },
+          });
+        }
       });
 
     const respondToRequest: AntigravityAdapterShape["respondToRequest"] = (

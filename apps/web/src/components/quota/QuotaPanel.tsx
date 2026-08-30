@@ -25,6 +25,9 @@ interface QuotaPanelAccount {
   readonly snapshot: ReturnType<typeof useQuota>["snapshots"][number]["snapshot"] | undefined;
 }
 
+const QUOTA_USAGE_GRID_CLASS =
+  "grid grid-cols-[minmax(5.5rem,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2";
+
 export const QuotaPanel = memo(function QuotaPanel() {
   const { environments } = useEnvironments();
   const quota = useQuota();
@@ -166,7 +169,7 @@ const StandardQuotaRow = memo(function StandardQuotaRow({
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[instance.driverKind] ?? null;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-sidebar-accent">
+    <div className={`${QUOTA_USAGE_GRID_CLASS} rounded-md px-1.5 py-1.5 hover:bg-sidebar-accent`}>
       <AccountName account={account} ProviderIcon={ProviderIcon} />
       <QuotaMetric
         label="5h"
@@ -216,18 +219,22 @@ const AntigravityAggregateRow = memo(function AntigravityAggregateRow({
     <button
       aria-expanded={expanded}
       aria-label={`${expanded ? "Hide" : "Show"} individual Antigravity account limits`}
-      className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_auto] items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={`${QUOTA_USAGE_GRID_CLASS} w-full rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       onClick={onToggle}
       type="button"
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <ProviderIcon className="size-3.5 shrink-0" />
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block truncate text-xs leading-tight">Antigravity</span>
           <span className="block truncate text-[10px] text-muted-foreground">
             {accounts.length} account{accounts.length === 1 ? "" : "s"}
           </span>
         </span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={`size-3 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
       </span>
       <QuotaMetric label="Gemini" nowMs={nowMs} resetLabel={geminiResetLabel} window={gemini} />
       <QuotaMetric
@@ -235,10 +242,6 @@ const AntigravityAggregateRow = memo(function AntigravityAggregateRow({
         nowMs={nowMs}
         resetLabel={claudeGptResetLabel}
         window={claudeGpt}
-      />
-      <ChevronDownIcon
-        aria-hidden="true"
-        className={`size-3 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
       />
     </button>
   );
@@ -254,7 +257,7 @@ const AntigravityAccountRow = memo(function AntigravityAccountRow({
   const snapshot = account.snapshot;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5">
+    <div className={`${QUOTA_USAGE_GRID_CLASS} rounded-md px-1.5 py-1.5`}>
       <span className="truncate pl-5 text-[11px] text-muted-foreground">
         {account.instance.displayName}
       </span>

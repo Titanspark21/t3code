@@ -133,6 +133,57 @@ describe("applyQuotaEvent", () => {
     expect(state.get(instanceId)?.groups[0]?.windows[0]?.usedPercent).toBe(40);
     expect(state.get(other)?.groups[0]?.windows[0]?.usedPercent).toBe(5);
   });
+
+  it("replaces Antigravity point-in-time telemetry instead of retaining a vanished pool", () => {
+    const agy = "antigravity-1" as ProviderInstanceId;
+    const first = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: agy,
+      driverKind: "antigravity",
+      event: antigravityEvent,
+      observedAt,
+    });
+    const second = applyQuotaEvent(first, {
+      providerInstanceId: agy,
+      driverKind: "antigravity",
+      event: rateLimitEvent({
+        pools: [
+          {
+            id: "gemini",
+            name: "Gemini",
+            windows: [{ usedPercent: 30, windowDurationMins: 300 }],
+          },
+        ],
+      }),
+      observedAt: "2026-08-14T12:30:00.000Z",
+    });
+
+    expect(second.get(agy)?.groups.map((group) => group.key)).toEqual(["gemini"]);
+    expect(second.get(agy)?.groups[0]?.windows[0]?.usedPercent).toBe(30);
+  });
+
+  it("does not refresh missing Claude windows with a newer observation timestamp", () => {
+    const claude = "claude-1" as ProviderInstanceId;
+    const first = applyQuotaEvent(emptyQuotaState, {
+      providerInstanceId: claude,
+      driverKind: "claudeAgent",
+      event: rateLimitEvent({
+        five_hour: { usedPercent: 20 },
+        weekly: { usedPercent: 70 },
+      }),
+      observedAt,
+    });
+    const second = applyQuotaEvent(first, {
+      providerInstanceId: claude,
+      driverKind: "claudeAgent",
+      event: rateLimitEvent({ five_hour: { usedPercent: 25 } }),
+      observedAt: "2026-08-14T12:30:00.000Z",
+    });
+
+    const windows = second.get(claude)?.groups[0]?.windows ?? [];
+    expect(windows).toHaveLength(1);
+    expect(windows[0]?.usedPercent).toBe(25);
+    expect(windows.some((window) => window.kind === "long")).toBe(false);
+  });
 });
 
 describe("forgetQuota", () => {
