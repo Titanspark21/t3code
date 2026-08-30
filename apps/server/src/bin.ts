@@ -17,6 +17,7 @@ import { projectCommand } from "./cli/project.ts";
 import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
+import { themeCommand } from "./cli/theme.ts";
 import { triageCommand } from "./cli/triage.ts";
 import { runAntigravityAcpBridge } from "./provider/acp/AntigravityAcpBridge.ts";
 
@@ -64,6 +65,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       projectCommand,
       serviceCommand,
       servicePreflightCommand,
+      themeCommand,
       triageCommand,
       antigravityAcpBridgeCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
