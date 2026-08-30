@@ -157,9 +157,10 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Handed back — unfinished work an agent stopped on
 
-- [ ] **Continue the prior T3CODE-081 request: add durable scheduled tasks that let users choose model, prompt, time, and both C** — handed back on 2026-08-30 by t3code-5. <!-- job:6344cf12 -->
+- [ ] **Continue the prior T3CODE-081 request: add durable scheduled tasks that let users choose model, prompt, time, and both C** — handed back on 2026-08-30 by t3code-7. <!-- job:6344cf12 -->
       Its work is on branch `agent/6344cf12-continue-the-prior-t3code-081-requ` and its checkout was kept.
       The ChatGPT generation ended before finish_job. Resume from the preserved branch and inspect existing commits first.
+
 
 - [ ] **Work in the T3 code fork. Inspect the existing implementation and plan before editing. Implement and test: (1) make Anti** — handed back on 2026-08-30 by t3code-2. <!-- job:97d3e0e5 -->
       Its work is on branch `agent/97d3e0e5-work-in-the-t3-code-fork-inspect-t` and its checkout was kept.
