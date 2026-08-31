@@ -14,10 +14,25 @@ import {
   antigravityAggregateResetLabel,
   antigravityQuotaWindow,
   averageAntigravityQuotaWindow,
+  groupAccountsByIdentity,
   groupQuotaPanelAccounts,
   quotaWindowForKind,
 } from "./quotaAggregation";
 import { ProviderQuotaTooltip } from "./ProviderQuotaTooltip";
+
+/**
+ * One grid template for every row in the panel.
+ *
+ * The three row kinds — Codex/Claude, the Antigravity aggregate, and the
+ * expanded per-account rows — previously each declared their own columns, so
+ * their figures did not line up and the metrics were pinned to a narrow fixed
+ * width regardless of how much room the sidebar had. The metric columns are
+ * fractional so they grow with the panel; the trailing column reserves the
+ * disclosure chevron's width on rows that do not have one, which is what keeps
+ * the three kinds aligned with each other.
+ */
+const QUOTA_ROW_GRID =
+  "grid grid-cols-[minmax(0,1.15fr)_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_0.75rem] items-center gap-2";
 
 interface QuotaPanelAccount {
   readonly key: string;
@@ -80,6 +95,18 @@ export const QuotaPanel = memo(function QuotaPanel() {
     [rows],
   );
 
+  // Instances that turn out to be the same Antigravity account collapse into
+  // one entry. Without this the panel repeats a single account's usage once per
+  // configured instance and calls the result several accounts.
+  const antigravityGroups = useMemo(
+    () => groupAccountsByIdentity(antigravityAccounts),
+    [antigravityAccounts],
+  );
+  const antigravityDistinctAccounts = useMemo(
+    () => antigravityGroups.map((group) => group.representative),
+    [antigravityGroups],
+  );
+
   // The quota stream includes its current value, but an account that has
   // never reported still needs one provider read. Do this once per configured
   // account set so opening the sidebar does not repeatedly spawn probes.
@@ -127,15 +154,21 @@ export const QuotaPanel = memo(function QuotaPanel() {
         {antigravityAccounts.length > 0 ? (
           <QuotaSection title="Antigravity">
             <AntigravityAggregateRow
-              accounts={antigravityAccounts}
+              accounts={antigravityDistinctAccounts}
               expanded={antigravityExpanded}
               nowMs={nowMs}
               onToggle={() => setAntigravityExpanded((expanded) => !expanded)}
             />
             {antigravityExpanded ? (
               <div className="mt-1 space-y-1 border-t border-border/50 pt-1">
-                {antigravityAccounts.map((account) => (
-                  <AntigravityAccountRow account={account} key={account.key} nowMs={nowMs} />
+                {antigravityGroups.map((group) => (
+                  <AntigravityAccountRow
+                    account={group.representative}
+                    accountLabel={group.accounts.length > 1 ? group.accountLabel : undefined}
+                    key={group.key}
+                    name={group.accounts.map((account) => account.instance.displayName).join(", ")}
+                    nowMs={nowMs}
+                  />
                 ))}
               </div>
             ) : null}
@@ -166,7 +199,7 @@ const StandardQuotaRow = memo(function StandardQuotaRow({
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[instance.driverKind] ?? null;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-sidebar-accent">
+    <div className={`${QUOTA_ROW_GRID} rounded-md px-1.5 py-1.5 hover:bg-sidebar-accent`}>
       <AccountName account={account} ProviderIcon={ProviderIcon} />
       <QuotaMetric
         label="5h"
@@ -182,6 +215,7 @@ const StandardQuotaRow = memo(function StandardQuotaRow({
         stale={stale}
         window={quotaWindowForKind(snapshot, "long", nowMs)}
       />
+      <span aria-hidden="true" />
     </div>
   );
 
@@ -216,7 +250,7 @@ const AntigravityAggregateRow = memo(function AntigravityAggregateRow({
     <button
       aria-expanded={expanded}
       aria-label={`${expanded ? "Hide" : "Show"} individual Antigravity account limits`}
-      className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_auto] items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={`${QUOTA_ROW_GRID} w-full rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       onClick={onToggle}
       type="button"
     >
@@ -246,17 +280,27 @@ const AntigravityAggregateRow = memo(function AntigravityAggregateRow({
 
 const AntigravityAccountRow = memo(function AntigravityAccountRow({
   account,
+  accountLabel,
+  name,
   nowMs,
 }: {
   account: QuotaPanelAccount;
+  /** Shown only when several instances share this account, to explain the merge. */
+  accountLabel?: string | undefined;
+  name: string;
   nowMs: number;
 }) {
   const snapshot = account.snapshot;
   const stale = snapshot ? isQuotaSnapshotStale(snapshot, nowMs) : false;
   const row = (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2 rounded-md px-1.5 py-1.5">
-      <span className="truncate pl-5 text-[11px] text-muted-foreground">
-        {account.instance.displayName}
+    <div className={`${QUOTA_ROW_GRID} rounded-md px-1.5 py-1.5`}>
+      <span className="min-w-0 pl-5">
+        <span className="block truncate text-[11px] text-muted-foreground">{name}</span>
+        {accountLabel ? (
+          <span className="block truncate text-[9px] leading-tight text-muted-foreground/70">
+            {accountLabel}
+          </span>
+        ) : null}
       </span>
       <QuotaMetric
         label="Gemini"
@@ -270,6 +314,7 @@ const AntigravityAccountRow = memo(function AntigravityAccountRow({
         stale={stale}
         window={antigravityQuotaWindow(snapshot, "claude-gpt", nowMs)}
       />
+      <span aria-hidden="true" />
     </div>
   );
 

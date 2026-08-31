@@ -35,12 +35,14 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import { seedCodexQuotaFromTranscripts } from "./quota/CodexTranscriptQuota.ts";
+import { makeQuotaRefreshLoop } from "./quota/QuotaRefreshLoop.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
 import {
   formatHeadlessServeOutput,
@@ -616,6 +618,10 @@ export const make = (options?: StartupOptions) =>
     const crypto = yield* Crypto.Crypto;
     const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
     const quota = yield* Effect.serviceOption(QuotaService.QuotaService);
+    // Optional so the narrower contexts used by integration tests still build
+    // a startup; the refresh loop simply does not run there.
+    const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
+    const startupProviderService = yield* Effect.serviceOption(ProviderService.ProviderService);
 
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
@@ -662,6 +668,28 @@ export const make = (options?: StartupOptions) =>
               Effect.logWarning("failed to seed Codex quota from transcripts", { cause }),
             ),
           ),
+        );
+      }
+
+      if (
+        Option.isSome(quota) &&
+        Option.isSome(providerRegistry) &&
+        Option.isSome(startupProviderService)
+      ) {
+        // Keeps idle accounts on the panel. Without it the only refresh
+        // triggers are a turn and a user pressing the button, so an account
+        // nobody used today ages out and looks like tracking broke.
+        yield* forkParked(
+          makeQuotaRefreshLoop({
+            listInstanceIds: providerRegistry.value.getProviders.pipe(
+              Effect.map((providers) =>
+                providers.filter((provider) => provider.enabled).map((p) => p.instanceId),
+              ),
+            ),
+            readSummary: quota.value.readSummary,
+            refreshQuota: (instanceId) =>
+              startupProviderService.value.refreshQuota?.(instanceId) ?? Effect.succeed([]),
+          }),
         );
       }
 

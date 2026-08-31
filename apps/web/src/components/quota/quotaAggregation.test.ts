@@ -6,6 +6,7 @@ import {
   antigravityQuotaWindow,
   averageAntigravityQuotaWindow,
   accountQuotaRemainingPercent,
+  groupAccountsByIdentity,
   groupQuotaPanelAccounts,
   quotaWindowForKind,
   summarizeAntigravityQuota,
@@ -163,5 +164,41 @@ describe("quotaAggregation", () => {
     });
     expect(accountQuotaRemainingPercent(stale, NOW)).toBeUndefined();
     expect(accountQuotaRemainingPercent(empty, NOW)).toBeUndefined();
+  });
+});
+
+describe("groupAccountsByIdentity", () => {
+  const withAccount = (
+    key: string,
+    accountLabel: string | undefined,
+    observedAt = "2026-08-27T11:00:00.000Z",
+  ): QuotaAggregationAccount => ({
+    ...account(key, {
+      ...snapshot(key, [group("Gemini", 5)], observedAt),
+      ...(accountLabel ? { accountLabel } : {}),
+    }),
+  });
+
+  it("collapses instances that report the same account", () => {
+    const groups = groupAccountsByIdentity([
+      withAccount("agy-1", "one@example.com", "2026-08-27T10:00:00.000Z"),
+      withAccount("agy-2", "one@example.com", "2026-08-27T11:30:00.000Z"),
+      withAccount("agy-3", "two@example.com"),
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.accounts.map((entry) => entry.key)).toEqual(["agy-1", "agy-2"]);
+    // The newest reading represents the shared account.
+    expect(groups[0]?.representative.key).toBe("agy-2");
+    expect(groups[1]?.accounts).toHaveLength(1);
+  });
+
+  it("never merges accounts it cannot identify", () => {
+    const groups = groupAccountsByIdentity([
+      withAccount("agy-1", undefined),
+      withAccount("agy-2", undefined),
+    ]);
+    expect(groups.map((entry) => entry.accounts.length)).toEqual([1, 1]);
+    expect(groups.every((entry) => entry.accountLabel === undefined)).toBe(true);
   });
 });

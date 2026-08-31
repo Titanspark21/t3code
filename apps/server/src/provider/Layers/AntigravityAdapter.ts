@@ -71,6 +71,8 @@ import {
 } from "../acp/AntigravityAcpSupport.ts";
 import { isAntigravityProjectTrustRequest } from "../acp/AntigravityTrust.ts";
 import { isAntigravityRateLimitsMethod } from "../acp/AntigravityRateLimits.ts";
+import { readAntigravityAccountEmail } from "../Drivers/AntigravityAccount.ts";
+import { resolveAntigravityProfileDir } from "../Drivers/AntigravityHome.ts";
 import { readAntigravityUsage } from "./AntigravityProvider.ts";
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
@@ -1064,6 +1066,16 @@ export function makeAntigravityAdapter(
         Effect.provideService(Crypto.Crypto, crypto),
       );
       if (!rateLimits) return undefined;
+      // Which account actually answered. `agy` authenticates from an OS-level
+      // store rather than the profile home, so two instances configured with
+      // different profiles can be the same account; the panel needs to be able
+      // to say that instead of showing one account's usage five times.
+      const environment = options?.environment ?? process.env;
+      const accountHome =
+        resolveAntigravityProfileDir(settings) ?? environment["HOME"] ?? environment["USERPROFILE"];
+      const accountLabel = accountHome
+        ? yield* Effect.promise(() => readAntigravityAccountEmail(accountHome))
+        : undefined;
       const stamp = yield* makeEventStamp();
       return {
         type: "account.rate-limits.updated",
@@ -1072,7 +1084,7 @@ export function makeAntigravityAdapter(
         providerInstanceId: boundInstanceId,
         createdAt: stamp.createdAt,
         threadId: ThreadId.make(`quota-refresh-${boundInstanceId}`),
-        payload: { rateLimits },
+        payload: { rateLimits, ...(accountLabel ? { accountLabel } : {}) },
         providerRefs: {},
       } satisfies ProviderRuntimeEvent;
     });

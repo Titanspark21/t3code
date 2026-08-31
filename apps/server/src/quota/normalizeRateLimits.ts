@@ -389,6 +389,12 @@ export function normalizeAntigravityRateLimits(input: {
     readNonEmptyString(snapshot["plan_type"]) ??
     readNonEmptyString(snapshot["subscriptionType"]) ??
     readNonEmptyString(snapshot["subscription_type"]);
+  const accountLabel =
+    readNonEmptyString(input.payload["accountLabel"]) ??
+    readNonEmptyString(snapshot["accountLabel"]) ??
+    readNonEmptyString(snapshot["account"]) ??
+    readNonEmptyString(snapshot["email"]);
+
   return {
     providerInstanceId: input.providerInstanceId,
     groups,
@@ -396,6 +402,7 @@ export function normalizeAntigravityRateLimits(input: {
     observedAt: input.observedAt,
     ...(planType ? { planType } : {}),
     ...(limitReached ? { limitReached } : {}),
+    ...(accountLabel ? { accountLabel } : {}),
   };
 }
 
@@ -452,5 +459,10 @@ export function mergeQuotaSnapshots(
       ? { planType: next.planType ?? previous.planType! }
       : {}),
     ...(next.limitReached ? { limitReached: next.limitReached } : {}),
+    // Account identity is not published on every update; keeping the last known
+    // one stops a sparse refresh from ungrouping instances that share it.
+    ...((next.accountLabel ?? previous.accountLabel)
+      ? { accountLabel: next.accountLabel ?? previous.accountLabel! }
+      : {}),
   };
 }

@@ -104,6 +104,14 @@ export const AccountQuotaSnapshot = Schema.Struct({
   /** Provider's plan name where published, e.g. "pro". Display only. */
   planType: Schema.optional(TrimmedNonEmptyString),
   /**
+   * The account this instance is signed in as, where the provider tells us.
+   *
+   * Present so the UI can collapse instances that turn out to share one
+   * account instead of repeating a single account's usage once per instance —
+   * which reads as several accounts all coincidentally at the same percentage.
+   */
+  accountLabel: Schema.optional(TrimmedNonEmptyString),
+  /**
    * Set when the provider says a limit is currently reached, carrying its own
    * reason string. Presence — not a percentage — is what drives the
    * rate-limited state, because a window can report 100% and still accept work,

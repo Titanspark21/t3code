@@ -114,6 +114,56 @@ function freshAntigravityQuotaWindows(
 }
 
 /**
+ * One distinct account, plus every configured instance pointing at it.
+ *
+ * Antigravity instances are isolated by profile directory, but `agy`
+ * authenticates from an OS-level credential store, so several instances can
+ * turn out to be the same account. Grouping by the account the provider
+ * reported stops the panel from showing one account's usage once per instance
+ * — five identical rows read as five accounts that happen to match exactly.
+ */
+export interface QuotaAccountGroup<TAccount extends QuotaAggregationAccount> {
+  readonly key: string;
+  readonly accounts: ReadonlyArray<TAccount>;
+  /** Present only when the provider told us which account this is. */
+  readonly accountLabel: string | undefined;
+  /** Representative account: the one with the newest snapshot. */
+  readonly representative: TAccount;
+}
+
+/**
+ * Collapse instances that report the same account.
+ *
+ * An instance whose account is unknown is always its own group: without an
+ * identity there is no evidence it shares anything, and merging on a guess
+ * would hide a real account.
+ */
+export function groupAccountsByIdentity<TAccount extends QuotaAggregationAccount>(
+  accounts: ReadonlyArray<TAccount>,
+): ReadonlyArray<QuotaAccountGroup<TAccount>> {
+  const groups = new Map<string, { accounts: TAccount[]; accountLabel: string | undefined }>();
+
+  for (const account of accounts) {
+    const accountLabel = account.snapshot?.accountLabel?.trim();
+    const key = accountLabel ? `account:${accountLabel.toLocaleLowerCase()}` : `row:${account.key}`;
+    const existing = groups.get(key);
+    if (existing) existing.accounts.push(account);
+    else groups.set(key, { accounts: [account], accountLabel });
+  }
+
+  return [...groups.entries()].map(([key, group]) => ({
+    key,
+    accounts: group.accounts,
+    accountLabel: group.accountLabel,
+    representative: group.accounts.reduce((left, right) =>
+      latestSnapshot(left.snapshot, right.snapshot) === right.snapshot && right.snapshot
+        ? right
+        : left,
+    ),
+  }));
+}
+
+/**
  * Keep one row per configured account label across all connected environments.
  *
  * Provider instance ids are routing keys inside one environment. The same
