@@ -37,6 +37,25 @@ interface AgyModelState {
   readonly currentModelId: string;
 }
 
+/**
+ * How long a running turn may go without producing a single stream event.
+ *
+ * A real coding turn is mostly silence: `agy` emits nothing while a build, a
+ * test run or a long tool call is in flight. The previous two-minute budget
+ * cancelled those turns mid-flight and surfaced as the answer simply never
+ * arriving, so this tracks the CLI's own five-minute print timeout with room
+ * to spare rather than guessing at model latency.
+ */
+const STREAM_IDLE_TIMEOUT_MS = positiveEnvInteger("AGY_STREAM_IDLE_TIMEOUT_MS") ?? 900_000;
+
+/** Startup is not silent, so it keeps the shorter budget. */
+const SESSION_START_TIMEOUT_MS = positiveEnvInteger("AGY_SESSION_START_TIMEOUT_MS") ?? 120_000;
+
+function positiveEnvInteger(name: string): number | undefined {
+  const parsed = Number.parseInt(NodeProcess.env[name]?.trim() ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -191,18 +210,52 @@ async function runStandaloneCommand(cwd: string, command: string): Promise<strin
   return result.stdout.trim() || result.stderr.trim() || "Antigravity command completed.";
 }
 
+/**
+ * Arguments for one streaming `agy` child.
+ *
+ * `--add-dir` is the load-bearing one. Without it `agy` works out of a scratch
+ * directory under its profile home instead of the thread's workspace: it never
+ * sees the project, its own permission check denies every path outside that
+ * scratch, and the turn still reports success having changed nothing. Chat-shaped
+ * prompts answer normally under that failure, which is what made it look like
+ * only "real" coding prompts were broken.
+ */
+export function antigravityStreamArgs(input: {
+  readonly cwd: string;
+  readonly model?: string;
+  readonly conversationId?: string;
+  readonly mode?: string;
+}): ReadonlyArray<string> {
+  return [
+    "--output-format",
+    "stream-json",
+    "--input-format",
+    "stream-json",
+    "--add-dir",
+    input.cwd,
+    ...(input.model ? ["--model", input.model] : []),
+    ...(input.conversationId ? ["--conversation", input.conversationId] : []),
+    ...(input.mode === "accept-edits" || input.mode === "plan" ? ["--mode", input.mode] : []),
+  ];
+}
+
 class AgySession {
   sessionId: string;
   readonly cwd: string;
   child!: NodeChildProcess.ChildProcessWithoutNullStreams;
   lines!: NodeReadline.Interface;
   modelState: AgyModelState;
+  /** Tool calls already announced this turn, so repeats become updates. */
+  readonly announcedToolCalls = new Set<string>();
+  private turnIndex = 0;
+  private syntheticToolIndex = 0;
   private readonly queuedEvents: AgyEvent[] = [];
   private readonly waiters: Array<{
     readonly resolve: (event: AgyEvent) => void;
     readonly reject: (error: Error) => void;
   }> = [];
   private closed = false;
+  private disposed = false;
   private exited = false;
   private processGeneration = 0;
   private conversationId: string | undefined;
@@ -223,15 +276,12 @@ class AgySession {
     this.exited = false;
     this.child = NodeChildProcess.spawn(
       binary,
-      [
-        "--output-format",
-        "stream-json",
-        "--input-format",
-        "stream-json",
-        ...(model ? ["--model", model] : []),
-        ...(conversationId ? ["--conversation", conversationId] : []),
-        ...(mode === "accept-edits" || mode === "plan" ? ["--mode", mode] : []),
-      ],
+      antigravityStreamArgs({
+        cwd: this.cwd,
+        ...(model ? { model } : {}),
+        ...(conversationId ? { conversationId } : {}),
+        ...(mode ? { mode } : {}),
+      }),
       {
         cwd: this.cwd,
         env: NodeProcess.env,
@@ -279,7 +329,7 @@ class AgySession {
     for (const waiter of this.waiters.splice(0)) waiter.reject(error);
   }
 
-  nextEvent(milliseconds = 120_000): Promise<AgyEvent> {
+  nextEvent(milliseconds = STREAM_IDLE_TIMEOUT_MS): Promise<AgyEvent> {
     if (this.queuedEvents.length > 0) return Promise.resolve(this.queuedEvents.shift()!);
     if (this.closed) return Promise.reject(new Error("Antigravity CLI session is closed."));
     return timeout(
@@ -289,16 +339,45 @@ class AgySession {
     );
   }
 
-  sendPrompt(text: string): void {
+  /**
+   * Scope tool call ids to one turn. `agy` numbers its steps per conversation,
+   * but a resumed conversation restarts them, and a reused id would edit the
+   * previous turn's row instead of opening a new one.
+   */
+  beginTurn(): void {
+    this.turnIndex += 1;
+    this.syntheticToolIndex = 0;
+    this.announcedToolCalls.clear();
+  }
+
+  toolCallId(stepIndex: number | undefined): string {
+    const index = stepIndex ?? `x${(this.syntheticToolIndex += 1)}`;
+    return `agy-tool-${this.turnIndex}-${index}`;
+  }
+
+  /**
+   * Write one turn to the CLI, restarting it first when the previous turn left
+   * it dead.
+   *
+   * `agy` exits on some errors, and the conversation id survives it, so a
+   * resumed child keeps the history. Refusing the prompt instead would strand
+   * the thread: every later message in it would fail the same way with no way
+   * back short of a new thread.
+   */
+  async sendPrompt(text: string): Promise<void> {
+    if (this.disposed) throw new Error("Antigravity CLI session is closed.");
     if (this.closed || !this.child.stdin.writable) {
-      throw new Error("Antigravity CLI session is closed.");
+      this.closed = false;
+      this.queuedEvents.splice(0);
+      this.startChild(this.conversationId);
+      await this.waitForInit();
     }
     this.child.stdin.write(`${JSON.stringify({ event: "user", message: { content: text } })}\n`);
   }
 
   async waitForInit(): Promise<void> {
     for (;;) {
-      const event = await this.nextEvent();
+      const event = await this.nextEvent(SESSION_START_TIMEOUT_MS);
       if (event.event === "init") {
         this.conversationId = stringValue(event.conversation_id) ?? this.conversationId;
         return;
@@ -345,7 +424,8 @@ class AgySession {
   }
 
   close(): void {
-    if (this.closed) return;
+    if (this.disposed) return;
+    this.disposed = true;
     this.closed = true;
     this.lines.close();
     this.child.stdin.destroy();
@@ -408,6 +488,104 @@ function resultUsage(result: JsonRecord): JsonRecord | undefined {
   return { inputTokens, outputTokens, totalTokens };
 }
 
+/**
+ * ACP tool kind for an `agy` tool name.
+ *
+ * Only affects the icon and grouping a client picks, so unknown tools degrade
+ * to `other` rather than being dropped.
+ */
+export function toolKind(toolName: string): string {
+  const name = toolName.toLowerCase();
+  if (name.startsWith("browser_") || name.includes("url") || name.includes("web")) return "fetch";
+  if (name.includes("delete") || name.includes("remove")) return "delete";
+  if (name.includes("write") || name.includes("edit") || name.includes("replace")) return "edit";
+  if (name.includes("command") || name.includes("terminal") || name.includes("run")) {
+    return "execute";
+  }
+  if (name.includes("search") || name.includes("find") || name.includes("grep")) return "search";
+  if (name.includes("view") || name.includes("read") || name.includes("list")) return "read";
+  return "other";
+}
+
+const TOOL_PATH_PARAMETERS = [
+  "TargetFile",
+  "AbsolutePath",
+  "DirectoryPath",
+  "SearchDirectory",
+  "Path",
+  "File",
+];
+
+function toolPath(parameters: JsonRecord): string | undefined {
+  for (const key of TOOL_PATH_PARAMETERS) {
+    const value = stringValue(parameters[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/** Human title for the tool row: the tool plus the one detail worth reading. */
+export function toolTitle(toolName: string, parameters: JsonRecord): string {
+  const command = stringValue(parameters["CommandLine"]);
+  if (command) return command;
+  const path = toolPath(parameters);
+  return path ? `${toolName} ${path}` : toolName;
+}
+
+export function toolStatus(state: string | undefined): string {
+  switch (state) {
+    case "ACTIVE":
+      return "in_progress";
+    case "DONE":
+      return "completed";
+    case "ERROR":
+    case "FAILED":
+      return "failed";
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * Translate one `agy` tool step into an ACP tool call.
+ *
+ * `agy` reports the same `step_index` for the start and the end of a tool, so
+ * the first report opens the call and later ones update it. Without this the
+ * client sees an idle spinner for the whole working part of a turn and then a
+ * bare answer, which reads as the turn having done nothing.
+ */
+function emitToolUpdate(session: AgySession, step: JsonRecord): void {
+  const toolName = stringValue(step.tool_name) ?? "tool";
+  const toolCallId = session.toolCallId(numberValue(step.step_index));
+  const info = isRecord(step.tool_info) ? step.tool_info : {};
+  const parameters = isRecord(info.parameters) ? info.parameters : {};
+  const path = toolPath(parameters);
+  const output = stringValue(info.output);
+  const error = isRecord(info.error) ? stringValue(info.error.message) : undefined;
+  const detail = error ?? output;
+  const isNew = !session.announcedToolCalls.has(toolCallId);
+  session.announcedToolCalls.add(toolCallId);
+
+  writeJson({
+    method: "session/update",
+    params: {
+      sessionId: session.sessionId,
+      update: {
+        sessionUpdate: isNew ? "tool_call" : "tool_call_update",
+        toolCallId,
+        title: toolTitle(toolName, parameters),
+        kind: toolKind(toolName),
+        status: toolStatus(stringValue(step.state)),
+        rawInput: parameters,
+        ...(path ? { locations: [{ path }] } : {}),
+        ...(detail
+          ? { content: [{ type: "content", content: { type: "text", text: detail } }] }
+          : {}),
+      },
+    },
+  });
+}
+
 async function promptSession(session: AgySession, params: unknown): Promise<JsonRecord> {
   const text = promptText(params);
   if (!text) throw new Error("Antigravity ACP bridge received an empty prompt.");
@@ -439,34 +617,39 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
     };
   }
 
-  session.sendPrompt(text);
+  session.beginTurn();
+  await session.sendPrompt(text);
   let emittedText = false;
 
   for (;;) {
     const event = await session.nextEvent();
     const step = isRecord(event.step_update) ? event.step_update : undefined;
     if (step) {
+      const stepType = stringValue(step.step_type);
       const delta = stringValue(step.text_delta);
       if (delta) {
-        emittedText = true;
+        const thought = stepType === "thinking" || stepType === "reasoning";
+        if (!thought) emittedText = true;
         writeJson({
           method: "session/update",
           params: {
             sessionId: session.sessionId,
             update: {
-              sessionUpdate: "agent_message_chunk",
+              sessionUpdate: thought ? "agent_thought_chunk" : "agent_message_chunk",
               content: { type: "text", text: delta },
             },
           },
         });
       }
+      if (stepType === "tool") emitToolUpdate(session, step);
       continue;
     }
 
     const result = isRecord(event.result) ? event.result : undefined;
     if (!result) continue;
     const status = stringValue(result.status);
-    const response = stringValue(result.response);
+    const failure = isRecord(result.error) ? stringValue(result.error.message) : undefined;
+    const response = stringValue(result.response) ?? failure;
     if (response && !emittedText) {
       writeJson({
         method: "session/update",
