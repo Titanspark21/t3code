@@ -112,6 +112,8 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
+import * as ScheduledTaskRunner from "./scheduledTasks/ScheduledTaskRunner.ts";
+import * as ScheduledTaskStore from "./scheduledTasks/ScheduledTaskStore.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -175,6 +177,14 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
 const QuotaLayerLive = QuotaService.layer;
+
+/**
+ * Scheduled tasks: the store is plain state, the runner needs the
+ * orchestration engine because a run is an ordinary thread turn.
+ */
+const ScheduledTaskLayerLive = ScheduledTaskRunner.layer.pipe(
+  Layer.provideMerge(ScheduledTaskStore.layer),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   ResourceTelemetryLayerLive,
@@ -429,7 +439,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   ),
 );
 
-const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
+const RuntimeDependenciesBaseLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.
   Layer.provideMerge(BackgroundLayerLive),
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
@@ -441,6 +451,15 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
+);
+
+/**
+ * The scheduler consumes the assembled runtime rather than provisioning it: a
+ * run is an ordinary orchestration dispatch, so it needs the engine that the
+ * core layers build.
+ */
+const RuntimeDependenciesLive = ScheduledTaskLayerLive.pipe(
+  Layer.provideMerge(RuntimeDependenciesBaseLive),
 );
 
 const commandReadinessLayer = HttpRouter.middleware(

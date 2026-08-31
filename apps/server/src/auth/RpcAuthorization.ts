@@ -47,6 +47,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverRetryResourceTelemetry]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetUsageSummary]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetQuota]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverListScheduledTasks]: AuthOrchestrationReadScope,
+  // Saving or firing a scheduled task starts real agent turns on this machine.
+  [WS_METHODS.serverSaveScheduledTask]: AuthOrchestrationOperateScope,
+  [WS_METHODS.serverDeleteScheduledTask]: AuthOrchestrationOperateScope,
+  [WS_METHODS.serverRunScheduledTask]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverSignalProcess]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.serverReportHostPowerState]: AuthOrchestrationOperateScope,

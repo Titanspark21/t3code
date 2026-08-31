@@ -26,6 +26,10 @@
     "./antigravity": {
       "types": "./src/antigravity.ts",
       "import": "./src/antigravity.ts"
+    },
+    "./scheduledTasks": {
+      "types": "./src/scheduledTasks.ts",
+      "import": "./src/scheduledTasks.ts"
     }
   },
   "scripts": {

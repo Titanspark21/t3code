@@ -194,6 +194,7 @@ import {
 } from "./resourceTelemetry.ts";
 import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { QuotaSummary } from "./quota.ts";
+import { ScheduledTaskDraft, ScheduledTaskId, ScheduledTaskList } from "./scheduledTasks.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -293,6 +294,10 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
   serverGetQuota: "server.getQuota",
+  serverListScheduledTasks: "server.listScheduledTasks",
+  serverSaveScheduledTask: "server.saveScheduledTask",
+  serverDeleteScheduledTask: "server.deleteScheduledTask",
+  serverRunScheduledTask: "server.runScheduledTask",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -459,6 +464,36 @@ export const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSumm
 export const WsServerGetQuotaRpc = Rpc.make(WS_METHODS.serverGetQuota, {
   payload: Schema.Struct({}),
   success: QuotaSummary,
+  error: EnvironmentAuthorizationError,
+});
+
+/**
+ * Scheduled tasks are environment-owned: the machine running the server holds
+ * the clock, so every mutation round-trips and answers with the full list
+ * rather than letting a client keep its own copy in step.
+ */
+export const WsServerListScheduledTasksRpc = Rpc.make(WS_METHODS.serverListScheduledTasks, {
+  payload: Schema.Struct({}),
+  success: ScheduledTaskList,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerSaveScheduledTaskRpc = Rpc.make(WS_METHODS.serverSaveScheduledTask, {
+  payload: Schema.Struct({ task: ScheduledTaskDraft }),
+  success: ScheduledTaskList,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerDeleteScheduledTaskRpc = Rpc.make(WS_METHODS.serverDeleteScheduledTask, {
+  payload: Schema.Struct({ id: ScheduledTaskId }),
+  success: ScheduledTaskList,
+  error: EnvironmentAuthorizationError,
+});
+
+/** Run a task now, ignoring its schedule. The list comes back with the result. */
+export const WsServerRunScheduledTaskRpc = Rpc.make(WS_METHODS.serverRunScheduledTask, {
+  payload: Schema.Struct({ id: ScheduledTaskId }),
+  success: ScheduledTaskList,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1061,6 +1096,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
   WsServerGetQuotaRpc,
+  WsServerListScheduledTasksRpc,
+  WsServerSaveScheduledTaskRpc,
+  WsServerDeleteScheduledTaskRpc,
+  WsServerRunScheduledTaskRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,

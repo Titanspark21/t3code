@@ -126,6 +126,8 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
+import * as ScheduledTaskRunner from "./scheduledTasks/ScheduledTaskRunner.ts";
+import * as ScheduledTaskStore from "./scheduledTasks/ScheduledTaskStore.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -555,6 +557,8 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const quota = yield* QuotaService.QuotaService;
+      const scheduledTasks = yield* ScheduledTaskStore.ScheduledTaskStore;
+      const scheduledTaskRunner = yield* ScheduledTaskRunner.ScheduledTaskRunner;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1784,6 +1788,32 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetQuota, quota.readSummary, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverListScheduledTasks]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListScheduledTasks,
+            scheduledTasks.list.pipe(Effect.map((tasks) => ({ tasks }))),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSaveScheduledTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSaveScheduledTask,
+            scheduledTasks.save(input.task).pipe(Effect.map((tasks) => ({ tasks }))),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverDeleteScheduledTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverDeleteScheduledTask,
+            scheduledTasks.remove(input.id).pipe(Effect.map((tasks) => ({ tasks }))),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverRunScheduledTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverRunScheduledTask,
+            scheduledTaskRunner
+              .runNow(input.id)
+              .pipe(Effect.andThen(scheduledTasks.list.pipe(Effect.map((tasks) => ({ tasks }))))),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {
             "rpc.aggregate": "server",

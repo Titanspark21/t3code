@@ -43,6 +43,7 @@ import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import { seedCodexQuotaFromTranscripts } from "./quota/CodexTranscriptQuota.ts";
 import { makeQuotaRefreshLoop } from "./quota/QuotaRefreshLoop.ts";
+import * as ScheduledTaskRunner from "./scheduledTasks/ScheduledTaskRunner.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
 import {
   formatHeadlessServeOutput,
@@ -621,6 +622,9 @@ export const make = (options?: StartupOptions) =>
     // Optional so the narrower contexts used by integration tests still build
     // a startup; the refresh loop simply does not run there.
     const providerRegistry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
+    const scheduledTaskRunner = yield* Effect.serviceOption(
+      ScheduledTaskRunner.ScheduledTaskRunner,
+    );
     const startupProviderService = yield* Effect.serviceOption(ProviderService.ProviderService);
 
     const commandGate = yield* makeCommandGate;
@@ -691,6 +695,10 @@ export const make = (options?: StartupOptions) =>
               startupProviderService.value.refreshQuota?.(instanceId) ?? Effect.succeed([]),
           }),
         );
+      }
+
+      if (Option.isSome(scheduledTaskRunner)) {
+        yield* forkParked(scheduledTaskRunner.value.loop);
       }
 
       yield* Effect.logDebug("startup phase: parking orchestration roots at activation");

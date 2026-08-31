@@ -125,6 +125,8 @@ import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as QuotaService from "./quota/QuotaService.ts";
+import * as ScheduledTaskRunner from "./scheduledTasks/ScheduledTaskRunner.ts";
+import * as ScheduledTaskStore from "./scheduledTasks/ScheduledTaskStore.ts";
 import { ProviderAdapterRequestError } from "./provider/Errors.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -872,6 +874,8 @@ const buildAppUnderTest = (options?: {
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(QuotaService.layerTest),
+      Layer.provide(ScheduledTaskRunner.layerTest),
+      Layer.provide(ScheduledTaskStore.layerTest),
       Layer.provide(
         Layer.mock(AnalyticsService.AnalyticsService)({
           record: () => Effect.void,

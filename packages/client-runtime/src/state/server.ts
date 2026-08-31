@@ -779,6 +779,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetQuota,
       staleTimeMs: 0,
     }),
+    scheduledTasks: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-tasks",
+      tag: WS_METHODS.serverListScheduledTasks,
+      staleTimeMs: 0,
+    }),
     quota: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:quota",
       tag: WS_METHODS.subscribeQuota,
@@ -817,6 +822,24 @@ export function createServerEnvironmentAtoms<R, E>(
     removeKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:remove-keybinding",
       tag: WS_METHODS.serverRemoveKeybinding,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    saveScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:save-scheduled-task",
+      tag: WS_METHODS.serverSaveScheduledTask,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    deleteScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:delete-scheduled-task",
+      tag: WS_METHODS.serverDeleteScheduledTask,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    runScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:run-scheduled-task",
+      tag: WS_METHODS.serverRunScheduledTask,
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
