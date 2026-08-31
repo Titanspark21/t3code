@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off - local wall-clock schedules are the thing under test.
 import { describe, expect, it } from "vite-plus/test";
 
 import { ProjectId } from "./baseSchemas.ts";
