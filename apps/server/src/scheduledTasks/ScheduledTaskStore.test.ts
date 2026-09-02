@@ -52,6 +52,17 @@ it.layer(NodeServices.layer)("ScheduledTaskStore", (it) => {
     Effect.gen(function* () {
       const store = yield* ScheduledTaskStore.ScheduledTaskStore;
       const [task] = yield* store.save(draft());
+      const run = yield* store.startRun(task!.id, "manual");
+      expect(run?.targets[0]?.status).toBe("starting");
+      yield* store.updateRunTarget(task!.id, run!.id, 0, {
+        threadId: "thread-scheduled-1",
+        status: "completed",
+        durationMs: 12_345,
+      });
+      yield* store.updateRun(task!.id, run!.id, {
+        status: "completed",
+        completedAt: "2026-08-31T05:00:30.000Z",
+      });
       yield* store.recordRun(task!.id, {
         at: "2026-08-31T05:00:00.000Z",
         outcome: "started",
@@ -62,6 +73,7 @@ it.layer(NodeServices.layer)("ScheduledTaskStore", (it) => {
         draft({ id: task!.id, schedule: { timeOfDay: "06:30", daysOfWeek: [1, 3] } }),
       );
       expect(edited?.lastRun?.at).toBe("2026-08-31T05:00:00.000Z");
+      expect(edited?.runHistory?.[0]?.targets[0]?.threadId).toBe("thread-scheduled-1");
 
       // A second store over the same state directory reads back what was
       // written, which is what a server restart does.

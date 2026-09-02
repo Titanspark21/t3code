@@ -17,7 +17,7 @@ import type {
 } from "@t3tools/contracts/scheduledTasks";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
@@ -98,6 +98,16 @@ export function useScheduledTasks(): ScheduledTasksView {
     },
     [refresh],
   );
+
+  // Runs finish asynchronously in the server. Refresh while this settings
+  // page is open so the history changes from "Running" to its final metrics
+  // without making the user leave and re-enter the page.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      for (const environment of environments) refresh(environment.environmentId);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [environments, refresh]);
 
   return useMemo(
     () => ({ environments, save, remove, runNow }),

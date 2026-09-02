@@ -17,12 +17,16 @@ import {
   nextScheduledRunAt,
   type ScheduledTask,
   type ScheduledTaskDraft,
+  type ScheduledTaskRun,
   type ScheduledTaskTarget,
 } from "@t3tools/contracts/scheduledTasks";
-import { PlayIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
+import { Link } from "@tanstack/react-router";
+import { ChevronDownIcon, ExternalLinkIcon, PlayIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { deriveProviderInstanceEntries } from "../../providerInstances";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useScheduledTasks } from "../../state/scheduledTasks";
@@ -30,6 +34,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
+import { toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -78,11 +83,26 @@ function describeSchedule(task: ScheduledTask): string {
   return `${task.schedule.timeOfDay} · ${days}`;
 }
 
-function describeLastRun(task: ScheduledTask): string {
-  if (!task.lastRun) return "Never run";
-  const when = new Date(task.lastRun.at).toLocaleString();
-  const detail = task.lastRun.detail ? ` — ${task.lastRun.detail}` : "";
-  return `Last run ${when}: ${task.lastRun.outcome}${detail}`;
+function formatRunDuration(durationMs: number | undefined): string {
+  if (durationMs === undefined || !Number.isFinite(durationMs)) return "duration unavailable";
+  if (durationMs < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
+  const seconds = Math.round(durationMs / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
+
+function formatRunStatus(run: ScheduledTaskRun): string {
+  switch (run.status) {
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "skipped":
+      return "Skipped";
+  }
 }
 
 export function ScheduledTasksSettingsPanel() {
@@ -158,6 +178,17 @@ function EnvironmentScheduledTasks({
       } as ScheduledTaskDraft;
       await scheduled.save(environmentId, payload);
       setDraft(null);
+      toastManager.add({
+        type: "success",
+        title: draft.id ? "Scheduled task saved" : "Scheduled task created",
+        description: "It remains listed here and will run on the environment’s local clock.",
+      });
+    } catch (error: unknown) {
+      toastManager.add({
+        type: "error",
+        title: "Could not save scheduled task",
+        description: error instanceof Error ? error.message : "The task was not saved.",
+      });
     } finally {
       setBusy(false);
     }
@@ -180,59 +211,84 @@ function EnvironmentScheduledTasks({
       </div>
 
       {tasks.length === 0 && draft === null ? (
-        <p className="text-xs text-muted-foreground">No scheduled tasks on this environment.</p>
+        <p className="text-xs text-muted-foreground">
+          {scheduled.environments.find((entry) => entry.environmentId === environmentId)?.isPending
+            ? "Loading saved tasks…"
+            : "No scheduled tasks on this environment."}
+        </p>
       ) : null}
 
       <ul className="space-y-2">
         {tasks.map((task) => (
-          <li
-            className="flex items-start justify-between gap-3 rounded-md border border-border/50 p-2"
-            key={task.id}
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm">
-                {task.name}
-                {task.enabled ? null : (
-                  <span className="ml-2 text-[11px] text-muted-foreground">(disabled)</span>
-                )}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {describeSchedule(task)} · {task.targets.length} account
-                {task.targets.length === 1 ? "" : "s"}
-              </p>
-              <p className="truncate text-[11px] text-muted-foreground/80">
-                {describeLastRun(task)} · Next{" "}
-                {new Date(nextScheduledRunAt(task.schedule, Date.now())).toLocaleString()}
-              </p>
+          <li className="space-y-3 rounded-md border border-border/50 p-3" key={task.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm">
+                  {task.name}
+                  {task.enabled ? null : (
+                    <span className="ml-2 text-[11px] text-muted-foreground">(disabled)</span>
+                  )}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {describeSchedule(task)} · {task.targets.length} account
+                  {task.targets.length === 1 ? "" : "s"}
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground/80">
+                  Next {new Date(nextScheduledRunAt(task.schedule, Date.now())).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  aria-label={`Run ${task.name} now`}
+                  onClick={() => {
+                    void scheduled
+                      .runNow(environmentId, task.id)
+                      .then(() =>
+                        toastManager.add({
+                          type: "success",
+                          title: "Task started",
+                          description: `${task.name} is running. Its chats will appear in run history below.`,
+                        }),
+                      )
+                      .catch((error: unknown) =>
+                        toastManager.add({
+                          type: "error",
+                          title: "Could not start task",
+                          description:
+                            error instanceof Error ? error.message : "Run failed to start.",
+                        }),
+                      );
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <PlayIcon className="size-3.5" />
+                </Button>
+                <Button
+                  onClick={() => setDraft(draftFromTask(task))}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Edit
+                </Button>
+                <Button
+                  aria-label={`Delete ${task.name}`}
+                  onClick={() => void scheduled.remove(environmentId, task.id)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                aria-label={`Run ${task.name} now`}
-                onClick={() => void scheduled.runNow(environmentId, task.id)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <PlayIcon className="size-3.5" />
-              </Button>
-              <Button
-                onClick={() => setDraft(draftFromTask(task))}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Edit
-              </Button>
-              <Button
-                aria-label={`Delete ${task.name}`}
-                onClick={() => void scheduled.remove(environmentId, task.id)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            </div>
+            <TaskRunHistory
+              environmentId={environmentId}
+              providerInstances={providerInstances}
+              runs={task.runHistory ?? []}
+            />
           </li>
         ))}
       </ul>
@@ -351,6 +407,105 @@ function EnvironmentScheduledTasks({
   );
 }
 
+function TaskRunHistory({
+  environmentId,
+  providerInstances,
+  runs,
+}: {
+  environmentId: EnvironmentId;
+  providerInstances: ReturnType<typeof deriveProviderInstanceEntries>;
+  runs: ReadonlyArray<ScheduledTaskRun>;
+}) {
+  const providerNames = useMemo(
+    () => new Map(providerInstances.map((instance) => [instance.instanceId, instance.displayName])),
+    [providerInstances],
+  );
+
+  if (runs.length === 0) {
+    return (
+      <div className="rounded-md bg-sidebar-accent/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+        No runs yet. When this task runs, each provider chat and its measured usage will stay here.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md bg-sidebar-accent/30 p-2.5">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p className="text-xs font-medium">Run history</p>
+        <span className="text-[11px] text-muted-foreground">{runs.length} saved</span>
+      </div>
+      <ul className="space-y-1">
+        {runs.map((run) => (
+          <li key={run.id}>
+            <details className="group rounded-md border border-border/40 bg-background/35">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-xs [&::-webkit-details-marker]:hidden">
+                <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                <span className="font-medium">{formatRunStatus(run)}</span>
+                <span className="text-muted-foreground">
+                  {new Date(run.startedAt).toLocaleString()} · {run.trigger}
+                </span>
+                <span className="ml-auto text-muted-foreground">
+                  {run.targets.length} provider{run.targets.length === 1 ? "" : "s"}
+                </span>
+              </summary>
+              <div className="space-y-2 border-t border-border/40 px-2 py-2">
+                {run.detail ? (
+                  <p className="text-[11px] text-muted-foreground">{run.detail}</p>
+                ) : null}
+                <ul className="space-y-1.5">
+                  {run.targets.map((target) => {
+                    const name = providerNames.get(target.instanceId) ?? String(target.instanceId);
+                    return (
+                      <li
+                        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
+                        key={`${run.id}-${target.instanceId}`}
+                      >
+                        <span className="font-medium">{name}</span>
+                        <span className="text-muted-foreground">{target.model}</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                          {target.status}
+                        </span>
+                        {target.durationMs !== undefined ? (
+                          <span className="text-muted-foreground">
+                            agent time {formatRunDuration(target.durationMs)}
+                          </span>
+                        ) : null}
+                        {target.quota5h ? (
+                          <span className="text-muted-foreground">
+                            5h after: {Math.round(target.quota5h.usedPercent)}% used ·{" "}
+                            {Math.round(target.quota5h.remainingPercent)}% left
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">5h usage unavailable</span>
+                        )}
+                        {target.threadId ? (
+                          <Button
+                            render={
+                              <Link
+                                params={{ environmentId, threadId: target.threadId }}
+                                to="/$environmentId/$threadId"
+                              />
+                            }
+                            size="xs"
+                            variant="outline"
+                          >
+                            <ExternalLinkIcon className="size-3" /> Open chat
+                          </Button>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * One row per configured provider instance: tick the accounts to send to, and
  * pick each one's model. Models are per account because running the same
@@ -365,7 +520,7 @@ function TargetPicker({
   onChange: (targets: ReadonlyArray<ScheduledTaskTarget>) => void;
   targets: ReadonlyArray<ScheduledTaskTarget>;
 }) {
-  const selected = new Map(targets.map((target) => [target.instanceId, target.model]));
+  const selected = new Map(targets.map((target) => [target.instanceId, target]));
 
   const toggle = (instanceId: ProviderInstanceId, models: ReadonlyArray<{ slug: string }>) => {
     if (selected.has(instanceId)) {
@@ -383,40 +538,111 @@ function TargetPicker({
         .filter((instance) => instance.enabled)
         .map((instance) => {
           const models = instance.models ?? [];
-          const model = selected.get(instance.instanceId);
+          const target = selected.get(instance.instanceId);
           return (
-            <li className="flex items-center gap-2" key={instance.instanceId}>
-              <input
-                checked={model !== undefined}
-                disabled={models.length === 0}
-                onChange={() => toggle(instance.instanceId, models)}
-                type="checkbox"
-              />
-              <span className="w-32 shrink-0 truncate text-xs">{instance.displayName}</span>
-              <select
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
-                disabled={model === undefined}
-                onChange={(event) =>
-                  onChange(
-                    targets.map((target) =>
-                      target.instanceId === instance.instanceId
-                        ? { ...target, model: event.target.value }
-                        : target,
-                    ),
-                  )
-                }
-                value={model ?? ""}
-              >
-                {models.length === 0 ? <option value="">No models reported</option> : null}
-                {models.map((candidate) => (
-                  <option key={candidate.slug} value={candidate.slug}>
-                    {candidate.name || candidate.slug}
-                  </option>
-                ))}
-              </select>
+            <li className="space-y-1.5" key={instance.instanceId}>
+              <div className="flex items-center gap-2">
+                <input
+                  checked={target !== undefined}
+                  disabled={models.length === 0}
+                  onChange={() => toggle(instance.instanceId, models)}
+                  type="checkbox"
+                />
+                <span className="w-32 shrink-0 truncate text-xs">{instance.displayName}</span>
+                <select
+                  className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                  disabled={target === undefined}
+                  onChange={(event) =>
+                    onChange(
+                      targets.map((candidate) =>
+                        candidate.instanceId === instance.instanceId
+                          ? { ...candidate, model: event.target.value, options: undefined }
+                          : candidate,
+                      ),
+                    )
+                  }
+                  value={target?.model ?? ""}
+                >
+                  {models.length === 0 ? <option value="">No models reported</option> : null}
+                  {models.map((candidate) => (
+                    <option key={candidate.slug} value={candidate.slug}>
+                      {candidate.name || candidate.slug}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {target ? (
+                <ProviderOptionsPicker
+                  instance={instance}
+                  onChange={(nextTarget) =>
+                    onChange(
+                      targets.map((candidate) =>
+                        candidate.instanceId === instance.instanceId ? nextTarget : candidate,
+                      ),
+                    )
+                  }
+                  target={target}
+                />
+              ) : null}
             </li>
           );
         })}
     </ul>
+  );
+}
+
+function ProviderOptionsPicker({
+  instance,
+  onChange,
+  target,
+}: {
+  instance: ReturnType<typeof deriveProviderInstanceEntries>[number];
+  onChange: (target: ScheduledTaskTarget) => void;
+  target: ScheduledTaskTarget;
+}) {
+  const capabilities = getProviderModelCapabilities(
+    instance.models,
+    target.model,
+    instance.driverKind,
+  );
+  const descriptors = getProviderOptionDescriptors({
+    caps: capabilities,
+    selections: target.options,
+  }).filter(
+    (descriptor) =>
+      descriptor.id.toLowerCase().includes("effort") ||
+      descriptor.id.toLowerCase().includes("reason"),
+  );
+  if (descriptors.length === 0) return null;
+
+  return (
+    <div className="ml-6 flex flex-wrap items-center gap-2 text-[11px]">
+      {descriptors.map((descriptor) => {
+        if (descriptor.type !== "select") return null;
+        const currentValue = getProviderOptionCurrentValue(descriptor);
+        return (
+          <label className="flex items-center gap-1.5" key={descriptor.id}>
+            <span className="text-muted-foreground">{descriptor.label}</span>
+            <select
+              className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
+              onChange={(event) => {
+                const options = [
+                  ...(target.options ?? []).filter((option) => option.id !== descriptor.id),
+                  { id: descriptor.id, value: event.target.value },
+                ];
+                onChange({ ...target, options });
+              }}
+              value={typeof currentValue === "string" ? currentValue : ""}
+            >
+              {descriptor.options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        );
+      })}
+    </div>
   );
 }

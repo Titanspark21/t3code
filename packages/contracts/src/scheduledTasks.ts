@@ -25,8 +25,10 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderOptionSelections } from "./model.ts";
 import { RuntimeMode } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { QuotaUsedPercent } from "./quota.ts";
 
 export const ScheduledTaskId = Schema.String.pipe(Schema.brand("ScheduledTaskId"));
 export type ScheduledTaskId = typeof ScheduledTaskId.Type;
@@ -58,6 +60,8 @@ export type ScheduledTaskSchedule = typeof ScheduledTaskSchedule.Type;
 export const ScheduledTaskTarget = Schema.Struct({
   instanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
+  /** Provider-native options, such as Codex reasoning effort. */
+  options: Schema.optional(ProviderOptionSelections),
 });
 export type ScheduledTaskTarget = typeof ScheduledTaskTarget.Type;
 
@@ -74,6 +78,69 @@ export const ScheduledTaskLastRun = Schema.Struct({
 });
 export type ScheduledTaskLastRun = typeof ScheduledTaskLastRun.Type;
 
+export const ScheduledTaskRunTrigger = Schema.Literals(["scheduled", "manual"]);
+export type ScheduledTaskRunTrigger = typeof ScheduledTaskRunTrigger.Type;
+
+export const ScheduledTaskRunTargetStatus = Schema.Literals([
+  "starting",
+  "running",
+  "completed",
+  "failed",
+  "skipped",
+]);
+export type ScheduledTaskRunTargetStatus = typeof ScheduledTaskRunTargetStatus.Type;
+
+/** The provider's five-hour window as observed when a run finished. */
+export const ScheduledTaskRunQuota = Schema.Struct({
+  usedPercent: QuotaUsedPercent,
+  remainingPercent: QuotaUsedPercent,
+  resetsAt: Schema.optional(IsoDateTime),
+  observedAt: IsoDateTime,
+});
+export type ScheduledTaskRunQuota = typeof ScheduledTaskRunQuota.Type;
+
+export const ScheduledTaskRunTarget = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  options: Schema.optional(ProviderOptionSelections),
+  threadId: Schema.optional(TrimmedNonEmptyString),
+  status: ScheduledTaskRunTargetStatus,
+  startedAt: Schema.optional(IsoDateTime),
+  completedAt: Schema.optional(IsoDateTime),
+  durationMs: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+  quota5h: Schema.optional(ScheduledTaskRunQuota),
+  detail: Schema.optional(TrimmedNonEmptyString),
+});
+export type ScheduledTaskRunTarget = typeof ScheduledTaskRunTarget.Type;
+
+export const ScheduledTaskRunStatus = Schema.Literals([
+  "running",
+  "completed",
+  "failed",
+  "skipped",
+]);
+export type ScheduledTaskRunStatus = typeof ScheduledTaskRunStatus.Type;
+
+export const ScheduledTaskRun = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  trigger: ScheduledTaskRunTrigger,
+  status: ScheduledTaskRunStatus,
+  startedAt: IsoDateTime,
+  scheduledFor: Schema.optional(IsoDateTime),
+  completedAt: Schema.optional(IsoDateTime),
+  targets: Schema.Array(ScheduledTaskRunTarget),
+  detail: Schema.optional(TrimmedNonEmptyString),
+});
+export type ScheduledTaskRun = typeof ScheduledTaskRun.Type;
+
+export const ScheduledTaskRunUpdate = Schema.Struct({
+  status: Schema.optional(ScheduledTaskRunStatus),
+  completedAt: Schema.optional(IsoDateTime),
+  targets: Schema.optional(Schema.Array(ScheduledTaskRunTarget)),
+  detail: Schema.optional(TrimmedNonEmptyString),
+});
+export type ScheduledTaskRunUpdate = typeof ScheduledTaskRunUpdate.Type;
+
 export const ScheduledTask = Schema.Struct({
   id: ScheduledTaskId,
   name: TrimmedNonEmptyString,
@@ -87,6 +154,8 @@ export const ScheduledTask = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   lastRun: Schema.optional(ScheduledTaskLastRun),
+  /** Newest first; older servers may omit this field. */
+  runHistory: Schema.optional(Schema.Array(ScheduledTaskRun)),
 });
 export type ScheduledTask = typeof ScheduledTask.Type;
 
