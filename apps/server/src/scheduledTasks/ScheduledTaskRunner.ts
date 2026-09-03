@@ -36,6 +36,7 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import type { OrchestrationEngineShape } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { QuotaService } from "../quota/QuotaService.ts";
 import { ScheduledTaskStore } from "./ScheduledTaskStore.ts";
@@ -82,6 +83,63 @@ function durationFromThread(thread: OrchestrationThread | undefined): number | u
   return Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined;
 }
 
+/**
+ * Persist a scheduler-owned thread before starting its provider turn.
+ *
+ * WebSocket clients may send a bootstrap hint that the transport expands into
+ * two commands. The scheduler talks to the engine directly, where that hint is
+ * deliberately not interpreted, so it must dispatch the same two commands
+ * itself and in this order.
+ */
+export const dispatchScheduledTaskTarget = Effect.fn(
+  "ScheduledTaskRunner.dispatchScheduledTaskTarget",
+)(function* (input: {
+  readonly dispatch: OrchestrationEngineShape["dispatch"];
+  readonly task: ScheduledTask;
+  readonly target: ScheduledTask["targets"][number];
+  readonly threadId: ThreadId;
+  readonly createCommandId: CommandId;
+  readonly turnCommandId: CommandId;
+  readonly messageId: MessageId;
+  readonly createdAt: string;
+}) {
+  const modelSelection = {
+    instanceId: input.target.instanceId,
+    model: input.target.model,
+    ...(input.target.options ? { options: input.target.options } : {}),
+  };
+
+  yield* input.dispatch({
+    type: "thread.create",
+    commandId: input.createCommandId,
+    threadId: input.threadId,
+    projectId: input.task.projectId,
+    title: input.task.name,
+    modelSelection,
+    runtimeMode: input.task.runtimeMode,
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdAt: input.createdAt,
+  });
+  yield* input.dispatch({
+    type: "thread.turn.start",
+    commandId: input.turnCommandId,
+    threadId: input.threadId,
+    message: {
+      messageId: input.messageId,
+      role: "user",
+      text: input.task.prompt,
+      attachments: [],
+    },
+    modelSelection,
+    titleSeed: input.task.name,
+    runtimeMode: input.task.runtimeMode,
+    interactionMode: "default",
+    createdAt: input.createdAt,
+  });
+});
+
 export class ScheduledTaskRunner extends Context.Service<
   ScheduledTaskRunner,
   {
@@ -117,51 +175,48 @@ export const make = Effect.gen(function* () {
   }) {
     const createdAt = DateTime.formatIso(yield* DateTime.now);
     const threadId = ThreadId.make(yield* randomUUID);
-    const modelSelection = {
-      instanceId: input.target.instanceId,
-      model: input.target.model,
-      ...(input.target.options ? { options: input.target.options } : {}),
-    };
+    let threadCreated = false;
 
-    const dispatched = yield* engine
-      .dispatch({
-        type: "thread.turn.start",
-        commandId: CommandId.make(`scheduled:${yield* randomUUID}`),
+    const dispatched = yield* Effect.gen(function* () {
+      yield* dispatchScheduledTaskTarget({
+        dispatch: (command, options) =>
+          engine.dispatch(command, options).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (command.type === "thread.create") threadCreated = true;
+              }),
+            ),
+          ),
+        task: input.task,
+        target: input.target,
         threadId,
-        message: {
-          messageId: MessageId.make(yield* randomUUID),
-          role: "user",
-          text: input.task.prompt,
-          attachments: [],
-        },
-        modelSelection,
-        titleSeed: input.task.name,
-        runtimeMode: input.task.runtimeMode,
-        interactionMode: "default",
-        bootstrap: {
-          createThread: {
-            projectId: input.task.projectId,
-            title: input.task.name,
-            modelSelection,
-            runtimeMode: input.task.runtimeMode,
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-          },
-        },
+        createCommandId: CommandId.make(`scheduled-create:${yield* randomUUID}`),
+        turnCommandId: CommandId.make(`scheduled-turn:${yield* randomUUID}`),
+        messageId: MessageId.make(yield* randomUUID),
         createdAt,
-      })
-      .pipe(
-        Effect.as({ threadId, startedAt: createdAt }),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("scheduled-tasks.start-failed", {
+      });
+      return { threadId, startedAt: createdAt };
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.gen(function* () {
+          yield* Effect.logWarning("scheduled-tasks.start-failed", {
             taskId: input.task.id,
             instanceId: input.target.instanceId,
             cause,
-          }).pipe(Effect.as(undefined)),
-        ),
-      );
+          });
+          if (threadCreated) {
+            yield* engine
+              .dispatch({
+                type: "thread.delete",
+                commandId: CommandId.make(`scheduled-cleanup:${yield* randomUUID}`),
+                threadId,
+              })
+              .pipe(Effect.ignoreCause({ log: true }));
+          }
+          return undefined;
+        }),
+      ),
+    );
 
     if (dispatched)
       pendingSettles.set(dispatched.threadId, {
