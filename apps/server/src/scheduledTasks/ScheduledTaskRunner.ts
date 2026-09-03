@@ -102,6 +102,8 @@ export const dispatchScheduledTaskTarget = Effect.fn(
   readonly turnCommandId: CommandId;
   readonly messageId: MessageId;
   readonly createdAt: string;
+  /** Persist run routing before a fast provider can emit its terminal event. */
+  readonly afterThreadCreated?: Effect.Effect<void>;
 }) {
   const modelSelection = {
     instanceId: input.target.instanceId,
@@ -122,6 +124,7 @@ export const dispatchScheduledTaskTarget = Effect.fn(
     worktreePath: null,
     createdAt: input.createdAt,
   });
+  if (input.afterThreadCreated) yield* input.afterThreadCreated;
   yield* input.dispatch({
     type: "thread.turn.start",
     commandId: input.turnCommandId,
@@ -175,6 +178,12 @@ export const make = Effect.gen(function* () {
   }) {
     const createdAt = DateTime.formatIso(yield* DateTime.now);
     const threadId = ThreadId.make(yield* randomUUID);
+    const pending = {
+      taskId: input.task.id,
+      runId: input.runId,
+      targetIndex: input.targetIndex,
+      instanceId: input.target.instanceId,
+    } satisfies PendingScheduledTarget;
     let threadCreated = false;
 
     const dispatched = yield* Effect.gen(function* () {
@@ -194,6 +203,15 @@ export const make = Effect.gen(function* () {
         turnCommandId: CommandId.make(`scheduled-turn:${yield* randomUUID}`),
         messageId: MessageId.make(yield* randomUUID),
         createdAt,
+        afterThreadCreated: Effect.gen(function* () {
+          threadCreated = true;
+          yield* store.updateRunTarget(input.task.id, input.runId, input.targetIndex, {
+            threadId,
+            status: "running",
+            startedAt: createdAt,
+          });
+          pendingSettles.set(threadId, pending);
+        }),
       });
       return { threadId, startedAt: createdAt };
     }).pipe(
@@ -204,6 +222,7 @@ export const make = Effect.gen(function* () {
             instanceId: input.target.instanceId,
             cause,
           });
+          pendingSettles.delete(threadId);
           if (threadCreated) {
             yield* engine
               .dispatch({
@@ -218,13 +237,6 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-    if (dispatched)
-      pendingSettles.set(dispatched.threadId, {
-        taskId: input.task.id,
-        runId: input.runId,
-        targetIndex: input.targetIndex,
-        instanceId: input.target.instanceId,
-      });
     return dispatched;
   });
 
@@ -328,13 +340,7 @@ export const make = Effect.gen(function* () {
     );
 
     for (const { targetIndex, result } of started) {
-      if (result) {
-        yield* store.updateRunTarget(input.task.id, run.id, targetIndex, {
-          threadId: result.threadId,
-          status: "running",
-          startedAt: result.startedAt,
-        });
-      } else {
+      if (!result) {
         yield* store.updateRunTarget(input.task.id, run.id, targetIndex, {
           status: "failed",
           completedAt: DateTime.formatIso(yield* DateTime.now),
@@ -458,12 +464,18 @@ export const make = Effect.gen(function* () {
     }),
   );
 
+  const pollDueTasks = tick.pipe(
+    Effect.catchCause((cause) => Effect.logWarning("scheduled-tasks.tick-failed", { cause })),
+    Effect.repeat(Schedule.spaced(Duration.millis(SCHEDULED_TASK_TICK_MS))),
+  );
+
   const loop = Effect.all(
     [
       recoverRuns.pipe(
-        Effect.andThen(tick),
-        Effect.catchCause((cause) => Effect.logWarning("scheduled-tasks.tick-failed", { cause })),
-        Effect.repeat(Schedule.spaced(Duration.millis(SCHEDULED_TASK_TICK_MS))),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("scheduled-tasks.recovery-failed", { cause }),
+        ),
+        Effect.andThen(pollDueTasks),
       ),
       settleFinishedRuns.pipe(
         Effect.catchCause((cause) =>

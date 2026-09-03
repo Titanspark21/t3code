@@ -16,6 +16,7 @@ describe("dispatchScheduledTaskTarget", () => {
   it.effect("creates the hidden thread before starting its provider turn", () =>
     Effect.gen(function* () {
       const commands: OrchestrationCommand[] = [];
+      const lifecycle: string[] = [];
       const createdAt = "2026-09-03T12:00:00.000Z";
       const task: ScheduledTask = {
         id: ScheduledTaskId.make("task-1"),
@@ -39,6 +40,7 @@ describe("dispatchScheduledTaskTarget", () => {
       yield* dispatchScheduledTaskTarget({
         dispatch: (command) => {
           commands.push(command);
+          lifecycle.push(command.type);
           return Effect.succeed({ sequence: commands.length });
         },
         task,
@@ -48,6 +50,7 @@ describe("dispatchScheduledTaskTarget", () => {
         turnCommandId: CommandId.make("turn-1"),
         messageId: MessageId.make("message-1"),
         createdAt,
+        afterThreadCreated: Effect.sync(() => lifecycle.push("registered")),
       });
 
       expect(commands.map((command) => command.type)).toEqual([
@@ -71,6 +74,7 @@ describe("dispatchScheduledTaskTarget", () => {
         modelSelection: { instanceId: "codex-2", model: "gpt-5.6-luna" },
       });
       expect("bootstrap" in commands[1]!).toBe(false);
+      expect(lifecycle).toEqual(["thread.create", "registered", "thread.turn.start"]);
     }),
   );
 });
