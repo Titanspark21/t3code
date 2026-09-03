@@ -7,6 +7,7 @@ import {
   antigravityIsolationCaveats,
   makeAntigravityContinuationGroupKey,
   makeAntigravityEnvironment,
+  resolveAntigravityDataHome,
   resolveAntigravityProfileDir,
 } from "./AntigravityHome.ts";
 
@@ -109,24 +110,44 @@ describe("makeAntigravityEnvironment", () => {
   });
 });
 
+describe("resolveAntigravityDataHome", () => {
+  it("uses the configured profile on windows instead of the real HOME", () => {
+    expect(
+      resolveAntigravityDataHome({ profileDir: "/profiles/gemini-1" }, baseEnv, {
+        platform: "win32",
+      }),
+    ).toBe(NodePath.resolve("/profiles/gemini-1"));
+  });
+
+  it("uses USERPROFILE for the default windows account", () => {
+    expect(resolveAntigravityDataHome({ profileDir: "" }, baseEnv, { platform: "win32" })).toBe(
+      baseEnv["USERPROFILE"],
+    );
+  });
+});
+
 describe("antigravityIsolationCaveats", () => {
   it("reports nothing for the default account", () => {
     expect(antigravityIsolationCaveats({ profileDir: "" })).toEqual([]);
   });
 
-  it("reports nothing on windows, where isolation is clean", () => {
-    expect(
-      antigravityIsolationCaveats({ profileDir: "/profiles/gemini-1" }, { platform: "win32" }),
-    ).toEqual([]);
+  it("states the shared-keyring limitation on windows", () => {
+    const caveats = antigravityIsolationCaveats(
+      { profileDir: "/profiles/gemini-1" },
+      { platform: "win32" },
+    );
+    expect(caveats).toHaveLength(1);
+    expect(caveats[0]).toContain("keyring");
   });
 
-  it("states the ssh limitation on posix instead of hiding it", () => {
+  it("states the keyring and ssh limitations on posix instead of hiding them", () => {
     const caveats = antigravityIsolationCaveats(
       { profileDir: "/profiles/gemini-1" },
       { platform: "linux" },
     );
-    expect(caveats).toHaveLength(1);
-    expect(caveats[0]).toContain("SSH");
+    expect(caveats).toHaveLength(2);
+    expect(caveats[0]).toContain("keyring");
+    expect(caveats[1]).toContain("SSH");
   });
 });
 

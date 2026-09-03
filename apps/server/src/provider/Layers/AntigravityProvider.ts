@@ -37,10 +37,15 @@ import {
 } from "../providerSnapshot.ts";
 import {
   antigravityModelDisplayName,
+  collapseAntigravityModelEfforts,
   parseAntigravityUsage,
   parseAntigravityModels,
 } from "../Drivers/AntigravityLaunch.ts";
-import { makeAntigravityEnvironment } from "../Drivers/AntigravityHome.ts";
+import { readAntigravityAccountEmail } from "../Drivers/AntigravityAccount.ts";
+import {
+  makeAntigravityEnvironment,
+  resolveAntigravityDataHome,
+} from "../Drivers/AntigravityHome.ts";
 import { enrichAntigravitySlashCommands } from "./AntigravitySlashCommands.ts";
 
 const ANTIGRAVITY_PRESENTATION = {
@@ -113,14 +118,31 @@ export const readAntigravityModels = Effect.fn("readAntigravityModels")(function
   const command = result.success.value;
   if (command.code !== 0) return [];
 
-  return parseAntigravityModels(command.stdout).map(
+  return collapseAntigravityModelEfforts(parseAntigravityModels(command.stdout)).map(
     (model, index): ServerProviderModel => ({
       slug: model.slug,
       name: model.name || antigravityModelDisplayName(model.slug),
       subProvider: model.family === "google" ? "Google" : "Other models",
       isCustom: false,
       ...(index === 0 ? { isDefault: true } : {}),
-      capabilities: EMPTY_CAPABILITIES,
+      capabilities: createModelCapabilities({
+        optionDescriptors:
+          model.efforts.length === 0
+            ? []
+            : [
+                {
+                  id: "effort",
+                  label: "Effort",
+                  type: "select",
+                  currentValue: model.efforts[0],
+                  options: model.efforts.map((effort, effortIndex) => ({
+                    id: effort,
+                    label: effort.charAt(0).toUpperCase() + effort.slice(1),
+                    ...(effortIndex === 0 ? { isDefault: true } : {}),
+                  })),
+                },
+              ],
+      }),
     }),
   );
 });
@@ -247,10 +269,14 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
     const parsedVersion = parseGenericCliVersion(`${version.stdout}\n${version.stderr}`);
     const slashCommands = enrichAntigravitySlashCommands(parsedVersion);
     const discovered = yield* readAntigravityModels(config, environment);
+    const accountEmail = yield* Effect.promise(() =>
+      readAntigravityAccountEmail(resolveAntigravityDataHome(config, environment)),
+    );
     const models =
       discovered.length > 0
         ? providerModelsFromSettings(discovered, config.customModels, EMPTY_CAPABILITIES)
         : fallbackModels;
+    const authenticated = discovered.length > 0;
 
     return buildServerProvider({
       presentation: ANTIGRAVITY_PRESENTATION,
@@ -261,8 +287,21 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       probe: {
         installed: true,
         version: parsedVersion,
-        status: "ready",
-        auth: { status: "authenticated", type: "antigravity", label: "Antigravity CLI" },
+        status: authenticated ? "ready" : "warning",
+        auth: authenticated
+          ? {
+              status: "authenticated",
+              type: "antigravity",
+              label: "Antigravity CLI",
+              ...(accountEmail ? { email: accountEmail } : {}),
+            }
+          : { status: "unknown" },
+        ...(!authenticated
+          ? {
+              message:
+                "T3 could not verify the Antigravity login or read its model catalogue. Run `agy` on this server to sign in, then refresh providers.",
+            }
+          : {}),
       },
     });
   },

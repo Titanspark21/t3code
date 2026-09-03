@@ -37,6 +37,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import type { AntigravitySettings } from "@t3tools/contracts/antigravity";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -72,7 +73,7 @@ import {
 import { isAntigravityProjectTrustRequest } from "../acp/AntigravityTrust.ts";
 import { isAntigravityRateLimitsMethod } from "../acp/AntigravityRateLimits.ts";
 import { readAntigravityAccountEmail } from "../Drivers/AntigravityAccount.ts";
-import { resolveAntigravityProfileDir } from "../Drivers/AntigravityHome.ts";
+import { resolveAntigravityDataHome } from "../Drivers/AntigravityHome.ts";
 import { readAntigravityUsage } from "./AntigravityProvider.ts";
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
@@ -476,6 +477,10 @@ export function makeAntigravityAdapter(
           const cwd = path.resolve(input.cwd.trim());
           const antigravityModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+          const initialModel = resolveAntigravityAcpModelId(
+            antigravityModelSelection?.model,
+            getModelSelectionStringOptionValue(antigravityModelSelection, "effort"),
+          );
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) {
             yield* stopSessionInternal(existing);
@@ -515,9 +520,7 @@ export function makeAntigravityAdapter(
             childProcessSpawner,
             cwd,
             sessionOptions: {
-              ...(antigravityModelSelection?.model
-                ? { model: antigravityModelSelection.model }
-                : {}),
+              ...(initialModel ? { model: initialModel } : {}),
               runtimeMode: input.runtimeMode,
             },
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -846,17 +849,18 @@ export function makeAntigravityAdapter(
           const turnModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
-          const resolvedModel = resolveAntigravityAcpModelId(model);
+          const effort = getModelSelectionStringOptionValue(turnModelSelection, "effort");
+          const resolvedModel = resolveAntigravityAcpModelId(model, effort);
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
             currentModelId: resolveAntigravityAcpModelId(ctx.session.model),
             runtimeMode: ctx.session.runtimeMode,
             interactionMode: input.interactionMode,
             modelSelection:
-              model === undefined
+              resolvedModel === undefined
                 ? undefined
                 : {
-                    model,
+                    model: resolvedModel,
                   },
             mapError: ({ cause, method }) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
@@ -867,6 +871,7 @@ export function makeAntigravityAdapter(
           }
           ctx.session = {
             ...ctx.session,
+            status: "running",
             activeTurnId: turnId,
             updatedAt: yield* nowIso,
           };
@@ -878,7 +883,7 @@ export function makeAntigravityAdapter(
               provider: PROVIDER,
               threadId: input.threadId,
               turnId,
-              payload: { model: resolvedModel },
+              payload: { model, ...(effort ? { effort } : {}) },
             });
           }
 
@@ -921,10 +926,14 @@ export function makeAntigravityAdapter(
               prompt: promptParts,
             })
             .pipe(
+              Effect.tapError(() => Effect.ignore(ctx.acp.drainEvents)),
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
             );
+          // Drain provider updates before the terminal event so final text or
+          // tool output cannot arrive after the UI marks the turn idle.
+          yield* ctx.acp.drainEvents;
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) {
@@ -943,6 +952,13 @@ export function makeAntigravityAdapter(
           // superseded prompt resolving (usually cancelled) while another is
           // in flight or pending must leave the merged turn running.
           if (ctx.promptsInFlight === 1) {
+            const { activeTurnId: _activeTurnId, ...settledSession } = ctx.session;
+            ctx.activeTurnId = undefined;
+            ctx.session = {
+              ...settledSession,
+              status: "ready",
+              updatedAt: yield* nowIso,
+            };
             yield* offerRuntimeEvent({
               type: "turn.completed",
               ...(yield* makeEventStamp()),
@@ -962,6 +978,39 @@ export function makeAntigravityAdapter(
             resumeCursor: ctx.session.resumeCursor,
           };
         }).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              // An ACP failure used to escape without a terminal event, which
+              // left the client showing a permanent working state.
+              if (ctx.promptsInFlight === 1 && ctx.activeTurnId === turnId) {
+                const { activeTurnId: _activeTurnId, ...settledSession } = ctx.session;
+                ctx.activeTurnId = undefined;
+                ctx.session = {
+                  ...settledSession,
+                  status: "ready",
+                  updatedAt: yield* nowIso,
+                };
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                yield* offerRuntimeEvent({
+                  type: "runtime.error",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { message: errorMessage, class: "provider_error" },
+                });
+                yield* offerRuntimeEvent({
+                  type: "turn.completed",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { state: "failed", errorMessage },
+                });
+              }
+              return yield* error;
+            }),
+          ),
           Effect.ensuring(
             Effect.sync(() => {
               ctx.promptsInFlight = Math.max(0, ctx.promptsInFlight - 1);
@@ -973,6 +1022,7 @@ export function makeAntigravityAdapter(
     const interruptTurn: AntigravityAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+        const interruptedTurnId = ctx.activeTurnId ?? ctx.session.activeTurnId;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
@@ -981,6 +1031,25 @@ export function makeAntigravityAdapter(
             ),
           ),
         );
+        yield* Effect.ignore(ctx.acp.drainEvents);
+        ctx.promptsInFlight = 0;
+        ctx.activeTurnId = undefined;
+        const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
+        ctx.session = {
+          ...readySession,
+          status: "ready",
+          updatedAt: yield* nowIso,
+        };
+        if (interruptedTurnId) {
+          yield* offerRuntimeEvent({
+            type: "turn.completed",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId,
+            turnId: interruptedTurnId,
+            payload: { state: "cancelled", stopReason: "cancelled" },
+          });
+        }
       });
 
     const respondToRequest: AntigravityAdapterShape["respondToRequest"] = (
@@ -1071,11 +1140,9 @@ export function makeAntigravityAdapter(
       // different profiles can be the same account; the panel needs to be able
       // to say that instead of showing one account's usage five times.
       const environment = options?.environment ?? process.env;
-      const accountHome =
-        resolveAntigravityProfileDir(settings) ?? environment["HOME"] ?? environment["USERPROFILE"];
-      const accountLabel = accountHome
-        ? yield* Effect.promise(() => readAntigravityAccountEmail(accountHome))
-        : undefined;
+      const accountLabel = yield* Effect.promise(() =>
+        readAntigravityAccountEmail(resolveAntigravityDataHome(settings, environment)),
+      );
       const stamp = yield* makeEventStamp();
       return {
         type: "account.rate-limits.updated",

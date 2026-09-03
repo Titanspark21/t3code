@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   antigravityQuotaWindow,
   averageAntigravityQuotaWindow,
+  averageAntigravityWindowForKind,
   accountQuotaRemainingPercent,
   groupAccountsByIdentity,
   groupQuotaPanelAccounts,
@@ -95,6 +96,46 @@ describe("quotaAggregation", () => {
         NOW,
       )?.usedPercent,
     ).toBe(70);
+  });
+
+  it("shows 5-hour and weekly AGY totals using the most constrained pool per account", () => {
+    const first = snapshot("agy-one", [
+      {
+        key: "gemini",
+        displayName: "Gemini Models",
+        windows: [
+          { kind: "short", usedPercent: 10 },
+          { kind: "long", usedPercent: 20 },
+        ],
+      },
+      {
+        key: "claude-gpt",
+        displayName: "Claude and GPT models",
+        windows: [
+          { kind: "short", usedPercent: 100 },
+          { kind: "long", usedPercent: 70 },
+        ],
+      },
+    ]);
+    const second = snapshot("agy-two", [
+      {
+        key: "gemini",
+        displayName: "Gemini Models",
+        windows: [
+          { kind: "short", usedPercent: 20 },
+          { kind: "long", usedPercent: 40 },
+        ],
+      },
+    ]);
+
+    expect(
+      averageAntigravityWindowForKind([account("one", first), account("two", second)], "short", NOW)
+        ?.usedPercent,
+    ).toBe(60);
+    expect(
+      averageAntigravityWindowForKind([account("one", first), account("two", second)], "long", NOW)
+        ?.usedPercent,
+    ).toBe(55);
   });
 
   it("collapses the same labeled account across environments", () => {

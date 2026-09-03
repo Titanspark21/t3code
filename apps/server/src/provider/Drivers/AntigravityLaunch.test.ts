@@ -5,6 +5,7 @@ import type { RuntimeMode } from "@t3tools/contracts";
 import {
   antigravityModelDisplayName,
   antigravityModeFlags,
+  collapseAntigravityModelEfforts,
   isPermissionBypassFlag,
   parseAntigravityModels,
   parseAntigravityUsage,
@@ -108,6 +109,34 @@ describe("parseAntigravityModels", () => {
     const models = parseAntigravityModels("gemini-3.5-flash-high\nclaude-sonnet-4-6");
     expect(models[0]?.effort).toBe("high");
     expect(models[1]?.effort).toBeUndefined();
+  });
+
+  it("collapses model suffixes into one selectable model with effort choices", () => {
+    const models = collapseAntigravityModelEfforts(
+      parseAntigravityModels(
+        [
+          "gemini-3.8-flash-high\tGemini 3.8 Flash (High)",
+          "gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)",
+          "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)",
+          "claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)",
+        ].join("\n"),
+      ),
+    );
+
+    expect(models).toEqual([
+      {
+        slug: "gemini-3.8-flash",
+        name: "Gemini 3.8 Flash",
+        family: "google",
+        efforts: ["high", "medium", "low"],
+      },
+      {
+        slug: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4.6 (Thinking)",
+        family: "other",
+        efforts: [],
+      },
+    ]);
   });
 
   it("drops prose and headers rather than inventing models", () => {

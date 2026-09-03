@@ -11,16 +11,18 @@ export function ProviderQuotaTooltip({
   driverKind,
   nowMs,
   side = "right",
+  triggerClassName = "inline-flex",
 }: {
   readonly trigger: ReactElement;
   readonly snapshot: AccountQuotaSnapshot | undefined;
   readonly driverKind: ProviderDriverKind;
   readonly nowMs: number;
   readonly side?: "top" | "right" | "bottom" | "left";
+  readonly triggerClassName?: string;
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex">{trigger}</span>} />
+      <TooltipTrigger render={<span className={triggerClassName}>{trigger}</span>} />
       <TooltipPopup className={snapshot ? undefined : "max-w-56"} side={side}>
         {snapshot ? (
           <QuotaAccountDetails nowMs={nowMs} snapshot={snapshot} />

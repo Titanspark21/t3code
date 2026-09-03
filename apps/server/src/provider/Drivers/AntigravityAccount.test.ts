@@ -1,6 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off - this test verifies a Node filesystem reader.
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 
-import { parseAntigravityAccountEmail } from "./AntigravityAccount.ts";
+import {
+  antigravityLogDirectory,
+  parseAntigravityAccountEmail,
+  readAntigravityAccountEmail,
+} from "./AntigravityAccount.ts";
 
 const LOG_LINE = (email: string) =>
   `ERROR: logging before google.Init: I0831 11:05:57.740726 1 server_oauth.go:190] applyAuthResult: email=${email}, authMethod=consumer, quotaProject=`;
@@ -27,5 +36,21 @@ describe("parseAntigravityAccountEmail", () => {
     expect(
       parseAntigravityAccountEmail("applyAuthResult: email=, authMethod=none"),
     ).toBeUndefined();
+  });
+
+  it("finds the startup identity before a large log tail", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3code-agy-account-"));
+    try {
+      const logDirectory = antigravityLogDirectory(home);
+      await NodeFSP.mkdir(logDirectory, { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(logDirectory, "agy.log"),
+        `${LOG_LINE("large-log@example.com")}\n${"x".repeat(256 * 1024)}`,
+      );
+
+      expect(await readAntigravityAccountEmail(home)).toBe("large-log@example.com");
+    } finally {
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   });
 });

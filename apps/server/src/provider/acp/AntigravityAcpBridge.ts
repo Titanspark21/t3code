@@ -32,6 +32,19 @@ interface AgyEvent {
   readonly result?: unknown;
 }
 
+export interface AgyPromptSession {
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly announcedToolCalls: Set<string>;
+  beginTurn(): void;
+  toolCallId(stepIndex: number | undefined): string;
+  sendPrompt(text: string): Promise<void>;
+  nextEvent(milliseconds?: number): Promise<AgyEvent>;
+  close(): void;
+}
+
+export type AgySessionUpdateWriter = (sessionId: string, update: JsonRecord) => void;
+
 interface AgyModelState {
   readonly availableModels: ReadonlyArray<{ readonly modelId: string; readonly name: string }>;
   readonly currentModelId: string;
@@ -98,6 +111,10 @@ function writeResult(id: JsonRpcId, result: unknown): void {
 
 function writeError(id: JsonRpcId, code: number, message: string): void {
   writeJson({ id, error: { code, message } });
+}
+
+function writeSessionUpdate(sessionId: string, update: JsonRecord): void {
+  writeJson({ method: "session/update", params: { sessionId, update } });
 }
 
 function timeout<T>(promise: Promise<T>, milliseconds: number, detail: string): Promise<T> {
@@ -385,6 +402,26 @@ class AgySession {
     }
   }
 
+  /** Cancel the active child while keeping the ACP session reusable. */
+  async cancelAndRestart(): Promise<void> {
+    if (this.disposed) return;
+    const conversationId = this.conversationId;
+    const oldChild = this.child;
+    this.processGeneration += 1;
+    const cancelled = new Error("Antigravity prompt was cancelled.");
+    for (const waiter of this.waiters.splice(0)) waiter.reject(cancelled);
+    this.queuedEvents.splice(0);
+    this.lines.close();
+    oldChild.stdin.destroy();
+    oldChild.kill("SIGTERM");
+    // @effect-diagnostics-next-line globalTimers:off - standalone Node bridge cleanup.
+    const forceKillTimer = NodeTimers.setTimeout(() => oldChild.kill("SIGKILL"), 1_000);
+    forceKillTimer.unref();
+    this.closed = false;
+    this.startChild(conversationId);
+    await this.waitForInit();
+  }
+
   async setModel(modelId: string): Promise<void> {
     const normalizedModelId = modelId.trim();
     if (!normalizedModelId || normalizedModelId === this.modelState.currentModelId) return;
@@ -554,7 +591,11 @@ export function toolStatus(state: string | undefined): string {
  * client sees an idle spinner for the whole working part of a turn and then a
  * bare answer, which reads as the turn having done nothing.
  */
-function emitToolUpdate(session: AgySession, step: JsonRecord): void {
+function emitToolUpdate(
+  session: AgyPromptSession,
+  step: JsonRecord,
+  writeUpdate: AgySessionUpdateWriter,
+): void {
   const toolName = stringValue(step.tool_name) ?? "tool";
   const toolCallId = session.toolCallId(numberValue(step.step_index));
   const info = isRecord(step.tool_info) ? step.tool_info : {};
@@ -566,27 +607,23 @@ function emitToolUpdate(session: AgySession, step: JsonRecord): void {
   const isNew = !session.announcedToolCalls.has(toolCallId);
   session.announcedToolCalls.add(toolCallId);
 
-  writeJson({
-    method: "session/update",
-    params: {
-      sessionId: session.sessionId,
-      update: {
-        sessionUpdate: isNew ? "tool_call" : "tool_call_update",
-        toolCallId,
-        title: toolTitle(toolName, parameters),
-        kind: toolKind(toolName),
-        status: toolStatus(stringValue(step.state)),
-        rawInput: parameters,
-        ...(path ? { locations: [{ path }] } : {}),
-        ...(detail
-          ? { content: [{ type: "content", content: { type: "text", text: detail } }] }
-          : {}),
-      },
-    },
+  writeUpdate(session.sessionId, {
+    sessionUpdate: isNew ? "tool_call" : "tool_call_update",
+    toolCallId,
+    title: toolTitle(toolName, parameters),
+    kind: toolKind(toolName),
+    status: toolStatus(stringValue(step.state)),
+    rawInput: parameters,
+    ...(path ? { locations: [{ path }] } : {}),
+    ...(detail ? { content: [{ type: "content", content: { type: "text", text: detail } }] } : {}),
   });
 }
 
-async function promptSession(session: AgySession, params: unknown): Promise<JsonRecord> {
+export async function promptSession(
+  session: AgyPromptSession,
+  params: unknown,
+  writeUpdate: AgySessionUpdateWriter = writeSessionUpdate,
+): Promise<JsonRecord> {
   const text = promptText(params);
   if (!text) throw new Error("Antigravity ACP bridge received an empty prompt.");
 
@@ -599,15 +636,9 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
       return { stopReason: "end_turn" };
     }
     const report = await runStandaloneCommand(session.cwd, text.trim());
-    writeJson({
-      method: "session/update",
-      params: {
-        sessionId: session.sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: report },
-        },
-      },
+    writeUpdate(session.sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: report },
     });
     return {
       stopReason: "end_turn",
@@ -630,18 +661,12 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
       if (delta) {
         const thought = stepType === "thinking" || stepType === "reasoning";
         if (!thought) emittedText = true;
-        writeJson({
-          method: "session/update",
-          params: {
-            sessionId: session.sessionId,
-            update: {
-              sessionUpdate: thought ? "agent_thought_chunk" : "agent_message_chunk",
-              content: { type: "text", text: delta },
-            },
-          },
+        writeUpdate(session.sessionId, {
+          sessionUpdate: thought ? "agent_thought_chunk" : "agent_message_chunk",
+          content: { type: "text", text: delta },
         });
       }
-      if (stepType === "tool") emitToolUpdate(session, step);
+      if (stepType === "tool") emitToolUpdate(session, step, writeUpdate);
       continue;
     }
 
@@ -650,20 +675,20 @@ async function promptSession(session: AgySession, params: unknown): Promise<Json
     const status = stringValue(result.status);
     const failure = isRecord(result.error) ? stringValue(result.error.message) : undefined;
     const response = stringValue(result.response) ?? failure;
-    if (response && !emittedText) {
-      writeJson({
-        method: "session/update",
-        params: {
-          sessionId: session.sessionId,
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: response },
-          },
+    if (status !== "SUCCESS") {
+      throw new Error(response ?? `Antigravity ended the turn with status ${status ?? "unknown"}.`);
+    }
+    if (!emittedText) {
+      writeUpdate(session.sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: response ?? "Antigravity completed the task without a text response.",
         },
       });
     }
     return {
-      stopReason: status === "SUCCESS" ? "end_turn" : "refusal",
+      stopReason: "end_turn",
       ...(resultUsage(result) ? { usage: resultUsage(result) } : {}),
       ...(isRecord(params) && stringValue(params.messageId)
         ? { userMessageId: params.messageId }
@@ -755,7 +780,7 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
       }
       case "session/cancel": {
         const session = sessions.get(sessionIdFrom(message.params));
-        session?.close();
+        await session?.cancelAndRestart();
         return;
       }
       case "session/close": {

@@ -84,6 +84,19 @@ describe("resolveAntigravityAcpModelId", () => {
     expect(resolveAntigravityAcpModelId("gemini-3.5-flash-high")).toBe("gemini-3.5-flash-high");
   });
 
+  it("joins the separate effort selector back onto the CLI model id", () => {
+    expect(resolveAntigravityAcpModelId("gemini-3.8-flash", "medium")).toBe(
+      "gemini-3.8-flash-medium",
+    );
+    expect(resolveAntigravityAcpModelId("gemini-3.8-flash-high", "low")).toBe(
+      "gemini-3.8-flash-high",
+    );
+  });
+
+  it("ignores unsupported stored effort values", () => {
+    expect(resolveAntigravityAcpModelId("gemini-3.8-flash", "maximum")).toBe("gemini-3.8-flash");
+  });
+
   it("treats blank and missing as no selection", () => {
     expect(resolveAntigravityAcpModelId("  ")).toBeUndefined();
     expect(resolveAntigravityAcpModelId(null)).toBeUndefined();

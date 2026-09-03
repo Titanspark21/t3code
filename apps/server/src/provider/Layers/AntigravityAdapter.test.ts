@@ -29,7 +29,7 @@ const testLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3code-antigravity-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
-const makeTestAdapter = () =>
+const makeTestAdapter = (environment?: NodeJS.ProcessEnv) =>
   makeAntigravityAdapter(
     decodeSettings({
       enabled: true,
@@ -39,7 +39,10 @@ const makeTestAdapter = () =>
       bridgeArgs: [mockAgentPath],
       customModels: [],
     }),
-    { instanceId: ProviderInstanceId.make("antigravity-test") },
+    {
+      instanceId: ProviderInstanceId.make("antigravity-test"),
+      ...(environment ? { environment } : {}),
+    },
   ).pipe(Effect.orDie);
 
 it.layer(testLayer)("AntigravityAdapter", (it) => {
@@ -104,6 +107,40 @@ it.layer(testLayer)("AntigravityAdapter", (it) => {
       );
       assert.instanceOf(error, ProviderAdapterRequestError);
       assert.equal(error.detail, "Antigravity ACP does not expose structured user-input requests.");
+    }),
+  );
+
+  it.effect("publishes a terminal failure when the ACP prompt fails", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("antigravity-failed-prompt");
+      const adapter = yield* makeTestAdapter({ ...process.env, T3_ACP_FAIL_PROMPT: "1" });
+      const events: ProviderRuntimeEvent[] = [];
+      const completed = yield* Deferred.make<void>();
+      const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => events.push(event)).pipe(
+          Effect.andThen(
+            event.type === "turn.completed" ? Deferred.succeed(completed, undefined) : Effect.void,
+          ),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("antigravity"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* Effect.flip(adapter.sendTurn({ threadId, input: "fail", attachments: [] }));
+      yield* Deferred.await(completed);
+      yield* Fiber.interrupt(eventsFiber);
+
+      const runtimeError = events.find((event) => event.type === "runtime.error");
+      const terminal = events.find((event) => event.type === "turn.completed");
+      assert.equal(runtimeError?.type, "runtime.error");
+      assert.equal(terminal?.type, "turn.completed");
+      if (terminal?.type === "turn.completed") assert.equal(terminal.payload.state, "failed");
+
+      yield* adapter.stopSession(threadId);
     }),
   );
 });

@@ -95,6 +95,13 @@ export interface AntigravityModel {
   readonly family: "google" | "other";
 }
 
+export interface AntigravitySelectableModel {
+  readonly slug: string;
+  readonly name: string;
+  readonly family: "google" | "other";
+  readonly efforts: ReadonlyArray<string>;
+}
+
 export interface AntigravityUsagePayload {
   readonly groups: ReadonlyArray<{
     readonly key: "gemini" | "claude-gpt";
@@ -153,6 +160,44 @@ export function parseAntigravityModels(stdout: string): ReadonlyArray<Antigravit
   }
 
   return models;
+}
+
+/**
+ * Turn provider ids such as `gemini-3.8-flash-high|medium|low` into one model
+ * plus an effort selector. The selected effort is joined back onto the exact
+ * CLI id at the adapter boundary.
+ */
+export function collapseAntigravityModelEfforts(
+  models: ReadonlyArray<AntigravityModel>,
+): ReadonlyArray<AntigravitySelectableModel> {
+  const grouped = new Map<
+    string,
+    {
+      readonly slug: string;
+      readonly name: string;
+      readonly family: "google" | "other";
+      readonly efforts: string[];
+    }
+  >();
+
+  for (const model of models) {
+    const baseSlug = model.effort ? model.slug.slice(0, -(model.effort.length + 1)) : model.slug;
+    const existing = grouped.get(baseSlug);
+    if (existing) {
+      if (model.effort && !existing.efforts.includes(model.effort)) {
+        existing.efforts.push(model.effort);
+      }
+      continue;
+    }
+    grouped.set(baseSlug, {
+      slug: baseSlug,
+      name: model.effort ? antigravityModelDisplayName(baseSlug) : model.name,
+      family: model.family,
+      efforts: model.effort ? [model.effort] : [],
+    });
+  }
+
+  return [...grouped.values()];
 }
 
 /**

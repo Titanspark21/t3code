@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { antigravityStreamArgs, toolKind, toolStatus, toolTitle } from "./AntigravityAcpBridge.ts";
+import {
+  antigravityStreamArgs,
+  promptSession,
+  toolKind,
+  toolStatus,
+  toolTitle,
+  type AgyPromptSession,
+} from "./AntigravityAcpBridge.ts";
 
 describe("antigravityStreamArgs", () => {
   it("puts the thread workspace on the command line", () => {
@@ -63,5 +70,55 @@ describe("tool step mapping", () => {
     expect(toolTitle("run_command", { CommandLine: "pnpm test" })).toBe("pnpm test");
     expect(toolTitle("view_file", { AbsolutePath: "/repo/a.ts" })).toBe("view_file /repo/a.ts");
     expect(toolTitle("ask_question", {})).toBe("ask_question");
+  });
+});
+
+describe("prompt result handling", () => {
+  function sessionWithResult(result: Record<string, unknown>): AgyPromptSession {
+    let delivered = false;
+    return {
+      sessionId: "agy-test",
+      cwd: "/repo/app",
+      announcedToolCalls: new Set(),
+      beginTurn: () => undefined,
+      toolCallId: (index) => `tool-${String(index)}`,
+      sendPrompt: async () => undefined,
+      nextEvent: async () => {
+        if (delivered) throw new Error("Test exhausted its events.");
+        delivered = true;
+        return { result };
+      },
+      close: () => undefined,
+    };
+  }
+
+  it("makes an otherwise blank successful turn visible", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const result = await promptSession(
+      sessionWithResult({ status: "SUCCESS" }),
+      { prompt: [{ type: "text", text: "Review the project" }] },
+      (_sessionId, update) => updates.push(update),
+    );
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(updates).toEqual([
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Antigravity completed the task without a text response.",
+        },
+      },
+    ]);
+  });
+
+  it("rejects a provider failure instead of completing it as a refusal", async () => {
+    await expect(
+      promptSession(
+        sessionWithResult({ status: "ERROR", response: "tool execution failed" }),
+        { prompt: [{ type: "text", text: "Review the project" }] },
+        () => undefined,
+      ),
+    ).rejects.toThrow("tool execution failed");
   });
 });

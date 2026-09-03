@@ -10,7 +10,7 @@ import { checkAntigravityProviderStatus, readAntigravityUsage } from "./Antigrav
 
 const decodeAntigravitySettings = Schema.decodeSync(AntigravitySettings);
 
-const makeFakeAntigravity = Effect.fn("makeFakeAntigravity")(function* () {
+const makeFakeAntigravity = Effect.fn("makeFakeAntigravity")(function* (modelsExitCode = 0) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const directory = yield* fileSystem.makeTempDirectoryScoped({
@@ -23,7 +23,7 @@ const makeFakeAntigravity = Effect.fn("makeFakeAntigravity")(function* () {
     [
       "#!/bin/sh",
       'if [ "$1" = "--version" ]; then printf "agy 1.1.7\\n"; exit 0; fi',
-      'if [ "$1" = "models" ]; then printf "gemini-2.5-pro\\n"; read ignored; exit 0; fi',
+      `if [ "$1" = "models" ]; then printf "gemini-3.8-flash-high\\ngemini-3.8-flash-medium\\ngemini-3.8-flash-low\\ngemini-2.5-pro\\n"; read ignored; exit ${modelsExitCode}; fi`,
       'if [ "$1" = "-p" ] && [ "$2" = "/usage" ]; then printf "Gemini Models\\tWeekly Limit Remaining\\t80%%\\t2026-09-04T04:24:01Z\\n"; read ignored; exit 0; fi',
       "exit 1",
       "",
@@ -48,7 +48,24 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
 
         expect(snapshot.status).toBe("ready");
         expect(snapshot.version).toBe("1.1.7");
-        expect(snapshot.models.map((model) => model.slug)).toEqual(["gemini-2.5-pro"]);
+        expect(snapshot.models.map((model) => model.slug)).toEqual([
+          "gemini-3.8-flash",
+          "gemini-2.5-pro",
+        ]);
+        expect(snapshot.models[0]).toBeDefined();
+        expect(snapshot.models[0]!.capabilities?.optionDescriptors).toEqual([
+          {
+            id: "effort",
+            label: "Effort",
+            type: "select",
+            currentValue: "high",
+            options: [
+              { id: "high", label: "High", isDefault: true },
+              { id: "medium", label: "Medium" },
+              { id: "low", label: "Low" },
+            ],
+          },
+        ]);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual([
           "agents",
           "changelog",
@@ -81,6 +98,21 @@ it.layer(NodeServices.layer)("checkAntigravityProviderStatus", (it) => {
         expect(snapshot.status).toBe("ready");
         expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.slashCommands).not.toHaveLength(0);
+      }),
+    ),
+  );
+
+  it.effect("does not claim authentication when the model probe cannot verify it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const binaryPath = yield* makeFakeAntigravity(1);
+        const snapshot = yield* checkAntigravityProviderStatus(
+          decodeAntigravitySettings({ enabled: true, binaryPath }),
+        );
+
+        expect(snapshot.status).toBe("warning");
+        expect(snapshot.auth.status).toBe("unknown");
+        expect(snapshot.message).toContain("Run `agy`");
       }),
     ),
   );

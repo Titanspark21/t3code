@@ -43,6 +43,49 @@ export function quotaWindowForKind(
 
 export type AntigravityQuotaPool = "gemini" | "claude-gpt";
 
+/**
+ * Average one duration across Antigravity instances. Each instance contributes
+ * its most constrained pool for that duration, so a healthy Gemini pool never
+ * hides an exhausted Claude/GPT pool on the same login.
+ */
+export function averageAntigravityWindowForKind(
+  accounts: ReadonlyArray<QuotaAggregationAccount>,
+  kind: QuotaWindowKindForDisplay,
+  nowMs: number,
+): QuotaWindow | undefined {
+  const windows = accounts.flatMap((account) => {
+    const window = quotaWindowForKind(account.snapshot, kind, nowMs);
+    return window ? [window] : [];
+  });
+  if (windows.length === 0) return undefined;
+
+  const resetTimes = new Set(windows.map((window) => window.resetsAt));
+  const sharedReset = resetTimes.size === 1 ? windows[0]?.resetsAt : undefined;
+  return {
+    kind,
+    label: kind === "short" ? "5-hour limit" : "Weekly limit",
+    usedPercent: windows.reduce((sum, window) => sum + window.usedPercent, 0) / windows.length,
+    windowDurationMins: kind === "short" ? 300 : 10_080,
+    ...(sharedReset ? { resetsAt: sharedReset } : {}),
+  };
+}
+
+/** State that an aggregate contains different provider reset times. */
+export function antigravityResetLabelForKind(
+  accounts: ReadonlyArray<QuotaAggregationAccount>,
+  kind: QuotaWindowKindForDisplay,
+  nowMs: number,
+): string | undefined {
+  const windows = accounts.flatMap((account) => {
+    const window = quotaWindowForKind(account.snapshot, kind, nowMs);
+    return window ? [window] : [];
+  });
+  if (windows.length === 0) return undefined;
+  return new Set(windows.map((window) => window.resetsAt ?? "missing")).size > 1
+    ? "reset varies"
+    : undefined;
+}
+
 function groupMatchesPool(group: QuotaGroup, pool: AntigravityQuotaPool): boolean {
   const identity = `${group.key} ${group.displayName}`.toLowerCase();
   return pool === "gemini" ? /gemini|google/.test(identity) : /claude|gpt|other/.test(identity);

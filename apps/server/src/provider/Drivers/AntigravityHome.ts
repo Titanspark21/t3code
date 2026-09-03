@@ -115,6 +115,26 @@ export function makeAntigravityEnvironment(
   };
 }
 
+/** Home directory where `agy` writes profile state and diagnostic logs. */
+export function resolveAntigravityDataHome(
+  config: AntigravityProfileSettings,
+  environment: NodeJS.ProcessEnv = process.env,
+  options: AntigravityEnvironmentOptions = {},
+): string {
+  const profileDir = resolveAntigravityProfileDir(config);
+  if (profileDir) return profileDir;
+
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure helper keeps platform injectable for tests and non-Effect callers.
+  const platform = options.platform ?? process.platform;
+  return (
+    (platform === "win32"
+      ? (environment["USERPROFILE"] ?? environment["HOME"])
+      : (environment["HOME"] ?? environment["USERPROFILE"])) ??
+    options.realHome ??
+    NodeOS.homedir()
+  );
+}
+
 /**
  * Human-readable list of what stays redirected for this instance, for the
  * settings UI. Empty when nothing is compromised.
@@ -129,8 +149,11 @@ export function antigravityIsolationCaveats(
   if (!resolveAntigravityProfileDir(config)) return [];
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Pure helper keeps platform injectable for tests and non-Effect callers.
   const platform = options.platform ?? process.platform;
-  if (platform === "win32") return [];
+  const sharedKeyring =
+    "AGY authenticates through the operating system keyring. Separate profile folders can still use the same signed-in account; check the authenticated email shown above.";
+  if (platform === "win32") return [sharedKeyring];
   return [
+    sharedKeyring,
     "SSH keys resolve from this profile directory, not your real home. If the agent pushes over SSH, either copy your keys in or use an HTTPS remote.",
   ];
 }

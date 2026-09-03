@@ -53,7 +53,7 @@ export const AntigravitySettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "Account profile directory",
         description:
-          "Isolated home for this Antigravity login. agy keys its identity off the home directory, so each account needs its own. Git, SSH and npm keep using your real profile.",
+          "Isolated home for Antigravity settings and conversation data. Current agy builds authenticate through the operating system keyring, so separate folders can still share one signed-in account; T3 shows the account email reported by each instance.",
         providerSettingsForm: { placeholder: "~/.gemini-1", clearWhenEmpty: "omit" },
       }),
     ),

@@ -655,6 +655,30 @@ function modelSelectionByProviderToOptions(
   return Object.keys(result).length > 0 ? result : null;
 }
 
+function normalizeLegacyAntigravityModelSelection(
+  selection: ModelSelection | null | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection | null | undefined {
+  if (!selection) return selection;
+
+  const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
+  if (provider?.driver !== "antigravity") return selection;
+
+  const match = /^(.*)-(high|medium|low)$/u.exec(selection.model);
+  if (!match) return selection;
+
+  const baseModel = match[1];
+  const effort = match[2];
+  if (!baseModel || !effort || !provider.models.some((model) => model.slug === baseModel)) {
+    return selection;
+  }
+
+  return createModelSelection(selection.instanceId, baseModel, [
+    ...(selection.options?.filter((option) => option.id !== "effort") ?? []),
+    { id: "effort", value: effort },
+  ]);
+}
+
 function cloneModelSelection(selection: ModelSelection): DeepMutable<ModelSelection> {
   return {
     ...selection,
@@ -1116,12 +1140,19 @@ export function deriveEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const baseModelCandidate =
-    input.threadModelSelection?.model ?? input.projectModelSelection?.model ?? null;
+  const threadModelSelection = normalizeLegacyAntigravityModelSelection(
+    input.threadModelSelection,
+    input.providers,
+  );
+  const projectModelSelection = normalizeLegacyAntigravityModelSelection(
+    input.projectModelSelection,
+    input.providers,
+  );
+  const baseModelCandidate = threadModelSelection?.model ?? projectModelSelection?.model ?? null;
   const preserveThreadModel =
     input.selectedInstanceId !== null &&
     input.selectedInstanceId !== undefined &&
-    input.threadModelSelection?.instanceId === input.selectedInstanceId;
+    threadModelSelection?.instanceId === input.selectedInstanceId;
   const baseModel =
     (input.selectedInstanceId
       ? resolveAppModelSelectionForInstance(
@@ -1149,7 +1180,10 @@ export function deriveEffectiveComposerModelState(input: {
     : undefined;
   const legacySelection =
     input.draft?.modelSelectionByProvider?.[ProviderInstanceId.make(input.selectedProvider)];
-  const activeSelection = instanceSelection ?? legacySelection;
+  const activeSelection = normalizeLegacyAntigravityModelSelection(
+    instanceSelection ?? legacySelection,
+    input.providers,
+  );
   const activeSelectionInstanceId = instanceSelection
     ? (input.selectedInstanceId ?? ProviderInstanceId.make(input.selectedProvider))
     : ProviderInstanceId.make(input.selectedProvider);
@@ -1169,9 +1203,10 @@ export function deriveEffectiveComposerModelState(input: {
       ))
     : baseModel;
   const modelOptions =
+    providerSelectionsFromModelSelection(activeSelection) ??
     modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
-    providerSelectionsFromModelSelection(input.threadModelSelection) ??
-    providerSelectionsFromModelSelection(input.projectModelSelection) ??
+    providerSelectionsFromModelSelection(threadModelSelection) ??
+    providerSelectionsFromModelSelection(projectModelSelection) ??
     null;
 
   return {

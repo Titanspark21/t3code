@@ -50,14 +50,16 @@ export function antigravityLogDirectory(home: string): string {
   return NodePath.join(home, ".gemini", "antigravity-cli", "log");
 }
 
-/** How much of a log tail is read; the identity is logged during startup. */
-const LOG_TAIL_BYTES = 128 * 1024;
+/** Bounded memory used while searching a log backward for its newest identity. */
+const LOG_CHUNK_BYTES = 128 * 1024;
+const LOG_CHUNK_OVERLAP_BYTES = 512;
 
 /**
  * Read the account identity from the newest CLI log under `home`.
  *
- * Only the newest log, and only its tail: these files reach megabytes during
- * real work. Every failure resolves to `undefined` — an unknown account is a
+ * Only the newest log is considered. Search it backward in bounded chunks so
+ * a large active log cannot hide the startup identity, while a later re-login
+ * still wins. Every failure resolves to `undefined` — an unknown account is a
  * missing label, never a wrong one.
  */
 export async function readAntigravityAccountEmail(home: string): Promise<string | undefined> {
@@ -89,12 +91,18 @@ export async function readAntigravityAccountEmail(home: string): Promise<string 
   }
   try {
     const stat = await handle.stat();
-    const start = Math.max(0, stat.size - LOG_TAIL_BYTES);
-    const length = stat.size - start;
-    if (length <= 0) return undefined;
-    const buffer = Buffer.alloc(Number(length));
-    await handle.read(buffer, 0, buffer.length, start);
-    return parseAntigravityAccountEmail(buffer.toString("utf8"));
+    let end = stat.size;
+    while (end > 0) {
+      const start = Math.max(0, end - LOG_CHUNK_BYTES);
+      const length = end - start;
+      const buffer = Buffer.alloc(Number(length));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+      const email = parseAntigravityAccountEmail(buffer.subarray(0, bytesRead).toString("utf8"));
+      if (email) return email;
+      if (start === 0) break;
+      end = start + LOG_CHUNK_OVERLAP_BYTES;
+    }
+    return undefined;
   } catch {
     return undefined;
   } finally {

@@ -163,14 +163,25 @@ export const makeAntigravityAcpRuntime = (
 /**
  * Model the session should use.
  *
- * Antigravity bakes the reasoning tier into the model id (`gemini-3.5-flash-high`),
- * so there is no separate effort axis to reconcile — the requested slug is the
- * whole selection. Deliberately not normalized through `normalizeModelSlug`:
- * the CLI resolves models by the exact id `agy models` printed, and rewriting
- * it risks producing one the CLI will not accept.
+ * T3 exposes Antigravity's baked-in reasoning suffix as a normal effort
+ * selector. Join it back here, at the provider boundary, so `agy` still gets
+ * the exact id printed by `agy models`.
  */
-export function resolveAntigravityAcpModelId(model: string | null | undefined): string | undefined {
-  return model?.trim() || undefined;
+export function resolveAntigravityAcpModelId(
+  model: string | null | undefined,
+  effort?: string | null | undefined,
+): string | undefined {
+  const normalizedModel = model?.trim();
+  if (!normalizedModel) return undefined;
+  const normalizedEffort = effort?.trim().toLowerCase();
+  if (
+    !normalizedEffort ||
+    !/^(?:high|medium|low)$/u.test(normalizedEffort) ||
+    /-(?:high|medium|low)$/u.test(normalizedModel)
+  ) {
+    return normalizedModel;
+  }
+  return `${normalizedModel}-${normalizedEffort}`;
 }
 
 export function currentAntigravityModelIdFromSessionSetup(

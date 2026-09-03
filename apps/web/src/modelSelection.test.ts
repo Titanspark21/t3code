@@ -554,6 +554,53 @@ describe("instance-scoped model selection", () => {
     ).toEqual(saved);
   });
 
+  it("migrates a saved Antigravity model suffix into the effort selector", () => {
+    const instanceId = ProviderInstanceId.make("antigravity_1");
+    const driver = ProviderDriverKind.make("antigravity");
+    const baseProvider = provider({
+      provider: driver,
+      instanceId,
+      models: ["gemini-3.8-flash"],
+    });
+    const providers: ReadonlyArray<ServerProvider> = [
+      {
+        ...baseProvider,
+        models: [
+          {
+            ...baseProvider.models[0]!,
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "effort",
+                  label: "Effort",
+                  type: "select",
+                  currentValue: "high",
+                  options: [
+                    { id: "high", label: "High" },
+                    { id: "medium", label: "Medium" },
+                    { id: "low", label: "Low" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const state = deriveEffectiveComposerModelState({
+      draft: null,
+      providers,
+      selectedProvider: driver,
+      selectedInstanceId: instanceId,
+      threadModelSelection: createModelSelection(instanceId, "gemini-3.8-flash-low"),
+      projectModelSelection: null,
+      settings: settingsWithProviderInstances(),
+    });
+
+    expect(state.selectedModel).toBe("gemini-3.8-flash");
+    expect(state.modelOptions?.[instanceId]).toEqual([{ id: "effort", value: "low" }]);
+  });
+
   it("keeps a custom-instance draft model while dropping unsupported options", () => {
     const instanceId = ProviderInstanceId.make("claude_openrouter");
     const driver = ProviderDriverKind.make("claudeAgent");
