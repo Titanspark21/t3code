@@ -64,6 +64,11 @@ after tool calls with no response. The remaining Stage B work is visual/live ver
       _Gate: a written list of what genuinely annoyed you, in priority order. Re-order the
       rest of this plan against it._
 
+- [ ] **S3 — Repair fresh-lock release smoke.** The checked-in lockfile and desktop builds use
+      the patched `expo-sharing@57.0.16`, but a fresh lock resolves the mobile dependency past
+      that exact patch and fails with `ERR_PNPM_UNUSED_PATCH`. Decide whether to pin the mobile
+      dependency or refresh the patch before the next mobile or lockfile release.
+
 ---
 
 ## Stage B — Usage limits, visible
