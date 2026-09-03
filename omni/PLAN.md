@@ -24,7 +24,8 @@ approval before browser use.
 
 Antigravity is now registered and selectable in the server and Add Provider flow. Its ACP
 adapter, bridge isolation, multi-pool quota normalizer, trust-prompt guard and combined quota
-headline are wired; the remaining Stage B work is visual/live verification.
+headline are wired. Coding turns now preserve terminal output and fail visibly instead of ending
+after tool calls with no response. The remaining Stage B work is visual/live verification.
 
 ---
 
@@ -154,14 +155,11 @@ the correct one.
       "Codex 1, Codex 2, Claude 1, Claude 2" is what *your* setup renders, not what the code
       says.
 
-      **The agy row is a single combined row.** It shows *average remaining* across all
-      connected agy accounts; clicking expands it to the individual remaining figure per
-      account. This is the one place the panel aggregates, because agy rotates between three
-      signed-in accounts automatically and the per-account split is detail, not headline.
-      _Design note, raised once and not overriding the decision:_ with automatic rotation the
-      pool you actually get is the account with the **most** remaining, so an average
-      understates what's available — consider showing "avg 41% · best 78%" in the collapsed
-      row, and decide after seeing it on screen.
+      **The agy row is a single combined row.** Its compact identity is `AGY` / `Combined`,
+      with the same fixed 5-hour and weekly columns as Codex and Claude. Clicking expands it to
+      one row per configured AGY instance, including the account email that instance actually
+      reported. Each duration uses the most constrained provider pool within an instance before
+      averaging fresh instances, so an exhausted Claude/GPT pool cannot be hidden by Gemini.
 
       **Honesty rules, non-negotiable.** A group whose data can't be read shows an explicit
       "not exposed" state. A snapshot past `QUOTA_SNAPSHOT_STALE_AFTER_MS` renders as stale
@@ -177,9 +175,8 @@ the correct one.
       - [x] Render explicit no-data, not-exposed and stale states; update countdowns once per
         minute and publish no quota update for unrelated provider traffic.
       - [x] Combine Antigravity accounts into the decided average headline with per-account
-        expansion. Each account averages its closest-to-exhaustion window per pool first, then
-        the collapsed headline averages the fresh account figures; stale and absent accounts do
-        not become zeroes.
+        expansion. The layout remains one full-width row at wide and narrow sidebar sizes;
+        stale and absent accounts do not become zeroes.
       - [ ] _Visual/live gate:_ inspect both sidebar shells with real Codex and Claude data,
         including narrow width, stale data, multiple environments and keyboard focus.
 
@@ -453,7 +450,8 @@ orchestration, contract, or client change."
 
 **Stage A is now wired.** The driver, ACP adapter, quota bridge listener, account presets,
 trust-prompt guard and verified slash-command catalogue are registered and covered by focused tests.
-The remaining Antigravity work is the B2 live-product gate.
+The remaining Antigravity work is the B2 live-product gate and upstream's missing multi-account
+credential selector.
 
 ### A1 — transport spike: ANSWERED
 
@@ -486,19 +484,21 @@ some package off the network.
       only and pins `HOME`/`APPDATA`/`LOCALAPPDATA`/`GIT_CONFIG_GLOBAL` back to the real
       user; POSIX must move `HOME` and pins git identity and the npm cache back, with the
       residual ssh redirection reported by `antigravityIsolationCaveats` instead of hidden.
-      Fixes the previous fork's defect (both vars redirected, no passthrough).
+      AGY's operating-system keyring can still be shared across those homes, so the provider
+      reports the email it actually used rather than claiming that a folder proves identity.
 - [x] **Launch mapping** — `AntigravityLaunch.ts` + tests. Never emits
       `--dangerously-skip-permissions`; `full-access` maps to `--mode accept-edits`, and
       bypass flags pasted into settings are stripped and reported. Models parsed from
-      `agy models`.
+      `agy models`; suffix variants such as Gemini 3.8 Flash High/Medium/Low collapse into one
+      model plus a separate Effort selector, and old saved suffix selections are migrated.
 - [x] **Health probe** — `Layers/AntigravityProvider.ts`. Runs `--version` and `agy models`
-      under the isolated environment, so a profile that is not logged in reports as such
-      instead of inheriting the default account's health.
+      under the isolated environment, exposes the reported email, and does not claim an
+      authenticated state when the model/login probe cannot be verified.
 - [x] **ACP support surface** — `acp/AntigravityAcpSupport.ts` + tests. Bridge spawn under
       the isolated profile, `AGY_BINARY` pinned so the bridge cannot resolve a different CLI
       than the health probe checked, bypass flags stripped from user-editable bridge
-      arguments, and model selection passed through by exact id (agy bakes the reasoning
-      tier into the id, so there is no separate effort axis).
+      arguments, and the separate effort choice is joined back to agy's exact model id only at
+      the provider boundary.
 
 ### Left to do
 
@@ -518,6 +518,22 @@ some package off the network.
 - [x] **A5 — first-run trust prompt.** A fresh agy session in a new project asks "Do you
       trust the contents of this project?". The adapter recognizes that request and bypasses
       full-access auto-approval so it remains visible for explicit user approval.
+- [ ] **A6 — true multi-account AGY credentials.** Current AGY builds authenticate through one
+      operating-system keyring and publish no supported profile/auth-store selector. T3 isolates
+      settings, conversations and processes, shows each instance's actual reported email, and
+      warns when profile folders share a login; it must not scrape or copy OAuth tokens. Revisit
+      when `google-antigravity/antigravity-cli#381` gains a supported selector.
+
+---
+
+## Stage D — Android remote access without Tailscale
+
+- [ ] **D1 — Deploy the existing T3 Connect path on the developer's Cloudflare domain.** T3
+      already supports Android-to-PC/server access from unrelated networks through its relay and
+      managed Cloudflare tunnel, so do not build a second networking stack. The remaining product
+      choice is whether the domain should host the full multi-computer T3 Connect service or a
+      simpler one-PC Cloudflare tunnel; after that, wire the chosen hostname and release the
+      Android build.
 
 ---
 
