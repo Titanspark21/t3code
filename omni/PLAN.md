@@ -64,23 +64,41 @@ after tool calls with no response. The remaining Stage B work is visual/live ver
       _Gate: a written list of what genuinely annoyed you, in priority order. Re-order the
       rest of this plan against it._
 
-- [ ] **S4 — Take the 283-commit upstream merge.** `omni/main` is 283 commits behind
-      `upstream/main`, and the gap now costs a real bug: upstream `c3b8825bf`
-      "preserve tool icons on failed calls" fixes failed-looking icons on finished chats,
-      and it cannot be cherry-picked — it depends on `ToolActivityIconView`,
-      `toolIconAcceptsTint` and a reworked `buildToolCallExpandedBody` that the fork does
-      not have. A trial merge conflicts in 46 files, concentrated in fork-owned provider
-      code (`AntigravityAdapter`, `ProviderService`, `contracts/model.ts`, the model
-      picker). Do it as its own job with a full build and test pass behind it, not folded
-      into a bugfix release.
+- [ ] **S4 — Take the 283-commit upstream merge, and delete this fork's Antigravity.**
+      Upstream shipped `06336460c` "feat(providers): add Google Antigravity via the official
+      ACP agent (#9348)" on 2026-09-03. It runs Antigravity's own `agy_acp_server.par`
+      through the same `AcpSessionRuntime` as every other ACP provider — real
+      `session/request_permission` approvals, client-side `fs.readTextFile`/`writeTextFile`,
+      proper auth methods, and an installer that downloads, verifies and extracts the server.
+      Upstream ships **no** hand-written bridge.
+
+      This fork instead carries 16 bespoke Antigravity files upstream does not have, chief
+      among them the ~750-line `acp/AntigravityAcpBridge.ts`, which fakes ACP on top of
+      `agy --print`. Print mode is one-shot: no permission protocol, no client filesystem,
+      no session model. Every capability T3 expects is synthesized, which is why this
+      provider keeps breaking in ways Claude and Codex never do — they speak supported
+      machine protocols (Claude's stream-json, `codex app-server`) and this one is an
+      emulation. No other fork does this: `VitaCodez/t3code-antigravity` and
+      `lastobelus/lastCode` both carry upstream's `AntigravityProtocol.ts` /
+      `AntigravitySessionFiles.ts` and nothing home-grown.
+
+      **Resolve the Antigravity conflicts by deleting this fork's version wholesale and
+      taking upstream's.** Roughly a dozen of the 46 conflicting files are the bespoke
+      implementation itself, so they disappear rather than needing a merge. Keep only what
+      is genuinely fork-only and still wanted — account presets, the quota panel — and
+      re-attach those to upstream's provider. The trial merge also conflicts in
+      `ProviderService`, `contracts/model.ts` and the model picker; those are real merges.
+      The same merge brings `c3b8825bf` "preserve tool icons on failed calls", which cannot
+      be cherry-picked on its own (it needs `ToolActivityIconView`, `toolIconAcceptsTint`
+      and a reworked `buildToolCallExpandedBody`).
 
 - [ ] **S5 — Document the local release procedure.** Releases are built on this Ubuntu box,
       not by `release.yml` (disabled on this fork: no Blacksmith runners, no Actions
       minutes, no Mac), and nothing in `omni/` says how. The working recipe is:
       `node scripts/update-release-package-versions.ts <version>`, then
       `T3CODE_DESKTOP_UPDATE_REPOSITORY=TitansparkDev/t3code
-    T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true node scripts/build-desktop-artifact.ts
-    --platform <linux|win> --target <AppImage|nsis> --arch x64 --build-version <version>`,
+  T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true node scripts/build-desktop-artifact.ts
+  --platform <linux|win> --target <AppImage|nsis> --arch x64 --build-version <version>`,
       then `gh release create`. Three traps worth writing down: without the update
       repository variable electron-builder emits no `latest*.yml` and the in-app updater
       goes blind; there is no Rust toolchain here, so the reuse variable is mandatory; and
