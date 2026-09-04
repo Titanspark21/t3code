@@ -115,7 +115,7 @@ export interface AntigravityUsagePayload {
   }>;
 }
 
-const EFFORT_SUFFIXES = ["high", "medium", "low"] as const;
+export const EFFORT_SUFFIXES = ["high", "medium", "low"] as const;
 
 /**
  * Parse the output of `agy models`.

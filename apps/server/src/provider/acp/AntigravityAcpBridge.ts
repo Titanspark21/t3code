@@ -13,7 +13,7 @@ import * as NodeProcess from "node:process";
 import * as NodeReadline from "node:readline";
 import * as NodeTimers from "node:timers";
 
-import { parseAntigravityModels } from "../Drivers/AntigravityLaunch.ts";
+import { EFFORT_SUFFIXES, parseAntigravityModels } from "../Drivers/AntigravityLaunch.ts";
 
 type JsonRpcId = string | number;
 type JsonRecord = Record<string, unknown>;
@@ -48,6 +48,33 @@ export type AgySessionUpdateWriter = (sessionId: string, update: JsonRecord) => 
 interface AgyModelState {
   readonly availableModels: ReadonlyArray<{ readonly modelId: string; readonly name: string }>;
   readonly currentModelId: string;
+}
+
+/**
+ * Map a requested model onto an id `agy` actually accepts.
+ *
+ * The picker groups the effort variants of a family under one slug —
+ * `gemini-3.8-flash` stands for `gemini-3.8-flash-{high,medium,low}` — and the
+ * effort is a separate selector. A selection that carries no effort therefore
+ * arrives here as a family slug, which `agy models` never lists, so rejecting
+ * it outright fails the turn for a model the user can plainly see. Fall back to
+ * the strongest variant the family actually publishes; only a family with no
+ * variant at all is unknown.
+ *
+ * An empty catalogue means discovery failed, not that nothing is available, so
+ * the request passes through and `agy` reports its own error.
+ */
+export function resolveAvailableAntigravityModelId(
+  requestedModelId: string,
+  availableModels: AgyModelState["availableModels"],
+): string | undefined {
+  if (availableModels.length === 0) return requestedModelId;
+  if (availableModels.some((model) => model.modelId === requestedModelId)) return requestedModelId;
+  for (const effort of EFFORT_SUFFIXES) {
+    const candidate = `${requestedModelId}-${effort}`;
+    if (availableModels.some((model) => model.modelId === candidate)) return candidate;
+  }
+  return undefined;
 }
 
 /**
@@ -423,14 +450,16 @@ class AgySession {
   }
 
   async setModel(modelId: string): Promise<void> {
-    const normalizedModelId = modelId.trim();
-    if (!normalizedModelId || normalizedModelId === this.modelState.currentModelId) return;
-    if (
-      this.modelState.availableModels.length > 0 &&
-      !this.modelState.availableModels.some((model) => model.modelId === normalizedModelId)
-    ) {
-      throw new Error(`Unknown Antigravity model: ${normalizedModelId}`);
+    const requestedModelId = modelId.trim();
+    if (!requestedModelId) return;
+    const normalizedModelId = resolveAvailableAntigravityModelId(
+      requestedModelId,
+      this.modelState.availableModels,
+    );
+    if (!normalizedModelId) {
+      throw new Error(`Unknown Antigravity model: ${requestedModelId}`);
     }
+    if (normalizedModelId === this.modelState.currentModelId) return;
     if (!this.conversationId) {
       throw new Error("Antigravity has not reported a conversation id yet.");
     }
@@ -488,10 +517,16 @@ async function createSession(
 ): Promise<AgySession> {
   const availableModels = await discoverModels(cwd);
   const requestedModel = NodeProcess.env.AGY_MODEL?.trim();
-  const currentModelId = requestedModel || availableModels[0]?.modelId || "default";
+  // A family slug resolves to a real variant here too: the first turn starts
+  // the CLI with this id, so leaving it unresolved fails the session before a
+  // model change could ever correct it.
+  const resolvedModel = requestedModel
+    ? (resolveAvailableAntigravityModelId(requestedModel, availableModels) ?? requestedModel)
+    : undefined;
+  const currentModelId = resolvedModel || availableModels[0]?.modelId || "default";
   const modelsWithRequested =
-    requestedModel && !availableModels.some((model) => model.modelId === requestedModel)
-      ? [...availableModels, { modelId: requestedModel, name: requestedModel }]
+    resolvedModel && !availableModels.some((model) => model.modelId === resolvedModel)
+      ? [...availableModels, { modelId: resolvedModel, name: resolvedModel }]
       : availableModels;
   const modelState: AgyModelState = {
     availableModels: modelsWithRequested,

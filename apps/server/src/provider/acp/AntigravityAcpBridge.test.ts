@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   antigravityStreamArgs,
   promptSession,
+  resolveAvailableAntigravityModelId,
   toolKind,
   toolStatus,
   toolTitle,
@@ -120,5 +121,47 @@ describe("prompt result handling", () => {
         () => undefined,
       ),
     ).rejects.toThrow("tool execution failed");
+  });
+});
+
+describe("resolveAvailableAntigravityModelId", () => {
+  const available = [
+    { modelId: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" },
+    { modelId: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
+    { modelId: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },
+    { modelId: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
+    { modelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
+  ];
+
+  it("resolves a family slug to the strongest published variant", () => {
+    // The picker shows one "Gemini 3.8 Flash" entry, so a selection without an
+    // effort arrives as the family slug that `agy models` never lists.
+    expect(resolveAvailableAntigravityModelId("gemini-3.8-flash", available)).toBe(
+      "gemini-3.8-flash-high",
+    );
+  });
+
+  it("skips efforts a family does not publish", () => {
+    expect(resolveAvailableAntigravityModelId("gemini-3.1-pro", available)).toBe(
+      "gemini-3.1-pro-low",
+    );
+  });
+
+  it("keeps an exact id untouched", () => {
+    expect(resolveAvailableAntigravityModelId("gemini-3.8-flash-medium", available)).toBe(
+      "gemini-3.8-flash-medium",
+    );
+    expect(resolveAvailableAntigravityModelId("claude-sonnet-4-6", available)).toBe(
+      "claude-sonnet-4-6",
+    );
+  });
+
+  it("reports a family with no variant as unknown", () => {
+    expect(resolveAvailableAntigravityModelId("gemini-9.9-flash", available)).toBeUndefined();
+  });
+
+  it("passes the request through when discovery produced nothing", () => {
+    // An empty catalogue means `agy models` failed; let the CLI answer.
+    expect(resolveAvailableAntigravityModelId("gemini-3.8-flash", [])).toBe("gemini-3.8-flash");
   });
 });
