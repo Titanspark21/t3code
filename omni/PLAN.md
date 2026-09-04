@@ -64,6 +64,29 @@ after tool calls with no response. The remaining Stage B work is visual/live ver
       _Gate: a written list of what genuinely annoyed you, in priority order. Re-order the
       rest of this plan against it._
 
+- [ ] **S4 — Take the 283-commit upstream merge.** `omni/main` is 283 commits behind
+      `upstream/main`, and the gap now costs a real bug: upstream `c3b8825bf`
+      "preserve tool icons on failed calls" fixes failed-looking icons on finished chats,
+      and it cannot be cherry-picked — it depends on `ToolActivityIconView`,
+      `toolIconAcceptsTint` and a reworked `buildToolCallExpandedBody` that the fork does
+      not have. A trial merge conflicts in 46 files, concentrated in fork-owned provider
+      code (`AntigravityAdapter`, `ProviderService`, `contracts/model.ts`, the model
+      picker). Do it as its own job with a full build and test pass behind it, not folded
+      into a bugfix release.
+
+- [ ] **S5 — Document the local release procedure.** Releases are built on this Ubuntu box,
+      not by `release.yml` (disabled on this fork: no Blacksmith runners, no Actions
+      minutes, no Mac), and nothing in `omni/` says how. The working recipe is:
+      `node scripts/update-release-package-versions.ts <version>`, then
+      `T3CODE_DESKTOP_UPDATE_REPOSITORY=TitansparkDev/t3code
+    T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true node scripts/build-desktop-artifact.ts
+    --platform <linux|win> --target <AppImage|nsis> --arch x64 --build-version <version>`,
+      then `gh release create`. Three traps worth writing down: without the update
+      repository variable electron-builder emits no `latest*.yml` and the in-app updater
+      goes blind; there is no Rust toolchain here, so the reuse variable is mandatory; and
+      the Windows target needs a working wine prefix (`/home/ajay/.cache/t3code-wine` —
+      the default `~/.wine` is broken with `could not load kernel32.dll`).
+
 - [ ] **S3 — Repair fresh-lock release smoke.** The checked-in lockfile and desktop builds use
       the patched `expo-sharing@57.0.16`, but a fresh lock resolves the mobile dependency past
       that exact patch and fails with `ERR_PNPM_UNUSED_PATCH`. Decide whether to pin the mobile
