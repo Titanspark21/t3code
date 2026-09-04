@@ -1,212 +1,362 @@
-/**
- * Provider-specific ACP surface for Antigravity (`agy`).
- *
- * Mirrors `GrokAcpSupport.ts`: everything protocol-level lives in
- * `AcpSessionRuntime`, and this file supplies only the parts that are specific
- * to this agent — how to spawn it, which auth method to name, and how model
- * selection maps.
- *
- * `agy` has no native ACP mode yet, so T3 ships a small stream-JSON bridge. A
- * user-configured bridge is still supported for installations that need one,
- * but blank bridge settings use the built-in bridge automatically.
- *
- * @module provider/acp/AntigravityAcpSupport
- */
-import type { AntigravitySettings } from "@t3tools/contracts/antigravity";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL,
+  type AntigravityAuthMethod,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type ProviderSendTurnInput,
+  type RuntimeMode,
+} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import type { RuntimeMode } from "@t3tools/contracts";
 
+import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import {
+  makeAntigravityStderrHandler,
+  makeAntigravityStdoutTransform,
+} from "../antigravityAuthSupport.ts";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
-import { makeAntigravityEnvironment } from "../Drivers/AntigravityHome.ts";
-import { antigravityModeFlags, stripPermissionBypassFlags } from "../Drivers/AntigravityLaunch.ts";
+import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
-/**
- * Most community ACP bridges do not implement a distinct auth step — the
- * underlying `agy` login is already on disk in the profile directory — so the
- * cached-token method is the right default.
- */
-const ANTIGRAVITY_AUTH_METHOD_CACHED_TOKEN = "cached_token";
-
-/**
- * Points the bridge at the CLI this instance is configured to use, so the
- * bridge does not independently resolve `agy` from `PATH` and land on a
- * different binary than the one the health probe checked.
- */
-const ANTIGRAVITY_BINARY_ENV = "AGY_BINARY";
-
-export type AntigravityAcpSettings = Pick<
-  AntigravitySettings,
-  "binaryPath" | "bridgeCommand" | "bridgeArgs" | "profileDir"
->;
-
-export interface AntigravityAcpSpawnResult {
-  readonly spawn: AcpSessionRuntime.AcpSpawnInput;
-  /**
-   * Bypass flags removed from the user's bridge arguments. Non-empty means the
-   * user asked for something that was refused, and the UI should say so rather
-   * than quietly disagreeing.
-   */
-  readonly removedFlags: ReadonlyArray<string>;
-}
-
-export interface AntigravityAcpSessionOptions {
-  /** Exact slug from `agy models`; passed before the stream starts. */
-  readonly model?: string | undefined;
-  /** Runtime permission mode; mapped to AGY's safe `--mode` values. */
-  readonly runtimeMode?: RuntimeMode | undefined;
-}
-
-export class AntigravityBridgeNotConfiguredError extends Error {
-  readonly _tag = "AntigravityBridgeNotConfiguredError";
-  constructor() {
-    super("The built-in Antigravity ACP bridge could not locate the T3 CLI entrypoint.");
-  }
-}
-
-/**
- * Build the bridge spawn input.
- *
- * Two guarantees, both because these arguments come from a settings text box:
- *
- *  - permission-bypass flags are stripped, so the guardrail in
- *    `AntigravityLaunch.antigravityModeFlags` cannot be undone by pasting
- *    `--dangerously-skip-permissions` into the bridge arguments;
- *  - the process runs under this instance's isolated environment, so the bridge
- *    and the `agy` it spawns resolve the same account.
- */
-export function buildAntigravityAcpSpawnInput(
-  settings: AntigravityAcpSettings,
-  cwd: string,
-  environment?: NodeJS.ProcessEnv,
-  sessionOptions?: AntigravityAcpSessionOptions,
-): AntigravityAcpSpawnResult {
-  const configuredCommand = settings.bridgeCommand.trim();
-  const entrypoint = process.argv[1]?.trim();
-  const command = configuredCommand || process.execPath;
-  const configuredArgs = stripPermissionBypassFlags(settings.bridgeArgs);
-  const args = configuredCommand
-    ? configuredArgs.args
-    : entrypoint
-      ? [entrypoint, "antigravity-acp-bridge"]
-      : (() => {
-          throw new AntigravityBridgeNotConfiguredError();
-        })();
-  const removed = configuredCommand ? configuredArgs.removed : [];
-  const isolated = makeAntigravityEnvironment(settings, environment ?? process.env);
-  const modeFlags = sessionOptions?.runtimeMode
-    ? antigravityModeFlags({ runtimeMode: sessionOptions.runtimeMode })
-    : [];
-  const mode = modeFlags[1];
-
-  return {
-    spawn: {
-      command,
-      args,
-      cwd,
-      env: {
-        ...isolated,
-        [ANTIGRAVITY_BINARY_ENV]: settings.binaryPath.trim() || "agy",
-        ...(sessionOptions?.model?.trim() ? { AGY_MODEL: sessionOptions.model.trim() } : {}),
-        ...(mode ? { AGY_MODE: mode } : {}),
-      },
-    },
-    removedFlags: removed,
-  };
-}
-
-interface AntigravityAcpRuntimeInput extends Omit<
+export interface AntigravityAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
-  "authMethodId" | "clientCapabilities" | "spawn"
+  | "authMethodId"
+  | "cancelBehavior"
+  | "clientCapabilities"
+  | "onStderr"
+  | "resumeMethod"
+  | "transformSessionUpdate"
+  | "transformStdout"
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
-  readonly settings: AntigravityAcpSettings;
-  readonly environment?: NodeJS.ProcessEnv;
-  readonly sessionOptions?: AntigravityAcpSessionOptions;
+  readonly onAuthorizationUrl?: (url: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
+  /**
+   * Advertise `fs.readTextFile` and `fs.writeTextFile`. The agent then routes
+   * workspace reads and writes through T3, which turns each edit into a
+   * `session/request_permission` with the file content, instead of writing
+   * through its own tools. Chat sessions turn this on. Setup, probe, and text
+   * generation helpers leave it off so they never touch a workspace.
+   */
+  readonly clientFileSystem?: boolean;
+  /** ACP `authenticate` method id. Defaults to the personal Google account flow. */
+  readonly authMethod?: AntigravityAuthMethod;
 }
 
-export const makeAntigravityAcpRuntime = (
+/** Normal launches reject browser login; only the auth flow supplies `onAuthorizationUrl`. */
+export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(function* (
   input: AntigravityAcpRuntimeInput,
-): Effect.Effect<
+): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
   Crypto.Crypto | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const { spawn } = buildAntigravityAcpSpawnInput(
-      input.settings,
-      input.cwd,
-      input.environment,
-      input.sessionOptions,
+> {
+  const context = yield* Layer.build(
+    AcpSessionRuntime.layer({
+      ...input,
+      authMethodId: input.authMethod ?? "oauth-personal",
+      resumeMethod: "resume",
+      cancelBehavior: "wait-for-prompt",
+      clientCapabilities: {
+        fs: {
+          readTextFile: input.clientFileSystem === true,
+          writeTextFile: input.clientFileSystem === true,
+        },
+        terminal: false,
+      },
+      transformStdout: makeAntigravityStdoutTransform(
+        input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
+      ),
+      onStderr: makeAntigravityStderrHandler(
+        input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
+      ),
+      transformSessionUpdate: normalizeAntigravitySessionUpdate,
+    }).pipe(
+      Layer.provide(
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
+      ),
+    ),
+  );
+  return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(Effect.provide(context));
+});
+
+export function antigravityPermissionMode(runtimeMode: RuntimeMode): string {
+  switch (runtimeMode) {
+    case "full-access":
+      return "yolo";
+    case "auto-accept-edits":
+      return "auto_edit";
+    case "auto":
+    case "approval-required":
+      return "default";
+  }
+}
+
+export function antigravityModelOptions(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+) {
+  const model = configOptions.find((option) => option.id === "model");
+  if (model?.type !== "select") return [];
+  return model.options.flatMap((entry) => ("value" in entry ? [entry] : entry.options));
+}
+
+/**
+ * Resolves the model a turn should run on. A saved selection is reapplied
+ * as-is. The provider default alias resolves to `defaultModel` when the
+ * account offers it, so T3 can pick a newer model than the one Google marks
+ * current. Otherwise the agent's current selection stands.
+ */
+export function resolveAntigravityModel(input: {
+  readonly configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
+  readonly model: string | null | undefined;
+  readonly defaultModel?: string | undefined;
+}): string | undefined {
+  const modelConfig = input.configOptions.find((option) => option.id === "model");
+  const current = modelConfig?.type === "select" ? modelConfig.currentValue : undefined;
+  if (input.model && input.model !== ANTIGRAVITY_DEFAULT_MODEL) return input.model;
+  const options = antigravityModelOptions(input.configOptions);
+  return input.defaultModel && options.some((option) => option.value === input.defaultModel)
+    ? input.defaultModel
+    : current;
+}
+
+/** Never replace a saved selection with the default returned by a cold resume. */
+export const applyAntigravityAcpModelSelection = Effect.fn("applyAntigravityAcpModelSelection")(
+  function* <E>(input: {
+    readonly runtime: Pick<
+      AcpSessionRuntime.AcpSessionRuntime["Service"],
+      "getConfigOptions" | "setModel"
+    >;
+    readonly model: string | null | undefined;
+    /** Model to select for the provider default alias. See `resolveAntigravityModel`. */
+    readonly defaultModel?: string | undefined;
+    readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
+  }): Effect.fn.Return<string | undefined, E> {
+    const configOptions = yield* input.runtime.getConfigOptions;
+    const modelConfig = configOptions.find((option) => option.id === "model");
+    const current = modelConfig?.type === "select" ? modelConfig.currentValue : undefined;
+    const resolved = resolveAntigravityModel({
+      configOptions,
+      model: input.model,
+      defaultModel: input.defaultModel,
+    });
+    // The default alias never sends an internal ID. It selects the manifest
+    // default when that differs from the agent's current model, and otherwise
+    // leaves the agent's choice alone.
+    const explicit = Boolean(input.model) && input.model !== ANTIGRAVITY_DEFAULT_MODEL;
+    if (resolved === undefined || (!explicit && resolved === current)) return current;
+    const options = antigravityModelOptions(configOptions);
+    if (!options.some((option) => option.value === resolved)) {
+      return yield* Effect.fail(
+        input.mapError(
+          EffectAcpErrors.AcpRequestError.invalidParams(
+            `Antigravity model '${resolved}' is unavailable for this Google account. Select an available model.`,
+          ),
+        ),
+      );
+    }
+    yield* input.runtime.setModel(resolved).pipe(Effect.mapError(input.mapError));
+    return resolved;
+  },
+);
+
+const IMAGE_MIME_TYPES = new Set(["image/bmp", "image/jpeg", "image/png", "image/webp"]);
+// Formats the bundled SDK's Audio type accepts. Anything else is rejected up front.
+const AUDIO_MIME_TYPES = new Set([
+  "audio/aac",
+  "audio/flac",
+  "audio/mp3",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/webm",
+]);
+export const ANTIGRAVITY_MAX_AUDIO_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const TEXT_MIME_TYPES = new Set([
+  "application/json",
+  "application/ld+json",
+  "application/javascript",
+  "application/typescript",
+  "application/xml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/x-sh",
+]);
+const TEXT_FILE_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".mdx",
+  ".json",
+  ".jsonl",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".csv",
+  ".tsv",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".html",
+  ".css",
+  ".scss",
+  ".less",
+  ".py",
+  ".rs",
+  ".go",
+  ".java",
+  ".kt",
+  ".swift",
+  ".c",
+  ".h",
+  ".cc",
+  ".cpp",
+  ".hpp",
+  ".cs",
+  ".rb",
+  ".php",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".sql",
+  ".graphql",
+  ".svelte",
+  ".vue",
+  ".log",
+  ".diff",
+  ".patch",
+  ".ini",
+  ".conf",
+]);
+export const ANTIGRAVITY_MAX_TEXT_ATTACHMENT_BYTES = 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+
+/** Sends uploads as native ACP content instead of workspace path hints. */
+export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(function* (input: {
+  readonly input: ProviderSendTurnInput["input"];
+  readonly attachments: ProviderSendTurnInput["attachments"];
+  readonly attachmentsDir: string;
+}): Effect.fn.Return<
+  ReadonlyArray<EffectAcpSchema.ContentBlock>,
+  EffectAcpErrors.AcpError,
+  FileSystem.FileSystem | Path.Path
+> {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const blocks: Array<EffectAcpSchema.ContentBlock> = [];
+  const text = input.input?.trim();
+  if (text) blocks.push({ type: "text", text });
+  let totalBytes = 0;
+
+  for (const attachment of input.attachments ?? []) {
+    const mimeType = attachment.mimeType.toLowerCase().split(";", 1)[0] ?? "";
+    const image = attachment.type === "image" && IMAGE_MIME_TYPES.has(mimeType);
+    const audio = attachment.type === "file" && AUDIO_MIME_TYPES.has(mimeType);
+    const pdf = attachment.type === "file" && mimeType === "application/pdf";
+    const textFile =
+      attachment.type === "file" &&
+      (mimeType.startsWith("text/") ||
+        TEXT_MIME_TYPES.has(mimeType) ||
+        TEXT_FILE_EXTENSIONS.has(path.extname(attachment.name).toLowerCase()));
+    if (!image && !audio && !pdf && !textFile) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Antigravity does not support '${attachment.name}' (${attachment.mimeType}). Attach a BMP, JPEG, PNG, WebP, PDF, audio, or text file.`,
+      );
+    }
+    const attachmentPath = resolveAttachmentPath({
+      attachmentsDir: input.attachmentsDir,
+      attachment,
+    });
+    if (!attachmentPath) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Invalid attachment '${attachment.name}'.`,
+      );
+    }
+    const info = yield* fileSystem
+      .stat(attachmentPath)
+      .pipe(
+        Effect.mapError(() =>
+          EffectAcpErrors.AcpRequestError.invalidParams(
+            `Could not read attachment '${attachment.name}'.`,
+          ),
+        ),
+      );
+    const size = Number(info.size);
+    const limit = image
+      ? PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+      : audio
+        ? ANTIGRAVITY_MAX_AUDIO_ATTACHMENT_BYTES
+        : pdf
+          ? PROVIDER_SEND_TURN_MAX_FILE_BYTES
+          : ANTIGRAVITY_MAX_TEXT_ATTACHMENT_BYTES;
+    totalBytes += size;
+    if (info.type !== "File" || size > limit || totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Attachment '${attachment.name}' is too large. Antigravity accepts text files up to 1 MiB, images up to 10 MiB, audio up to 20 MiB, and 50 MiB total attachments.`,
+      );
+    }
+    const uri = yield* path.toFileUrl(attachmentPath).pipe(
+      Effect.map((url) => url.href),
+      Effect.mapError(() =>
+        EffectAcpErrors.AcpRequestError.invalidParams(`Invalid attachment '${attachment.name}'.`),
+      ),
     );
-    const acpContext = yield* Layer.build(
-      AcpSessionRuntime.layer({
-        ...input,
-        spawn,
-        authMethodId: ANTIGRAVITY_AUTH_METHOD_CACHED_TOKEN,
-      }).pipe(
-        Layer.provide(
-          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
+    if (pdf) {
+      blocks.push({ type: "resource_link", uri, name: attachment.name, mimeType });
+      continue;
+    }
+    const bytes = yield* fileSystem.stream(attachmentPath, { bytesToRead: limit + 1 }).pipe(
+      Stream.runCollect,
+      Effect.map((chunks) => Buffer.concat(chunks)),
+      Effect.mapError(() =>
+        EffectAcpErrors.AcpRequestError.invalidParams(
+          `Could not read attachment '${attachment.name}'.`,
         ),
       ),
     );
-    return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
-      Effect.provide(acpContext),
+    totalBytes += bytes.length - size;
+    if (bytes.length > limit || totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Attachment '${attachment.name}' changed while being read and is too large.`,
+      );
+    }
+    if (image) {
+      blocks.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });
+    } else if (audio) {
+      blocks.push({ type: "audio", data: Buffer.from(bytes).toString("base64"), mimeType });
+    } else {
+      const decoded = yield* Effect.try({
+        try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        catch: () =>
+          EffectAcpErrors.AcpRequestError.invalidParams(
+            `Attachment '${attachment.name}' is not a UTF-8 text file.`,
+          ),
+      });
+      if (decoded.includes("\0")) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `Attachment '${attachment.name}' contains binary data.`,
+        );
+      }
+      blocks.push({ type: "resource", resource: { uri, mimeType, text: decoded } });
+    }
+  }
+  if (blocks.length === 0) {
+    return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+      "A turn requires text or supported attachments.",
     );
-  });
-
-/**
- * Model the session should use.
- *
- * T3 exposes Antigravity's baked-in reasoning suffix as a normal effort
- * selector. Join it back here, at the provider boundary, so `agy` still gets
- * the exact id printed by `agy models`.
- */
-export function resolveAntigravityAcpModelId(
-  model: string | null | undefined,
-  effort?: string | null | undefined,
-): string | undefined {
-  const normalizedModel = model?.trim();
-  if (!normalizedModel) return undefined;
-  const normalizedEffort = effort?.trim().toLowerCase();
-  if (
-    !normalizedEffort ||
-    !/^(?:high|medium|low)$/u.test(normalizedEffort) ||
-    /-(?:high|medium|low)$/u.test(normalizedModel)
-  ) {
-    return normalizedModel;
   }
-  return `${normalizedModel}-${normalizedEffort}`;
-}
-
-export function currentAntigravityModelIdFromSessionSetup(
-  sessionSetupResult:
-    | EffectAcpSchema.LoadSessionResponse
-    | EffectAcpSchema.NewSessionResponse
-    | EffectAcpSchema.ResumeSessionResponse,
-): string | undefined {
-  return sessionSetupResult.models?.currentModelId?.trim() || undefined;
-}
-
-/**
- * Switch models only when the request differs from what the session already
- * has, so an unchanged selection costs no round trip.
- */
-export function applyAntigravityAcpModelSelection<E>(input: {
-  readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setSessionModel">;
-  readonly currentModelId: string | undefined;
-  readonly requestedModelId: string | undefined;
-  readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
-}): Effect.Effect<string | undefined, E> {
-  if (input.requestedModelId === undefined || input.requestedModelId === input.currentModelId) {
-    return Effect.succeed(input.currentModelId);
-  }
-  return input.runtime
-    .setSessionModel(input.requestedModelId)
-    .pipe(Effect.mapError(input.mapError), Effect.as(input.requestedModelId));
-}
+  return blocks;
+});

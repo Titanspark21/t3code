@@ -22,13 +22,15 @@ const quotaEvent = (
   threadId: ThreadId.make("thread-1"),
   createdAt: "2026-08-23T12:00:00.000Z",
   payload: {
-    rateLimits: {
-      rateLimits: {
-        primary: {
+    limits: {
+      windows: [
+        {
+          id: "five_hour",
+          kind: "session" as const,
           usedPercent,
           windowDurationMins: 300,
         },
-      },
+      ],
     },
   },
 });

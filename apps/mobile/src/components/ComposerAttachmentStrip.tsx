@@ -1,17 +1,23 @@
 import { SymbolView } from "../components/AppSymbol";
 import { videoMimeType } from "@t3tools/shared/video";
-import { useEffect, useRef, useState } from "react";
-import { Alert, Image, Pressable, ScrollView, View } from "react-native";
+import { useMemo } from "react";
+import { Image, Pressable, ScrollView, View } from "react-native";
 
 import { AppText as Text } from "./AppText";
 import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
-import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
+import type { MediaActionsSource } from "../lib/mediaActions";
 import { PresentationSource } from "./NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  retryComposerAttachmentUpload,
+  useComposerAttachmentUploadState,
+} from "../state/composer-attachment-uploads";
 
 export interface ComposerAttachmentStripProps {
+  readonly environmentId?: EnvironmentId;
   /** Attachments to display. */
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   /** Called when the user removes an attachment. */
@@ -30,7 +36,8 @@ export interface ComposerAttachmentStripProps {
   readonly removeButtonPlacement?: "overlay" | "gutter";
 }
 
-export function ComposerAttachmentThumbnail(props: {
+type ComposerAttachmentThumbnailProps = {
+  readonly environmentId?: EnvironmentId;
   readonly attachment: DraftComposerAttachment;
   readonly size: number;
   readonly borderRadius: number;
@@ -40,7 +47,47 @@ export function ComposerAttachmentThumbnail(props: {
     attachment: DraftComposerFileAttachment,
     sourceIdentifier: string,
   ) => void;
-}) {
+};
+
+export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailProps) {
+  const upload = useComposerAttachmentUploadState(props.environmentId, props.attachment.id);
+  return (
+    <View style={{ width: props.size, height: props.size }}>
+      <ComposerAttachmentContent {...props} />
+      {upload && upload.status !== "ready" ? (
+        <Pressable
+          accessibilityRole={upload.status === "failed" ? "button" : "text"}
+          accessibilityLabel={
+            upload.status === "failed"
+              ? `Retry uploading ${props.attachment.name}`
+              : `Uploading ${props.attachment.name}, ${Math.floor(upload.progress * 100)}%`
+          }
+          accessibilityHint={upload.status === "failed" ? upload.reason : undefined}
+          disabled={upload.status !== "failed"}
+          onPress={() =>
+            props.environmentId &&
+            retryComposerAttachmentUpload(props.environmentId, props.attachment.id)
+          }
+          className="absolute bottom-0.5 left-0.5 flex-row items-center gap-0.5 rounded-full bg-black/70 px-1 py-0.5"
+        >
+          <SymbolView
+            name={upload.status === "failed" ? "arrow.clockwise" : "arrow.up"}
+            size={props.compact ? 8 : 10}
+            tintColor="#ffffff"
+            type="monochrome"
+          />
+          {!props.compact ? (
+            <Text className="text-2xs text-white">
+              {upload.status === "failed" ? "Retry" : `${Math.floor(upload.progress * 100)}%`}
+            </Text>
+          ) : null}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function ComposerAttachmentContent(props: ComposerAttachmentThumbnailProps) {
   const { attachment } = props;
   const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
   if (attachment.type === "image") {
@@ -128,45 +175,15 @@ function ComposerVideoAttachment(props: {
   const { attachment } = props;
   const sourceIdentifier = `draft:${attachment.id}`;
   const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
-  const shareRef = useRef<AbortController | null>(null);
-  const [sharing, setSharing] = useState(false);
-  useEffect(
-    () => () => {
-      shareRef.current?.abort();
-      shareRef.current = null;
-    },
-    [],
+  const actionsSource = useMemo<MediaActionsSource>(
+    () => ({
+      name: attachment.name,
+      mimeType: videoMimeType(attachment) ?? attachment.mimeType,
+      sourceIdentifier,
+      attachment,
+    }),
+    [attachment, sourceIdentifier],
   );
-
-  const onShare = () => {
-    if (shareRef.current) return;
-    const controller = new AbortController();
-    shareRef.current = controller;
-    setSharing(true);
-    void (async () => {
-      const preview = await loadLocalAttachmentPreview(attachment, controller.signal);
-      if (!preview) return;
-      try {
-        await preview.share(controller.signal, sourceIdentifier);
-      } finally {
-        preview.dispose();
-      }
-    })()
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          Alert.alert(
-            "Could not share video",
-            error instanceof Error ? error.message : "Try again.",
-          );
-        }
-      })
-      .finally(() => {
-        if (shareRef.current === controller) {
-          shareRef.current = null;
-          setSharing(false);
-        }
-      });
-  };
 
   return (
     <VideoAttachmentTile
@@ -175,8 +192,7 @@ function ComposerVideoAttachment(props: {
       thumbnailSource={attachment}
       compact={props.compact}
       onPress={() => props.onPressVideo(attachment, sourceIdentifier)}
-      onShare={onShare}
-      disabled={sharing}
+      actionsSource={actionsSource}
       style={style}
     />
   );
@@ -213,6 +229,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
             }}
           >
             <ComposerAttachmentThumbnail
+              environmentId={props.environmentId}
               attachment={attachment}
               size={size}
               borderRadius={radius}

@@ -190,6 +190,55 @@ function normalizeAntigravityWindow(
  * the caller's job (see `mergeQuotaSnapshots`); this function reports only what
  * this message actually carried.
  */
+/**
+ * Upstream normalizes `account.rate-limits.updated` inside each adapter now,
+ * so the payload arrives as `{ limits: { windows } }` in the shared
+ * ServerProviderUsageWindow shape. Reading that directly beats re-deriving it
+ * from a provider's wire format, so every normalizer tries this first and only
+ * falls back to its own parsing for an older or unconverted emitter.
+ */
+export function normalizeUpstreamUsageLimits(input: {
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly payload: unknown;
+  readonly observedAt: string;
+}): AccountQuotaSnapshot | undefined {
+  if (!isRecord(input.payload)) return undefined;
+  const limits = readRecord(input.payload, "limits");
+  const rawWindows = limits ? limits["windows"] : undefined;
+  if (!Array.isArray(rawWindows) || rawWindows.length === 0) return undefined;
+
+  const windows: Array<QuotaWindow> = [];
+  for (const entry of rawWindows) {
+    if (!isRecord(entry)) continue;
+    const usedPercent = entry["usedPercent"];
+    if (typeof usedPercent !== "number") continue;
+    const kind = entry["kind"];
+    const label = entry["label"];
+    const resetsAt = entry["resetsAt"];
+    const windowDurationMins = entry["windowDurationMins"];
+    // Upstream names windows by period; this panel groups them by how long
+    // they last, so a session window is short and anything weekly or longer
+    // is long.
+    windows.push({
+      kind:
+        kind === "session" ? "short" : kind === "weekly" || kind === "monthly" ? "long" : "unknown",
+      ...(typeof label === "string" && label.trim() ? { label: label.trim() } : {}),
+      usedPercent,
+      ...(typeof resetsAt === "string" && resetsAt.trim() ? { resetsAt } : {}),
+      ...(typeof windowDurationMins === "number" && windowDurationMins > 0
+        ? { windowDurationMins }
+        : {}),
+    } satisfies QuotaWindow);
+  }
+  if (windows.length === 0) return undefined;
+  return {
+    providerInstanceId: input.providerInstanceId,
+    groups: [{ key: "default", displayName: "Subscription", windows }],
+    source: "provider-event" satisfies QuotaSource,
+    observedAt: input.observedAt,
+  };
+}
+
 export function normalizeCodexRateLimits(input: {
   readonly providerInstanceId: ProviderInstanceId;
   readonly payload: unknown;

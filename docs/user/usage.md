@@ -8,19 +8,28 @@ separate from the raw token cost shown here.
 Grok Build totals come from persisted session updates. Interactive turns that never wrote a
 completed-turn record will not appear.
 
+The **Limits** view shows how much of each subscription window you have used on Codex and Claude
+Code, per connected environment: the session and weekly windows, plus a per-model weekly window
+such as Fable when your plan has one. Each window is a bar from the moment it opened to its reset,
+filled by the share of quota spent; a thin line marks how far into the window you are, which is
+also where even spending would have put the fill, and the icon beside the label says whether you
+are ahead of, on, or under that pace. Hover a bar for the exact reset time. Limits refresh on the
+provider health-check interval and update live while a turn runs. API-key accounts have no
+subscription windows and say so; that includes a Claude Code that reaches Anthropic through a proxy
+via `ANTHROPIC_AUTH_TOKEN`, since the CLI then treats itself as an API-key client.
+
+If you pool accounts behind a CLIProxyAPI hub, open **Settings → Providers → Usage providers**
+and choose **Add hub**. Select the device that should connect to the hub; its accounts appear on
+the Limits view. Remove hubs from the same settings section. Each limits row shows its provider
+and instance name, or a small _CLI Proxy_ label for
+hub accounts. When a connected provider reports limits for the same provider and email, its row
+replaces the hub copy, keeping details such as banked reset credits. The hub copy remains visible
+if the connected provider cannot report limits. Enter the hub's URL and management key; the key
+is stored on the server and never sent back to a client. Emails are blurred until clicked, as in
+provider settings.
+
 Use **Past 24h** for an hourly chart covering the exact rolling 24-hour period. The **7 days**,
 **30 days**, and **90 days** ranges use daily resolution. Cost and token toggles update both the
-headline and chart, and refreshing rescans every connected environment.
-
-The account-limit indicators in the sidebar and provider picker are separate from token-cost
-history. Codex can restore its last reported windows from local session history when T3 Code starts.
-Claude reports its full 5-hour, weekly, and model-specific windows after a Claude session connects;
-until then, the account correctly shows that no limit data has been reported yet.
-When the same named account is connected from multiple devices, the sidebar combines those entries
-into one account row and keeps the newest reported snapshot. Use the refresh button in the Limits
-header to re-check connected providers and refresh their reported limits.
-
-If a provider rejects a turn because its usage window is exhausted, the thread is marked **Rate
-Limited** instead of being left in a generic unrecoverable error. Wait for the provider's reset
-window, then send a new message in the same thread; T3 Code clears the temporary latch and resumes
-the provider session. The web, desktop, and mobile thread views all show this recovery path.
+headline and chart. Refreshing rescans every connected environment and refetches model pricing on
+each of them, so a newly released model that showed $0.00 gets a price without waiting for the daily
+pricing update.

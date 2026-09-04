@@ -24,6 +24,7 @@ import {
   normalizeAntigravityRateLimits,
   normalizeClaudeRateLimits,
   normalizeCodexRateLimits,
+  normalizeUpstreamUsageLimits,
 } from "./normalizeRateLimits.ts";
 
 /** Quota keyed by provider instance. Absent means "nothing published yet". */
@@ -72,11 +73,14 @@ export function applyQuotaEvent(state: QuotaState, input: QuotaEventInput): Quot
   const normalize = normalizerFor(input.driverKind);
   if (!normalize) return state;
 
-  const snapshot = normalize({
+  // Adapters that already emit upstream's normalized shape need no
+  // provider-specific parsing; only an older emitter falls through.
+  const normalizerInput = {
     providerInstanceId: input.providerInstanceId,
     payload: input.event.payload,
     observedAt: input.observedAt,
-  });
+  };
+  const snapshot = normalizeUpstreamUsageLimits(normalizerInput) ?? normalize(normalizerInput);
   if (!snapshot) {
     // Claude and Antigravity probes are point-in-time reads. If one explicitly
     // publishes no usable quota, retaining its old snapshot would present stale

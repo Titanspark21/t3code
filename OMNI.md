@@ -16,6 +16,69 @@ what this file is for.
 
 ---
 
+## Antigravity is upstream's now
+
+Upstream added Google Antigravity on 2026-09-03 (`06336460c`, #9348) using its
+**official ACP agent** — it runs Antigravity's own `agy_acp_server` through the
+same `AcpSessionRuntime` as every other ACP provider, with real
+`session/request_permission` approvals, client-side file reads and writes, its
+own auth methods, and an installer that downloads and verifies the server.
+
+This fork previously carried its own Antigravity: sixteen files, chief among
+them a ~750-line `acp/AntigravityAcpBridge.ts` that faked ACP on top of
+`agy --print`. Print mode is one-shot — no permission protocol, no client
+filesystem, no session model — so every capability T3 expects had to be
+synthesized, which is why that one provider kept breaking in ways Claude and
+Codex never did. All sixteen files are deleted; upstream's implementation is
+the only one. Do not reintroduce a bridge.
+
+The fork keeps its own account isolation, quota panel and provider presets, but
+they now sit on top of upstream's provider rather than a private one.
+
+---
+
+## Releasing from this machine
+
+`.github/workflows/release.yml` does not run on this fork — it wants Blacksmith
+runners and a Mac, and there are no Actions minutes. Releases are built here:
+
+```bash
+node scripts/update-release-package-versions.ts <version>
+
+T3CODE_DESKTOP_UPDATE_REPOSITORY=TitansparkDev/t3code \
+T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true \
+  node scripts/build-desktop-artifact.ts \
+    --platform linux --target AppImage --arch x64 --build-version <version>
+
+WINEPREFIX=/home/ajay/.cache/t3code-wine \
+T3CODE_DESKTOP_UPDATE_REPOSITORY=TitansparkDev/t3code \
+T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true \
+  node scripts/build-desktop-artifact.ts \
+    --platform win --target nsis --arch x64 --build-version <version>
+
+git tag -a "v<version>-omni.$(date -u +%Y%m%d.%H%M)" -m "T3 Code <version> Omni"
+gh release create <tag> release/T3-Code-* release/latest*.yml
+```
+
+Then restore the four `package.json` versions — the bump is never committed.
+
+Three traps, each of which has already cost an afternoon:
+
+- **Without `T3CODE_DESKTOP_UPDATE_REPOSITORY`** electron-builder writes no
+  `latest*.yml`, and the in-app updater then sees nothing.
+- **There is no Rust toolchain here**, so `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR`
+  is mandatory; it reuses `native/resource-monitor/target/*/release/`.
+- **The default `~/.wine` prefix is broken** (`could not load kernel32.dll`).
+  The Windows target needs the separate prefix above.
+
+The server package is not part of that build. Pack it from `apps/server` with
+the version bumped and `devDependencies`/`scripts` stripped, drop the Linux
+`t3-resource-monitor` into `dist/resource-monitor/linux-x64/` first, then
+install the tarball into `~/.t3/runtime/versions/<version>` and point
+`service-state.json` at it.
+
+---
+
 ## Branch model
 
 ```
