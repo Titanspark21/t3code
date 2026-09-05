@@ -19,7 +19,7 @@ Codex, Claude, Cursor, Grok, OpenCode, and Antigravity.
 - Linux desktop builds check for a release during the local 02:00 update window and install it
   unattended only after all active agent turns have settled.
 - The fork's GitHub workflow mirrors upstream `main` and merges it into `omni/main` on a schedule;
-  merge conflicts are reported as an issue instead of being silently overwritten.
+  merge conflicts are reported in the Actions summary instead of being silently overwritten.
 
 ## Important boundaries
 
