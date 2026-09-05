@@ -13,7 +13,7 @@ import {
   type ProviderSetupError,
   type ProviderUserInputAnswers,
   type RuntimeTaskStatus,
-  type ThreadId,
+  ThreadId,
   type TurnCompletedPayload,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -62,6 +62,10 @@ import {
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { parsePermissionRequest, type AcpToolCallState } from "../acp/AcpRuntimeModel.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
+import {
+  antigravityUsageToProviderLimits,
+  type AntigravityUsagePayload,
+} from "../Drivers/AntigravityQuota.ts";
 import {
   antigravityPermissionMode,
   antigravityModelOptions,
@@ -141,6 +145,7 @@ export interface AntigravityAdapterOptions {
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
   ) => Effect.Effect<void>;
   readonly onAuthRequired?: Effect.Effect<void>;
+  readonly refreshQuota?: () => Effect.Effect<AntigravityUsagePayload | undefined>;
   /** Model the provider default alias selects, when the account offers it. */
   readonly defaultModel?: Effect.Effect<string | undefined>;
   readonly nativeEventLogger?: EventNdjsonLogger;
@@ -1242,6 +1247,24 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
     ),
   );
 
+  const refreshQuota: Adapter["refreshQuota"] = options.refreshQuota
+    ? Effect.fn("refreshAntigravityQuota")(function* () {
+        const usage = yield* options.refreshQuota!();
+        if (usage === undefined) return undefined;
+        const stamped = yield* stamp;
+        return {
+          type: "account.rate-limits.updated",
+          eventId: stamped.eventId,
+          provider: PROVIDER,
+          providerInstanceId: options.instanceId,
+          createdAt: stamped.createdAt,
+          threadId: ThreadId.make(`quota-refresh-${options.instanceId}`),
+          payload: { limits: antigravityUsageToProviderLimits(usage), rateLimits: usage },
+          providerRefs: {},
+        } satisfies ProviderRuntimeEvent;
+      })
+    : undefined;
+
   return {
     provider: PROVIDER,
     capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
@@ -1270,6 +1293,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
           issue: "Antigravity does not support conversation rewind. Start a new thread instead.",
         }),
       ),
+    ...(refreshQuota ? { refreshQuota } : {}),
     streamEvents: Stream.fromPubSub(events),
   } satisfies Adapter;
 });

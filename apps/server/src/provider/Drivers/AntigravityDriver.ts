@@ -40,6 +40,7 @@ import { removeAntigravitySessionFiles } from "../acp/AntigravitySessionFiles.ts
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityAdapter } from "../Layers/AntigravityAdapter.ts";
 import { makeAntigravityProvider } from "../Layers/AntigravityProvider.ts";
+import { readAntigravityUsage } from "./AntigravityQuota.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import {
@@ -305,6 +306,11 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
         onConfigOptionsUpdated: provider.onConfigOptionsUpdated,
         onAvailableCommands: provider.onAvailableCommands,
         onAuthRequired: provider.onAuthRequired,
+        refreshQuota: () =>
+          readAntigravityUsage({
+            environment: processEnvironment,
+            profileDirectory,
+          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
         ...(loggers.native ? { nativeEventLogger: loggers.native } : {}),
       });
       const textGeneration = yield* makeAntigravityTextGeneration({

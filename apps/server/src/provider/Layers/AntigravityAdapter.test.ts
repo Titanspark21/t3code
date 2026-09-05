@@ -31,6 +31,7 @@ import {
   parseSessionUpdateEvent,
   type AcpToolCallState,
 } from "../acp/AcpRuntimeModel.ts";
+import type { AntigravityUsagePayload } from "../Drivers/AntigravityQuota.ts";
 import { makeAntigravityAdapter, type AntigravityAdapterOptions } from "./AntigravityAdapter.ts";
 
 const instanceId = ProviderInstanceId.make("antigravity-test");
@@ -71,6 +72,7 @@ function nativeToolUpdate(
 
 const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (options?: {
   readonly enabled?: boolean;
+  readonly quota?: AntigravityUsagePayload;
   readonly holdCancel?: boolean;
   readonly holdClose?: boolean;
   readonly holdDispatch?: boolean;
@@ -242,6 +244,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
       onAuthRequired: Effect.sync(() => {
         controls.authInvalidations += 1;
       }),
+      ...(options?.quota ? { refreshQuota: () => Effect.succeed(options.quota) } : {}),
     },
   );
   yield* adapter.streamEvents.pipe(
@@ -302,6 +305,38 @@ const layer = ServerConfig.layerTest(process.cwd(), {
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(layer)("AntigravityAdapter", (it) => {
+  it.effect("publishes the grouped quota payload through the native adapter", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        quota: {
+          groups: [
+            {
+              key: "gemini",
+              displayName: "Gemini Models",
+              windows: [{ label: "Weekly Limit", usedPercent: 9, windowDurationMins: 10_080 }],
+            },
+          ],
+        },
+      });
+      const refresh = h.adapter.refreshQuota;
+      expect(refresh).toBeDefined();
+      const event = yield* refresh!();
+      expect(event?.type).toBe("account.rate-limits.updated");
+      if (event?.type === "account.rate-limits.updated") {
+        expect(event.payload.rateLimits).toEqual({
+          groups: [
+            {
+              key: "gemini",
+              displayName: "Gemini Models",
+              windows: [{ label: "Weekly Limit", usedPercent: 9, windowDurationMins: 10_080 }],
+            },
+          ],
+        });
+        expect(event.payload.limits.windows[0]?.kind).toBe("weekly");
+      }
+    }),
+  );
+
   it.effect(
     "runs native auth, resume, models, commands, and streaming through the ACP transport",
     () =>
@@ -421,7 +456,8 @@ it.layer(layer)("AntigravityAdapter", (it) => {
         modelSelection: { instanceId, model: nativeAlternative },
       });
       expect(second.model).toBe(nativeAlternative);
-      expect(second.cwd).toBe("/tmp");
+      // The adapter resolves the cwd it was given through the host Path.
+      expect(second.cwd).toBe((yield* Path.Path).resolve("/tmp"));
       expect(h.launches[1]?.resumeSessionId).toBe(nativeSessionId);
       expect(h.calls).toEqual([
         "start",

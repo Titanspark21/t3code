@@ -27,6 +27,7 @@ const quotaEvent = (
         {
           id: "five_hour",
           kind: "session" as const,
+          label: "Five hour",
           usedPercent,
           windowDurationMins: 300,
         },
@@ -45,7 +46,7 @@ describe("QuotaService", () => {
           {
             key: "default",
             displayName: "Subscription",
-            windows: [{ kind: "short", usedPercent: 18 }],
+            windows: [{ kind: "short", label: "Five hour", usedPercent: 18 }],
           },
         ],
         source: "state-file",

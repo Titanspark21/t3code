@@ -80,7 +80,7 @@ export function applyQuotaEvent(state: QuotaState, input: QuotaEventInput): Quot
     payload: input.event.payload,
     observedAt: input.observedAt,
   };
-  const snapshot = normalizeUpstreamUsageLimits(normalizerInput) ?? normalize(normalizerInput);
+  const snapshot = normalize(normalizerInput) ?? normalizeUpstreamUsageLimits(normalizerInput);
   if (!snapshot) {
     // Claude and Antigravity probes are point-in-time reads. If one explicitly
     // publishes no usable quota, retaining its old snapshot would present stale
