@@ -372,13 +372,24 @@ Checklist:
 2. Bump app version as needed.
 3. Create release tag: `vX.Y.Z`.
 4. Push tag.
-5. Verify workflow steps:
+5. Build the Linux and Windows installers into one directory, then publish and verify them with:
+
+   ```sh
+   vp run release:desktop:publish -- \
+     --tag vX.Y.Z \
+     --artifact-dir release/<build-directory>
+   ```
+
+   This command refuses to publish an unpushed tag, requires the AppImage, Windows installer, and
+   Windows blockmap, and does not report success until GitHub confirms the uploaded asset sizes.
+
+6. Verify workflow steps when using the hosted release workflow:
    - preflight passes
    - release quality checks pass
    - all matrix builds pass
    - `publish_cli` publishes the exact release version before the release job
    - release job uploads expected files
-6. Smoke test downloaded artifacts.
+7. Smoke test downloaded artifacts.
 
 ## 5) Troubleshooting
 

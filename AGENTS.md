@@ -170,3 +170,5 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - 2026-09-05 — Pulled upstream's native Antigravity support, restored the fork's AGY limits path,
   and prepared Linux and Windows desktop installers for the fork.
+- 2026-09-05 — Published the installers to the GitHub Release and added a verified local publish
+  command so future desktop builds cannot be mistaken for completed releases.
