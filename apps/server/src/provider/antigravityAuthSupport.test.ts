@@ -275,6 +275,10 @@ describe("Antigravity sign-in errors", () => {
   it("does not treat other failures or arbitrary text as missing authentication", () => {
     const otherErrors = [
       new AcpErrors.AcpTransportError({ detail: "The process stopped.", cause: undefined }),
+      new AcpErrors.AcpRequestError({
+        code: -32000,
+        errorMessage: "The Antigravity session is temporarily unavailable.",
+      }),
       AcpErrors.AcpRequestError.internalError(ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE),
       new Error(ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE),
       { detail: ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE },

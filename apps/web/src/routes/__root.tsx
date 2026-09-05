@@ -58,7 +58,12 @@ import {
   primaryServerConfigEventAtom,
   primaryServerWelcomeAtom,
 } from "../state/server";
-import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
+import {
+  readProject,
+  setActiveEnvironmentId,
+  useActiveEnvironmentId,
+  useThreadShells,
+} from "../state/entities";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -172,6 +177,7 @@ function RootRouteView() {
         >
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
           {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+          {primaryEnvironmentAuthenticated ? <DesktopAgentActivitySync /> : null}
           <RelayClientInstallDialog />
           <ConnectOnboardingDialog />
           <SshPasswordPromptDialog />
@@ -191,6 +197,22 @@ function RootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+/** Lets the desktop main process defer its unattended install until turns settle. */
+function DesktopAgentActivitySync() {
+  const threadShells = useThreadShells();
+  const active = threadShells.some(
+    (thread) =>
+      thread.session?.status === "starting" ||
+      (thread.session?.status === "running" && thread.session.activeTurnId !== null),
+  );
+
+  useEffect(() => {
+    void window.desktopBridge?.setAgentActivity?.(active);
+  }, [active]);
+
+  return null;
 }
 
 /** Follows the palette the primary environment's machine publishes, if any. */

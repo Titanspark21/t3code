@@ -62,6 +62,7 @@ const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
   isActionActive: Effect.succeed(false),
   isInstallActive: Effect.succeed(false),
+  setAgentActivity: () => Effect.void,
   subscribe: Effect.die("unexpected subscribe"),
   emitState: Effect.void,
   disabledReason: Effect.succeed(Option.none()),

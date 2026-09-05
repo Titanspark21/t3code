@@ -19,6 +19,22 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  it("opens the unattended install window once after 02:00 local time", () => {
+    const clock = (hour: number, minute: number) => ({
+      getHours: () => hour,
+      getMinutes: () => minute,
+      getFullYear: () => 2026,
+      getMonth: () => 8,
+      getDate: () => 5,
+    });
+    const atTwo = clock(2, 0);
+    const stillOpen = clock(2, 59);
+    const closed = clock(3, 0);
+    assert.equal(DesktopUpdates.scheduledUpdateDay(atTwo), "2026-8-5");
+    assert.equal(DesktopUpdates.scheduledUpdateDay(stillOpen), "2026-8-5");
+    assert.isNull(DesktopUpdates.scheduledUpdateDay(closed));
+  });
+
   it("preserves complete causes for update poller and event failures", () => {
     const cause = Cause.combine(
       Cause.fail(new Error("updater failed")),

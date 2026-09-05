@@ -171,7 +171,11 @@ function authSupportError(detail: string) {
 /** Recognizes native auth failures and interactive login blocked by T3. */
 export function isAntigravitySignInRequiredError(error: unknown): boolean {
   return (
-    (isAcpRequestError(error) && error.code === -32000) ||
+    (isAcpRequestError(error) &&
+      error.code === -32000 &&
+      /^(?:authentication required|sign[- ]in required)(?:[.!:]|$)/i.test(
+        error.errorMessage.trim(),
+      )) ||
     (isAcpTransportError(error) && error.detail === ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE)
   );
 }

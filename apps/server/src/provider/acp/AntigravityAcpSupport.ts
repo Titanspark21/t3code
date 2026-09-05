@@ -62,7 +62,12 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       ...input,
       authMethodId: input.authMethod ?? "oauth-personal",
       resumeMethod: "resume",
-      cancelBehavior: "wait-for-prompt",
+      // Antigravity's native ACP process does not consistently settle the
+      // prompt response after session/cancel. Waiting for that response makes
+      // a normal Stop turn into a 15-second transport error and can retire a
+      // healthy login. Interrupt T3's request fiber immediately; the native
+      // process still receives the best-effort ACP cancel notification.
+      cancelBehavior: "interrupt",
       clientCapabilities: {
         fs: {
           readTextFile: input.clientFileSystem === true,
