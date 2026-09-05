@@ -1,0 +1,217 @@
+name: Fork desktop release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build, for example v0.0.45"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-desktop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+
+jobs:
+  linux-node-pty:
+    name: Build Linux node-pty for Windows WSL support
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install dependencies
+        run: vp install --filter=t3...
+
+      - name: Build Linux node-pty
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+
+      - name: Upload node-pty
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-wsl-node-pty
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+
+  linux:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Build Linux installer and update metadata
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [[ -z "$tag" ]]; then tag="$GITHUB_REF_NAME"; fi
+          version="${tag#v}"
+          vp run dist:desktop:artifact \
+            --platform linux \
+            --target AppImage \
+            --arch x64 \
+            --build-version "$version"
+          mkdir -p release-publish
+          cp release/*.AppImage release/*.yml release-publish/
+
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-desktop-linux
+          path: release-publish/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows installer
+    needs: linux-node-pty
+    runs-on: windows-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download Linux node-pty
+        uses: actions/download-artifact@v8
+        with:
+          name: fork-wsl-node-pty
+          path: wsl-prebuild
+
+      - name: Install dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Build Windows installer and update metadata
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [[ -z "$tag" ]]; then tag="$GITHUB_REF_NAME"; fi
+          version="${tag#v}"
+          vp run dist:desktop:artifact \
+            --platform win \
+            --target nsis \
+            --arch x64 \
+            --build-version "$version" \
+            --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+          mkdir -p release-publish
+          cp release/*.exe release/*.blockmap release/*.yml release-publish/
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-desktop-windows
+          path: release-publish/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Download desktop release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: fork-desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify complete updater release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release-assets/*.AppImage
+          test -s release-assets/*.exe
+          test -s release-assets/*.exe.blockmap
+          test -s release-assets/latest.yml
+          test -s release-assets/latest-linux.yml
+
+      - name: Publish installers and updater metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [[ -z "$tag" ]]; then tag="$GITHUB_REF_NAME"; fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            args=(
+              release create "$tag"
+              release-assets/*
+              --repo "$GITHUB_REPOSITORY"
+              --verify-tag
+              --title "T3 Code $tag"
+              --notes "Desktop installers for $tag."
+            )
+            if [[ "$tag" == *-* ]]; then args+=(--prerelease); fi
+            gh "${args[@]}"
+          fi
+
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' | sort

@@ -26,6 +26,7 @@ The tag must already exist on origin. The artifact directory must contain:
   - one Linux .AppImage
   - one Windows .exe
   - one Windows .exe.blockmap
+  - latest.yml and latest-linux.yml (or nightly.yml and nightly-linux.yml)
 
 The command uploads the assets to GitHub and verifies their remote names and sizes.`);
 };
@@ -82,7 +83,7 @@ const resolveTag = (requestedTag: string | undefined): string => {
   return tag;
 };
 
-const collectAssets = (requestedDirectory: string): ReadonlyArray<string> => {
+const collectAssets = (requestedDirectory: string, tag: string): ReadonlyArray<string> => {
   const directory = NodePath.resolve(repoRoot, requestedDirectory);
   if (!NodeFS.existsSync(directory) || !NodeFS.statSync(directory).isDirectory()) {
     throw new Error(`Artifact directory does not exist: ${requestedDirectory}`);
@@ -99,6 +100,16 @@ const collectAssets = (requestedDirectory: string): ReadonlyArray<string> => {
   }
   if (!names.some((name) => name.endsWith(".exe.blockmap"))) {
     throw new Error(`No Windows blockmap found in ${requestedDirectory}.`);
+  }
+  const metadataNames = tag.includes("-nightly.")
+    ? ["nightly.yml", "nightly-linux.yml"]
+    : ["latest.yml", "latest-linux.yml"];
+  for (const metadataName of metadataNames) {
+    if (!names.includes(metadataName)) {
+      throw new Error(
+        `Missing required updater metadata ${metadataName} in ${requestedDirectory}.`,
+      );
+    }
   }
 
   const assets = names
@@ -137,7 +148,7 @@ const main = (): void => {
   run("gh", ["auth", "status", "--hostname", "github.com"]);
   const repository = resolveRepository();
   const tag = resolveTag(optionValue(args, "--tag"));
-  const assets = collectAssets(artifactDirectory);
+  const assets = collectAssets(artifactDirectory, tag);
   const assetNames = assets.map((assetPath) => NodePath.basename(assetPath));
   const existingRelease = readRelease(repository, tag);
 

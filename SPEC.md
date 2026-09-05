@@ -14,7 +14,12 @@ Codex, Claude, Cursor, Grok, OpenCode, and Antigravity.
   turn.
 - Quota data is kept separate from thread state, keyed by provider instance, and refreshed on a
   background loop or by an explicit refresh action.
-- Desktop installers are built locally for Linux AppImage and Windows NSIS targets.
+- Desktop update feeds are published from the fork's GitHub releases, including the Windows and
+  Linux updater manifests used by the in-app update controls.
+- Linux desktop builds check for a release during the local 02:00 update window and install it
+  unattended only after all active agent turns have settled.
+- The fork's GitHub workflow mirrors upstream `main` and merges it into `omni/main` on a schedule;
+  merge conflicts are reported as an issue instead of being silently overwritten.
 
 ## Important boundaries
 

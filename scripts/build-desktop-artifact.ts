@@ -2495,9 +2495,11 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   const rawRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
-    ""
+    // Keep local fork builds updater-compatible too. CI still supplies the
+    // repository explicitly, but a manual installer must not silently omit
+    // its feed metadata just because GITHUB_REPOSITORY is unset.
+    "TitansparkDev/t3code"
   ).trim();
-  if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
   if (!owner || !repo || rest.length > 0) return undefined;

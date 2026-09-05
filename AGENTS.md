@@ -172,3 +172,5 @@ Full glossary with file links: `docs/internals/glossary.md`
   and prepared Linux and Windows desktop installers for the fork.
 - 2026-09-05 — Published the installers to the GitHub Release and added a verified local publish
   command so future desktop builds cannot be mistaken for completed releases.
+- 2026-09-05 — Fixed Antigravity stop/auth false positives, made Linux unattended updates wait for
+  idle agents, and added a tag-driven workflow that builds and verifies Windows/Linux release assets.
