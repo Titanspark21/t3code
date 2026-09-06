@@ -1,3 +1,4 @@
+import { Spinner } from "~/components/ui/spinner";
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
@@ -6,7 +7,6 @@ import {
   ContainerIcon,
   FolderPlusIcon,
   Globe2Icon,
-  LoaderIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -179,6 +179,7 @@ import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import {
   archiveSelectedThreadEntries,
   buildMultiSelectThreadContextMenuItems,
+  deleteSelectedThreadEntries,
   getSidebarThreadIdsToPrewarm,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
@@ -354,7 +355,7 @@ interface SidebarThreadRowProps {
   ) => boolean;
 }
 
-export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
   const {
     orderedProjectThreadKeys,
     isActive,
@@ -1725,11 +1726,20 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           };
         };
 
+        actionHandlers.set("project-settings", () => {
+          if (isMobile) setOpenMobile(false);
+          void router.navigate({
+            to: "/projects/$projectKey",
+            params: { projectKey: project.projectKey },
+          });
+        });
+
         const clicked = await api.contextMenu.show(
           [
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
+            { id: "project-settings", label: "Project settings", icon: "settings" },
             buildTargetedItem("delete", "Remove", {
               destructive: true,
             }),
@@ -1750,10 +1760,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [
       copyPathToClipboard,
       handleRemoveProject,
+      isMobile,
       openProjectGroupingDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      project.projectKey,
+      router,
+      setOpenMobile,
       suppressProjectClickForContextMenuRef,
     ],
   );
@@ -1913,21 +1927,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         if (!confirmed) return;
       }
 
-      // Only discount batch members after their deletions succeed.
-      const deletedThreadKeys = new Set<string>();
-      let firstError: unknown = null;
-      for (const { threadKey, threadRef } of selectedThreadEntries) {
-        const result = await deleteThread(threadRef, {
-          deletedThreadKeys,
-        });
-        if (result._tag === "Failure") {
-          if (isAtomCommandInterrupted(result)) break;
-          firstError ??= squashAtomCommandFailure(result);
-          continue;
-        }
-        deletedThreadKeys.add(threadKey);
-      }
-      if (firstError !== null) {
+      const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
+        entries: selectedThreadEntries,
+        delete: ({ threadRef }, deletedThreadKeys) =>
+          deleteThread(threadRef, { deletedThreadKeys }),
+      });
+      if (firstFailure !== null) {
+        const firstError = squashAtomCommandFailure(firstFailure);
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -2648,7 +2654,7 @@ function LocalSecondaryStatus() {
           variant="default"
           className="rounded-2xl border-border/40 bg-accent/40 text-muted-foreground"
         >
-          <LoaderIcon className="animate-spin" />
+          <Spinner />
           <AlertTitle className="text-xs font-medium text-foreground">
             Connecting {connecting.join(", ")}
           </AlertTitle>
@@ -3610,11 +3616,9 @@ export default function LegacySidebar() {
     desktopUpdateState && showArm64IntelBuildWarning
       ? getArm64IntelBuildWarningDescription(desktopUpdateState)
       : null;
-  const commandPaletteShortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    "commandPalette.toggle",
-    newThreadShortcutLabelOptions,
-  );
+  const commandPaletteShortcutLabel = isMobile
+    ? null
+    : shortcutLabelForCommand(keybindings, "commandPalette.toggle", newThreadShortcutLabelOptions);
   const handleDesktopUpdateButtonClick = useCallback(async () => {
     const bridge = window.desktopBridge;
     if (!bridge || !desktopUpdateState) return;

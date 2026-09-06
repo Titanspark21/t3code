@@ -32,9 +32,7 @@ export {
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 export const T3_CHAT_THEME_ID = "t3-chat" as const;
-export const T3_CHAT_THEME_LABEL = "T3 Chat";
-export const GROVE_THEME_ID = "grove" as const;
-export const GROVE_THEME_LABEL = "Grove";
+const GROVE_THEME_ID = "grove" as const;
 export const OCEAN_THEME_ID = "ocean" as const;
 export const OCEAN_THEME_LABEL = "Ocean";
 export const EMBER_THEME_ID = "ember" as const;
