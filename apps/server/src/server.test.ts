@@ -3204,6 +3204,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           cloudUserId: "user_123",
           environmentCredential: "t3env_test_credential",
           cloudMintPublicKey: cloudKeyPair.publicKey,
+          endpoint: {
+            httpBaseUrl: "https://managed.example.test",
+            wsBaseUrl: "wss://managed.example.test/ws",
+            providerKind: "cloudflare_tunnel",
+          },
           endpointRuntime: null,
         }),
       });
@@ -3219,6 +3224,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         readonly cloudUserId?: string | null;
         readonly relayUrl?: string | null;
         readonly relayIssuer?: string | null;
+        readonly managedEndpoint?: {
+          readonly httpBaseUrl?: string;
+          readonly wsBaseUrl?: string;
+          readonly providerKind?: string;
+        };
       }>(linkedResponse);
 
       assert.equal(linkedResponse.status, 200);
@@ -3226,6 +3236,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(linkedBody.cloudUserId, "user_123");
       assert.equal(linkedBody.relayUrl, "https://transport.example.test");
       assert.equal(linkedBody.relayIssuer, "https://relay.example.test");
+      assert.deepEqual(linkedBody.managedEndpoint, {
+        httpBaseUrl: "https://managed.example.test",
+        wsBaseUrl: "wss://managed.example.test/ws",
+        providerKind: "cloudflare_tunnel",
+      });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3286,6 +3301,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           cloudUserId: "user_123",
           environmentCredential: "t3env_test_credential",
           cloudMintPublicKey: cloudKeyPair.publicKey,
+          endpoint: {
+            httpBaseUrl: "https://managed.example.test",
+            wsBaseUrl: "wss://managed.example.test/ws",
+            providerKind: "cloudflare_tunnel",
+          },
           endpointRuntime: {
             providerKind: "cloudflare_tunnel",
             connectorToken: "connector-token",
@@ -3320,12 +3340,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         readonly cloudUserId?: string | null;
         readonly relayUrl?: string | null;
         readonly relayIssuer?: string | null;
+        readonly managedEndpoint?: unknown;
       }>(linkStateResponse);
       assert.equal(linkStateResponse.status, 200);
       assert.equal(linkStateBody.linked, false);
       assert.equal(linkStateBody.cloudUserId, null);
       assert.equal(linkStateBody.relayUrl, null);
       assert.equal(linkStateBody.relayIssuer, null);
+      assert.isUndefined(linkStateBody.managedEndpoint);
       assert.deepEqual(appliedRuntimeConfigs, [
         {
           providerKind: "cloudflare_tunnel",

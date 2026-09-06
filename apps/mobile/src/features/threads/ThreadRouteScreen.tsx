@@ -31,7 +31,6 @@ import {
   type HandoffTargetOption,
 } from "@t3tools/shared/handoffTargets";
 import { Alert, Platform, ScrollView, View } from "react-native";
-import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";

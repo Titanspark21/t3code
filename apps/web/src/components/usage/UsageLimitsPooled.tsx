@@ -10,6 +10,7 @@ import {
   type LimitPoolWindow,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { CLAUDE_PEAK_TIME_LABEL, isClaudePeakTime } from "@t3tools/shared/claudePeakTime";
 import { TicketIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -509,6 +510,7 @@ function PoolWindowCard({
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
   const label = getDriverOption(pool.driver)?.label ?? String(pool.driver);
+  const claudePeak = pool.driver === "claudeAgent" && isClaudePeakTime(now);
   return (
     <section className="flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -520,6 +522,15 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           iconClassName="size-4 text-foreground/80"
         />
         {label}
+        {pool.driver === "claudeAgent" ? (
+          <span
+            role="img"
+            aria-label={claudePeak ? CLAUDE_PEAK_TIME_LABEL : "Claude regular time"}
+            title={claudePeak ? CLAUDE_PEAK_TIME_LABEL : "Claude regular time"}
+          >
+            {claudePeak ? "🔥" : "🟢"}
+          </span>
+        ) : null}
       </h2>
       {pool.windows.map((window) => (
         <PoolWindowCard key={`${window.kind}:${window.id}`} pool={window} color={color} now={now} />

@@ -320,6 +320,7 @@ export function linkEnvironmentToCloudWithPreference(
           cloudUserId: link.cloudUserId,
           environmentCredential: link.environmentCredential,
           cloudMintPublicKey: link.cloudMintPublicKey,
+          endpoint: link.endpoint,
           endpointRuntime: link.endpointRuntime,
         },
       })

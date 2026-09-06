@@ -168,6 +168,8 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Recent request log
 
+- 2026-09-06 — Completed cross-surface T3 Connect pairing endpoint persistence, Antigravity saved-
+  credential recovery, Claude peak-time indicators, and OmniCode mobile theme support.
 - 2026-09-05 — Pulled upstream's native Antigravity support, restored the fork's AGY limits path,
   and prepared Linux and Windows desktop installers for the fork.
 - 2026-09-05 — Published the installers to the GitHub Release and added a verified local publish

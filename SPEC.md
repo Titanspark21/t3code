@@ -12,8 +12,14 @@ Codex, Claude, Cursor, Grok, OpenCode, and Antigravity.
 - The web and desktop clients show subscription limits in the AGY limits section when Antigravity
   publishes Gemini and Claude/GPT windows. Quota refresh is read-only and does not start a coding
   turn.
+- Claude usage sections show whether the current time is in Anthropic's weekday peak window of
+  05:00–11:00 Pacific on web and mobile.
 - Quota data is kept separate from thread state, keyed by provider instance, and refreshed on a
   background loop or by an explicit refresh action.
+- T3 Connect stores its managed public endpoint with the cloud link, and web pairing links can use
+  that endpoint when it is available. Web and mobile cloud linking preserve the endpoint.
+- OmniCode is available as a built-in theme on web and mobile, with matching light and dark
+  palettes.
 - Desktop update feeds are published from the fork's GitHub releases, including the Windows and
   Linux updater manifests used by the in-app update controls.
 - Linux desktop builds check for a release during the local 02:00 update window and install it

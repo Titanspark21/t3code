@@ -282,6 +282,18 @@ it.layer(NodeServices.layer)("AntigravityAuth", (it) => {
     }),
   );
 
+  it.effect("refreshes saved credentials without starting an interactive auth flow", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ interactive: false });
+      yield* Deferred.succeed(harness.authenticated, undefined);
+      yield* Deferred.succeed(harness.discovered, undefined);
+      const refreshed = yield* harness.auth.refresh;
+      assert.isTrue(refreshed);
+      assert.deepEqual(harness.catalog(), ["gemini-test"]);
+      assert.include(harness.events, "catalog-published");
+    }),
+  );
+
   it.effect("rejects mismatched callbacks without sending any HTTP request", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

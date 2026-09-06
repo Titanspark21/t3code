@@ -43,6 +43,7 @@ interface AuthSnapshot {
 interface AuthFlow {
   readonly id: string;
   readonly ownerSessionId: string;
+  readonly interactive: boolean;
   readonly expiresAtMillis: number;
   state: ProviderAuthState;
   pending: AntigravityAuthorizationUrl | undefined;
@@ -58,6 +59,8 @@ interface OwnedProcess {
 
 export interface AntigravityAuth {
   readonly controller: ProviderAuthController;
+  /** Rechecks saved credentials without opening a browser or changing account settings. */
+  readonly refresh: Effect.Effect<boolean>;
   /** Tracks startup and the process scope so sign-out cannot leave cached credentials in memory. */
   readonly withProcess: <A, E, R>(
     stop: Effect.Effect<void>,
@@ -76,6 +79,7 @@ export interface AntigravityAuthOptions<
   readonly instanceId: ProviderInstanceId;
   readonly makeRuntime: (input: {
     readonly onAuthorizationUrl?: (url: string) => Effect.Effect<void, AcpErrors.AcpError>;
+    readonly notifyAuthRequired?: boolean;
   }) => Effect.Effect<Runtime, AcpErrors.AcpError | ProviderSetupError, Scope.Scope>;
   readonly onAuthenticated: (
     result: AcpSessionRuntimeStartResult,
@@ -266,9 +270,11 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
   const runSignIn = (flow: AuthFlow, stopSessions: Effect.Effect<void, ProviderSetupError>) =>
     Effect.gen(function* () {
       yield* stopSessions.pipe(Effect.ensuring(stopOwnedProcesses));
-      const runtime = yield* options.makeRuntime({
-        onAuthorizationUrl: (url) => receiveAuthorizationUrl(flow, url),
-      });
+      const runtime = yield* options.makeRuntime(
+        flow.interactive
+          ? { onAuthorizationUrl: (url) => receiveAuthorizationUrl(flow, url) }
+          : { notifyAuthRequired: false },
+      );
       const started = yield* runtime.start();
       yield* lock.withPermits(1)(
         Effect.gen(function* () {
@@ -364,6 +370,7 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
             const flow: AuthFlow = {
               id: flowId,
               ownerSessionId,
+              interactive: true,
               expiresAtMillis,
               state,
               pending: undefined,
@@ -523,6 +530,44 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
     isLogoutPrompt: (text, hasAttachments) => !hasAttachments && text.trim() === "/logout",
   };
 
+  const refresh = Effect.gen(function* () {
+    const flow = yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        if (operation !== "idle") return undefined;
+        const expiresAtMillis = (yield* Clock.currentTimeMillis) + AUTH_TIMEOUT_MS;
+        const flow: AuthFlow = {
+          id: "__automatic-refresh__",
+          ownerSessionId: "__automatic-refresh__",
+          interactive: false,
+          expiresAtMillis,
+          state: {
+            ...emptyState,
+            phase: "starting",
+            flowId: null,
+            expiresAt: null,
+            message: "Checking saved Antigravity access.",
+          },
+          pending: undefined,
+          callbackSent: false,
+          fiber: undefined,
+          forwarding: undefined,
+        };
+        activeFlow = flow;
+        operation = "auth";
+        yield* publishFlow(flow, flow.state);
+        flow.fiber = yield* runSignIn(flow, Effect.void).pipe(
+          Effect.interruptible,
+          Effect.forkIn(instanceScope),
+        );
+        return flow;
+      }),
+    );
+    if (!flow) return false;
+    yield* Fiber.await(flow.fiber!);
+    const state = yield* SubscriptionRef.get(snapshot);
+    return state.state.phase === "succeeded";
+  }).pipe(Effect.withSpan("AntigravityAuth.refresh"));
+
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       operation = "closed";
@@ -538,5 +583,5 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
     }),
   );
 
-  return { controller, withProcess };
+  return { controller, refresh, withProcess };
 });

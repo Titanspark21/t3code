@@ -120,12 +120,15 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
         );
 
       const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (
-        input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner">,
+        input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner"> & {
+          readonly notifyAuthRequired?: boolean;
+        },
       ): Effect.fn.Return<
         AcpSessionRuntime["Service"],
         AcpError | ProviderSetupError,
         Scope.Scope
       > {
+        const { notifyAuthRequired = true, ...runtimeInput } = input;
         if (authConfigIssue !== null) {
           return yield* new ProviderSetupError({
             instanceId,
@@ -156,7 +159,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         );
         const runtime = yield* makeAntigravityAcpRuntime({
-          ...input,
+          ...runtimeInput,
           authMethod: auth.authMethod,
           childProcessSpawner: spawner,
           spawn: buildAntigravityAcpSpawnInput({
@@ -174,7 +177,9 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
               .start()
               .pipe(
                 Effect.tapError((cause): Effect.Effect<void> =>
-                  input.onAuthorizationUrl === undefined && isAntigravitySignInRequiredError(cause)
+                  notifyAuthRequired &&
+                  input.onAuthorizationUrl === undefined &&
+                  isAntigravitySignInRequiredError(cause)
                     ? provider.onAuthRequired
                     : Effect.void,
                 ),
@@ -183,7 +188,9 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       });
 
       const makeDisposableRuntime = Effect.fn("AntigravityDriver.makeDisposableRuntime")(function* (
-        input: Pick<AntigravityAcpRuntimeInput, "onAuthorizationUrl">,
+        input: Pick<AntigravityAcpRuntimeInput, "onAuthorizationUrl"> & {
+          readonly notifyAuthRequired?: boolean;
+        },
       ) {
         const cwd = yield* fileSystem
           .makeTempDirectoryScoped({ prefix: "t3-antigravity-setup-" })
@@ -213,6 +220,9 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
           clientInfo: { name: "t3-code-provider-setup", version: "0.0.0" },
           mcpServers: [],
           ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
+          ...(input.notifyAuthRequired === undefined
+            ? {}
+            : { notifyAuthRequired: input.notifyAuthRequired }),
         });
         return {
           ...runtime,
@@ -258,7 +268,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       // Kick the TTL-gated manifest refresh alongside the health check, as
       // Codex and Claude do. Without it an environment that only runs
       // Antigravity would keep classifying against a stale disk cache.
-      const probe = Effect.gen(function* () {
+      const probeOnce = Effect.gen(function* () {
         yield* modelManifest.refreshInBackground;
         const processScope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(processScope, exit));
@@ -277,10 +287,23 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
           .pipe(Effect.provideService(Scope.Scope, processScope));
       }).pipe(Effect.scoped);
 
+      const probe = probeOnce.pipe(
+        Effect.catch((cause: AcpError | ProviderSetupError) =>
+          isAntigravitySignInRequiredError(cause)
+            ? authFlow.refresh.pipe(
+                Effect.flatMap((recovered) =>
+                  recovered ? Effect.suspend(() => probeOnce) : Effect.fail(cause),
+                ),
+              )
+            : Effect.fail(cause),
+        ),
+      );
+
       const provider = yield* makeAntigravityProvider(settings, {
         stampIdentity: classifyModels,
         probe,
         auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
+        recoverAuth: authFlow.refresh,
         supportsTextGeneration: isAntigravityTextGenerationAvailable(profileDirectory).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),

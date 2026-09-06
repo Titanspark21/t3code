@@ -25,6 +25,8 @@
 .github/VOUCHED.td
 .github/actions/setup-apt-mirrors/action.yml
 .github/pull_request_template.md
+.github/scripts/check-nightly-release.cjs
+.github/scripts/check-nightly-release.test.cjs
 .github/scripts/thread-transfer-report.cjs
 .github/scripts/thread-transfer-report.test.cjs
 .github/triage/PLAYBOOK.md
@@ -32,6 +34,7 @@
 .github/workflows/cursor-hygiene-webhook.yml
 .github/workflows/deploy-relay.yml
 .github/workflows/desktop-macos-preview.yml
+.github/workflows/fork-desktop-release.yml
 .github/workflows/issue-labels.yml
 .github/workflows/mobile-eas-preview.yml
 .github/workflows/mobile-eas-production.yml
@@ -13204,6 +13207,38 @@ apps/desktop/tsconfig.json
 apps/desktop/vite.config.ts
 apps/marketing/astro.config.mjs
 apps/marketing/package.json
+apps/marketing/public/95/providers/antigravity-320.webp
+apps/marketing/public/95/providers/antigravity-640.webp
+apps/marketing/public/95/providers/antigravity-960.webp
+apps/marketing/public/95/providers/claude-code-320.webp
+apps/marketing/public/95/providers/claude-code-640.webp
+apps/marketing/public/95/providers/claude-code-960.webp
+apps/marketing/public/95/providers/codex-320.webp
+apps/marketing/public/95/providers/codex-640.webp
+apps/marketing/public/95/providers/codex-960.webp
+apps/marketing/public/95/providers/cursor-320.webp
+apps/marketing/public/95/providers/cursor-640.webp
+apps/marketing/public/95/providers/cursor-960.webp
+apps/marketing/public/95/providers/grok-320.webp
+apps/marketing/public/95/providers/grok-640.webp
+apps/marketing/public/95/providers/grok-960.webp
+apps/marketing/public/95/providers/opencode-320.webp
+apps/marketing/public/95/providers/opencode-640.webp
+apps/marketing/public/95/providers/opencode-960.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-chrome.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-desktop.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-lime-320.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-lime-640.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-lime.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-clouds-320.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-clouds-640.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-clouds.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-foil-320.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-foil-640.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-foil.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-lavender-320.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-lavender-640.webp
+apps/marketing/public/95/t3-code-concepts/t3-code-nightly-lavender.webp
 apps/marketing/public/apple-touch-icon.png
 apps/marketing/public/favicon-16x16.png
 apps/marketing/public/favicon-32x32.png
@@ -13247,6 +13282,8 @@ apps/marketing/src/assets/fonts/jetbrains-mono-latin.woff2
 apps/marketing/src/assets/fonts/jetbrains-mono-vietnamese.woff2
 apps/marketing/src/assets/icon.webp
 apps/marketing/src/components/LegalPage.astro
+apps/marketing/src/components/RetroBox.astro
+apps/marketing/src/components/RetroIcon.astro
 apps/marketing/src/env.d.ts
 apps/marketing/src/layouts/Layout.astro
 apps/marketing/src/lib/homeMotion.test.ts
@@ -13254,6 +13291,7 @@ apps/marketing/src/lib/homeMotion.ts
 apps/marketing/src/lib/releases.ts
 apps/marketing/src/lib/site.ts
 apps/marketing/src/lib/tweets.ts
+apps/marketing/src/pages/95.astro
 apps/marketing/src/pages/download.astro
 apps/marketing/src/pages/index.astro
 apps/marketing/src/pages/legal.astro
@@ -13262,6 +13300,7 @@ apps/marketing/src/pages/schema/t3.json.ts
 apps/marketing/src/pages/security-policy.astro
 apps/marketing/src/pages/terms-of-service.astro
 apps/marketing/src/styles/fonts.css
+apps/marketing/src/styles/retro.css
 apps/marketing/tsconfig.json
 apps/marketing/vercel.ts
 apps/mobile/.editorconfig
@@ -13362,6 +13401,7 @@ apps/mobile/modules/t3-markdown-text/assets/file-icons/pierre_webpack.png
 apps/mobile/modules/t3-markdown-text/assets/file-icons/pierre_yml.png
 apps/mobile/modules/t3-markdown-text/assets/file-icons/pierre_zig.png
 apps/mobile/modules/t3-markdown-text/assets/file-icons/pierre_zip.png
+apps/mobile/modules/t3-markdown-text/assets/link-icons/github.png
 apps/mobile/modules/t3-markdown-text/expo-module.config.json
 apps/mobile/modules/t3-markdown-text/index.ts
 apps/mobile/modules/t3-markdown-text/ios/T3MarkdownText.h
@@ -13390,6 +13430,7 @@ apps/mobile/modules/t3-markdown-text/src/T3MarkdownTextRunNativeComponent.ts
 apps/mobile/modules/t3-markdown-text/src/T3MarkdownTextSelectionModule.ts
 apps/mobile/modules/t3-markdown-text/src/markdownFileIcons.generated.ts
 apps/mobile/modules/t3-markdown-text/src/markdownFileIcons.ts
+apps/mobile/modules/t3-markdown-text/src/markdownLinkIcons.ts
 apps/mobile/modules/t3-markdown-text/src/markdownLinks.ts
 apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
 apps/mobile/modules/t3-markdown-text/src/util.ts
@@ -13747,6 +13788,7 @@ apps/mobile/src/features/terminal/terminalTheme.ts
 apps/mobile/src/features/terminal/terminalUiState.test.ts
 apps/mobile/src/features/terminal/terminalUiState.ts
 apps/mobile/src/features/threads/ComposerCommandPopover.tsx
+apps/mobile/src/features/threads/ComposerUsageLimits.tsx
 apps/mobile/src/features/threads/GitActionProgressOverlay.tsx
 apps/mobile/src/features/threads/HandoffTargetPicker.tsx
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx
@@ -13821,13 +13863,17 @@ apps/mobile/src/features/threads/use-project-actions.ts
 apps/mobile/src/features/threads/use-thread-list-v2-enabled.ts
 apps/mobile/src/features/threads/use-thread-list-v2-shelf-preferences.ts
 apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts
+apps/mobile/src/features/threads/useFileChipShare.ts
 apps/mobile/src/features/updates/app-updates.test.ts
 apps/mobile/src/features/updates/app-updates.ts
 apps/mobile/src/features/usage/UsageDailyChart.ios.tsx
 apps/mobile/src/features/usage/UsageDailyChart.tsx
+apps/mobile/src/features/usage/UsageLimitsPooled.tsx
 apps/mobile/src/features/usage/UsageLimitsSection.tsx
 apps/mobile/src/features/usage/UsageRouteScreen.tsx
 apps/mobile/src/features/usage/usageChartData.ts
+apps/mobile/src/features/usage/usageEnvironmentSelection.test.ts
+apps/mobile/src/features/usage/usageEnvironmentSelection.ts
 apps/mobile/src/features/usage/usageProviders.ts
 apps/mobile/src/features/voice-input/ComposerDictationControl.tsx
 apps/mobile/src/features/voice-input/useVoiceInputController.ts
@@ -13894,6 +13940,8 @@ apps/mobile/src/lib/native-glass-capability.ts
 apps/mobile/src/lib/nativeMarkdownText.test.ts
 apps/mobile/src/lib/openExternalUrl.test.ts
 apps/mobile/src/lib/openExternalUrl.ts
+apps/mobile/src/lib/projectFaviconCache.test.ts
+apps/mobile/src/lib/projectFaviconCache.ts
 apps/mobile/src/lib/projectThreadStartTurn.test.ts
 apps/mobile/src/lib/projectThreadStartTurn.ts
 apps/mobile/src/lib/providerOptions.test.ts
@@ -13913,6 +13961,7 @@ apps/mobile/src/lib/uniwind-dev-refresh.test.ts
 apps/mobile/src/lib/useFontFamily.ts
 apps/mobile/src/lib/useMobileNavigationTheme.ts
 apps/mobile/src/lib/useNativePaste.ts
+apps/mobile/src/lib/useThemeColor.ts
 apps/mobile/src/lib/useUniwindTheme.ts
 apps/mobile/src/lib/uuid.ts
 apps/mobile/src/lib/videoPreviewSource.ts
@@ -14245,6 +14294,7 @@ apps/server/src/orchestration/ThreadSettlementReactor.ts
 apps/server/src/orchestration/commandInvariants.test.ts
 apps/server/src/orchestration/commandInvariants.ts
 apps/server/src/orchestration/decider.delete.test.ts
+apps/server/src/orchestration/decider.import.test.ts
 apps/server/src/orchestration/decider.pinned.test.ts
 apps/server/src/orchestration/decider.projectScripts.test.ts
 apps/server/src/orchestration/decider.projectThreadEnvMode.test.ts
@@ -14374,6 +14424,10 @@ apps/server/src/process/externalLauncher.test.ts
 apps/server/src/process/externalLauncher.ts
 apps/server/src/processRunner.test.ts
 apps/server/src/processRunner.ts
+apps/server/src/project/AgentSessionImporter.test.ts
+apps/server/src/project/AgentSessionImporter.ts
+apps/server/src/project/AgentSessionScanner.test.ts
+apps/server/src/project/AgentSessionScanner.ts
 apps/server/src/project/ProjectFaviconResolver.test.ts
 apps/server/src/project/ProjectFaviconResolver.ts
 apps/server/src/project/ProjectSetupScriptRunner.test.ts
@@ -14605,6 +14659,7 @@ apps/server/src/relay/AgentAwarenessRelay.test.ts
 apps/server/src/relay/AgentAwarenessRelay.ts
 apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.test.ts
 apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts
+apps/server/src/resourceTelemetry/HostResources.ts
 apps/server/src/resourceTelemetry/Model.test.ts
 apps/server/src/resourceTelemetry/Model.ts
 apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts
@@ -14775,6 +14830,7 @@ apps/web/src/appearanceContrast.ts
 apps/web/src/appearanceFonts.test.ts
 apps/web/src/appearanceFonts.ts
 apps/web/src/assets/assetUrls.ts
+apps/web/src/assets/projectFaviconCache.ts
 apps/web/src/authBootstrap.test.ts
 apps/web/src/bootstrap.test.ts
 apps/web/src/bootstrap.ts
@@ -14786,6 +14842,7 @@ apps/web/src/browser/BrowserDeviceToolbar.tsx
 apps/web/src/browser/BrowserSurfaceSlot.tsx
 apps/web/src/browser/BrowserViewportResizeHandles.tsx
 apps/web/src/browser/ElectronBrowserHost.tsx
+apps/web/src/browser/HostedBrowserWebview.test.tsx
 apps/web/src/browser/HostedBrowserWebview.tsx
 apps/web/src/browser/ScreenRotationIcon.tsx
 apps/web/src/browser/annotationTheme.ts
@@ -14870,6 +14927,7 @@ apps/web/src/components/CommandPalette.tsx
 apps/web/src/components/CommandPaletteContent.tsx
 apps/web/src/components/CommandPaletteResults.tsx
 apps/web/src/components/ComposerCitationNode.tsx
+apps/web/src/components/ComposerPromptEditor.serialization.test.tsx
 apps/web/src/components/ComposerPromptEditor.test.ts
 apps/web/src/components/ComposerPromptEditor.tsx
 apps/web/src/components/ConfirmDialogHost.tsx
@@ -14966,6 +15024,7 @@ apps/web/src/components/chat/ComposerStashMenu.test.tsx
 apps/web/src/components/chat/ComposerStashMenu.tsx
 apps/web/src/components/chat/ComposerSurface.tsx
 apps/web/src/components/chat/ComposerTasksBadge.tsx
+apps/web/src/components/chat/ComposerUsageLimits.tsx
 apps/web/src/components/chat/ContextWindowMeter.logic.test.ts
 apps/web/src/components/chat/ContextWindowMeter.logic.ts
 apps/web/src/components/chat/ContextWindowMeter.test.tsx
@@ -15064,6 +15123,7 @@ apps/web/src/components/clerk/clerkAppearance.test.ts
 apps/web/src/components/clerk/clerkAppearance.ts
 apps/web/src/components/clerk/electronPasskeys.test.ts
 apps/web/src/components/clerk/useT3ConnectAuthPrompt.tsx
+apps/web/src/components/cloud/CloudEnvironmentConnectList.test.tsx
 apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx
 apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
 apps/web/src/components/cloud/ConnectOnboardingDialog.tsx
@@ -15082,7 +15142,6 @@ apps/web/src/components/desktopUpdate.logic.test.ts
 apps/web/src/components/desktopUpdate.logic.ts
 apps/web/src/components/desktopUpdate.toast.test.tsx
 apps/web/src/components/desktopUpdate.toast.tsx
-apps/web/src/components/diffs/AnnotatableCodeView.test.tsx
 apps/web/src/components/diffs/AnnotatableCodeView.tsx
 apps/web/src/components/diffs/DiffCommentAnnotation.test.tsx
 apps/web/src/components/diffs/DiffCommentAnnotation.tsx
@@ -15132,8 +15191,11 @@ apps/web/src/components/media/MediaActions.tsx
 apps/web/src/components/media/MediaVideoPlayer.tsx
 apps/web/src/components/media/OpenMediaLink.tsx
 apps/web/src/components/media/mediaContent.ts
+apps/web/src/components/onboarding/FirstRunGate.tsx
+apps/web/src/components/onboarding/WelcomeWizard.tsx
 apps/web/src/components/preview/AgentBrowserCursor.tsx
 apps/web/src/components/preview/BrowserMockup.tsx
+apps/web/src/components/preview/PreviewAutomationHosts.test.tsx
 apps/web/src/components/preview/PreviewAutomationHosts.tsx
 apps/web/src/components/preview/PreviewChromeRow.tsx
 apps/web/src/components/preview/PreviewEmptyState.test.tsx
@@ -15272,11 +15334,16 @@ apps/web/src/components/settings/EnvironmentIconPicker.tsx
 apps/web/src/components/settings/ExpandableText.tsx
 apps/web/src/components/settings/FontFamilyPicker.tsx
 apps/web/src/components/settings/IntegrationsSettings.logic.test.ts
+apps/web/src/components/settings/IntegrationsSettings.test.tsx
 apps/web/src/components/settings/IntegrationsSettings.tsx
 apps/web/src/components/settings/KeybindingsSettings.logic.test.ts
 apps/web/src/components/settings/KeybindingsSettings.logic.ts
 apps/web/src/components/settings/KeybindingsSettings.tsx
+apps/web/src/components/settings/LoadBalancingSettings.tsx
 apps/web/src/components/settings/PanelAnimationsPreview.tsx
+apps/web/src/components/settings/ProjectActionsList.tsx
+apps/web/src/components/settings/ProjectDefaultActionsSettings.tsx
+apps/web/src/components/settings/ProjectDefaultsSettings.tsx
 apps/web/src/components/settings/ProjectFaviconPickerDialog.test.tsx
 apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx
 apps/web/src/components/settings/ProjectIconPickerDialog.test.tsx
@@ -15284,6 +15351,7 @@ apps/web/src/components/settings/ProjectIconPickerDialog.tsx
 apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts
 apps/web/src/components/settings/ProjectSettingsPanel.logic.ts
 apps/web/src/components/settings/ProjectSettingsPanel.tsx
+apps/web/src/components/settings/ProjectsSettings.tsx
 apps/web/src/components/settings/ProviderAccentColorPicker.tsx
 apps/web/src/components/settings/ProviderInstanceCard.test.ts
 apps/web/src/components/settings/ProviderInstanceCard.tsx
@@ -15332,6 +15400,7 @@ apps/web/src/components/settings/pairingUrls.ts
 apps/web/src/components/settings/providerDriverMeta.ts
 apps/web/src/components/settings/providerProfilePresets.test.ts
 apps/web/src/components/settings/providerProfilePresets.ts
+apps/web/src/components/settings/providerStatus.test.ts
 apps/web/src/components/settings/providerStatus.ts
 apps/web/src/components/settings/settingsLayout.test.tsx
 apps/web/src/components/settings/settingsLayout.tsx
@@ -15381,6 +15450,7 @@ apps/web/src/components/ui/preview-card.tsx
 apps/web/src/components/ui/qr-code.test.tsx
 apps/web/src/components/ui/qr-code.tsx
 apps/web/src/components/ui/radio-group.tsx
+apps/web/src/components/ui/refresh-icon.tsx
 apps/web/src/components/ui/scroll-area.tsx
 apps/web/src/components/ui/select.tsx
 apps/web/src/components/ui/separator.tsx
@@ -15402,11 +15472,14 @@ apps/web/src/components/ui/toggle-group.tsx
 apps/web/src/components/ui/toggle.tsx
 apps/web/src/components/ui/tooltip.tsx
 apps/web/src/components/usage/UsageLimits.tsx
+apps/web/src/components/usage/UsageLimitsPooled.tsx
 apps/web/src/components/usage/UsagePage.test.tsx
 apps/web/src/components/usage/UsagePage.tsx
 apps/web/src/components/usage/UsagePriceOverrides.tsx
 apps/web/src/components/usage/UsageProviderChart.test.ts
 apps/web/src/components/usage/UsageProviderChart.tsx
+apps/web/src/components/usage/usagePagePreferences.test.ts
+apps/web/src/components/usage/usagePagePreferences.ts
 apps/web/src/components/usage/usagePriceForm.test.ts
 apps/web/src/components/usage/usagePriceForm.ts
 apps/web/src/components/usage/usagePriceTable.test.ts
@@ -15476,6 +15549,7 @@ apps/web/src/hooks/useHandleNewThread.test.ts
 apps/web/src/hooks/useHandleNewThread.ts
 apps/web/src/hooks/useLiveRefresh.test.ts
 apps/web/src/hooks/useLiveRefresh.ts
+apps/web/src/hooks/useLoadBalancedEnvironment.ts
 apps/web/src/hooks/useLocalStorage.test.ts
 apps/web/src/hooks/useLocalStorage.ts
 apps/web/src/hooks/useMediaQuery.ts
@@ -15592,6 +15666,15 @@ apps/web/src/modelPickerVisibility.ts
 apps/web/src/modelSelection.test.ts
 apps/web/src/modelSelection.ts
 apps/web/src/observability/clientTracing.ts
+apps/web/src/onboarding/firstRun.logic.test.ts
+apps/web/src/onboarding/firstRun.logic.ts
+apps/web/src/onboarding/firstRun.ts
+apps/web/src/onboarding/projectImport.logic.test.ts
+apps/web/src/onboarding/projectImport.logic.ts
+apps/web/src/onboarding/providerReadiness.logic.test.ts
+apps/web/src/onboarding/providerReadiness.logic.ts
+apps/web/src/onboarding/targetEnvironment.logic.test.ts
+apps/web/src/onboarding/targetEnvironment.logic.ts
 apps/web/src/openVsxThemes.test.ts
 apps/web/src/openVsxThemes.ts
 apps/web/src/pairingUrl.ts
@@ -15655,11 +15738,13 @@ apps/web/src/routes/settings.diagnostics.tsx
 apps/web/src/routes/settings.general.tsx
 apps/web/src/routes/settings.integrations.tsx
 apps/web/src/routes/settings.keybindings.tsx
+apps/web/src/routes/settings.projects.tsx
 apps/web/src/routes/settings.providers.tsx
 apps/web/src/routes/settings.scheduled-tasks.tsx
 apps/web/src/routes/settings.source-control.tsx
 apps/web/src/routes/settings.tsx
 apps/web/src/routes/usage.tsx
+apps/web/src/routes/welcome.tsx
 apps/web/src/rpc/atomRegistry.ts
 apps/web/src/rpc/requestLatencyState.test.ts
 apps/web/src/rpc/requestLatencyState.ts
@@ -15672,6 +15757,7 @@ apps/web/src/shortcutModifierState.test.ts
 apps/web/src/shortcutModifierState.ts
 apps/web/src/sidebarProjectGrouping.ts
 apps/web/src/sourceControlPresentation.ts
+apps/web/src/state/agentSessions.ts
 apps/web/src/state/assets.ts
 apps/web/src/state/attachments.ts
 apps/web/src/state/auth.ts
@@ -15856,6 +15942,7 @@ docs/user/thread-handoff.md
 docs/user/thread-sidebar.md
 docs/user/updating.md
 docs/user/usage.md
+docs/user/welcome-wizard.md
 infra/relay/.env.example
 infra/relay/README.md
 infra/relay/alchemy.run.ts
@@ -16054,6 +16141,7 @@ packages/client-runtime/src/errors/safeLog.test.ts
 packages/client-runtime/src/errors/safeLog.ts
 packages/client-runtime/src/errors/transport.test.ts
 packages/client-runtime/src/errors/transport.ts
+packages/client-runtime/src/load-balancing.ts
 packages/client-runtime/src/markdownImages.test.ts
 packages/client-runtime/src/markdownImages.ts
 packages/client-runtime/src/markdownLinks.test.ts
@@ -16074,6 +16162,8 @@ packages/client-runtime/src/platform/persistence.ts
 packages/client-runtime/src/platform/source.ts
 packages/client-runtime/src/platform/storageDocument.test.ts
 packages/client-runtime/src/platform/storageDocument.ts
+packages/client-runtime/src/projectFaviconCache.test.ts
+packages/client-runtime/src/projectFaviconCache.ts
 packages/client-runtime/src/providerSkills.test.ts
 packages/client-runtime/src/providerSkills.ts
 packages/client-runtime/src/relay/discovery.test.ts
@@ -16172,6 +16262,8 @@ packages/client-runtime/src/state/threads-atoms.test.ts
 packages/client-runtime/src/state/threads-pagination.test.ts
 packages/client-runtime/src/state/threads-sync.test.ts
 packages/client-runtime/src/state/threads.ts
+packages/client-runtime/src/state/usage.test.ts
+packages/client-runtime/src/state/usage.ts
 packages/client-runtime/src/state/vcs.test.ts
 packages/client-runtime/src/state/vcs.ts
 packages/client-runtime/src/state/vcsAction.test.ts
@@ -16179,7 +16271,6 @@ packages/client-runtime/src/state/vcsAction.ts
 packages/client-runtime/src/state/vcsCommandScheduler.ts
 packages/client-runtime/src/state/vcsRef.ts
 packages/client-runtime/src/state/vcsRefInvalidation.ts
-packages/client-runtime/src/state/vcsStatus.ts
 packages/client-runtime/src/voice-input/controller.test.ts
 packages/client-runtime/src/voice-input/controller.ts
 packages/client-runtime/src/voice-input/index.ts
@@ -16195,6 +16286,7 @@ packages/client-runtime/src/work-log/toolPresentation.ts
 packages/client-runtime/tsconfig.json
 packages/client-runtime/vite.config.ts
 packages/contracts/package.json
+packages/contracts/src/agentSessions.ts
 packages/contracts/src/assets.test.ts
 packages/contracts/src/assets.ts
 packages/contracts/src/assistantCitations.ts
@@ -16322,6 +16414,8 @@ packages/shared/src/chatList.test.ts
 packages/shared/src/chatList.ts
 packages/shared/src/claudeCompaction.test.ts
 packages/shared/src/claudeCompaction.ts
+packages/shared/src/claudePeakTime.test.ts
+packages/shared/src/claudePeakTime.ts
 packages/shared/src/cliArgs.test.ts
 packages/shared/src/cliArgs.ts
 packages/shared/src/composerInlineTokens.test.ts
@@ -16330,6 +16424,8 @@ packages/shared/src/composerTrigger.test.ts
 packages/shared/src/composerTrigger.ts
 packages/shared/src/connectAuth.test.ts
 packages/shared/src/connectAuth.ts
+packages/shared/src/dateTime.test.ts
+packages/shared/src/dateTime.ts
 packages/shared/src/desktopAppControl.test.ts
 packages/shared/src/desktopAppControl.ts
 packages/shared/src/devHome.test.ts
@@ -16353,6 +16449,8 @@ packages/shared/src/hostClassification.ts
 packages/shared/src/hostProcess.ts
 packages/shared/src/httpObservability.ts
 packages/shared/src/httpReadiness.ts
+packages/shared/src/imageDimensions.test.ts
+packages/shared/src/imageDimensions.ts
 packages/shared/src/keybindings.ts
 packages/shared/src/logging.test.ts
 packages/shared/src/logging.ts
@@ -16477,6 +16575,8 @@ scripts/clean-tsgo-backups.mjs
 scripts/dev-runner.test.ts
 scripts/dev-runner.ts
 scripts/export-brand-icons.ts
+scripts/knip-schemas.test.ts
+scripts/knip-schemas.ts
 scripts/lib/brand-assets.test.ts
 scripts/lib/brand-assets.ts
 scripts/lib/build-target-arch.test.ts
@@ -16505,6 +16605,7 @@ scripts/mock-update-server.ts
 scripts/notify-discord-release.test.ts
 scripts/notify-discord-release.ts
 scripts/package.json
+scripts/publish-desktop-release.ts
 scripts/release-smoke.ts
 scripts/resolve-nightly-release.test.ts
 scripts/resolve-nightly-release.ts
@@ -16518,5 +16619,6 @@ scripts/tsconfig.json
 scripts/update-release-package-versions.test.ts
 scripts/update-release-package-versions.ts
 t3.json
+tree.txt
 tsconfig.base.json
 vite.config.ts

@@ -613,6 +613,7 @@ it.effect("repairs a persisted running projection when a live provider is alread
           }),
         ),
       upsert: (binding) => Effect.sync(() => upserts.push(binding)),
+      recordImportedTranscript: () => Effect.die("unused"),
       getProvider: () => Effect.die("unused"),
       listThreadIds: () => Effect.die("unused"),
       listBindings: () => Effect.die("unused"),

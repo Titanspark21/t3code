@@ -35,6 +35,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
+import { createAdvertisedEndpoint } from "@t3tools/shared/advertisedEndpoint";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -126,6 +127,7 @@ import {
   supportsServerUpdateThreadContinuation,
 } from "~/versionSkew";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { usePrimaryCloudLinkState } from "~/cloud/primaryCloudLinkState";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
@@ -468,6 +470,35 @@ function selectPairingEndpoint(
     availableEndpoints.find((endpoint) => endpoint.compatibility.hostedHttpsApp === "compatible") ??
     null
   );
+}
+
+const T3_CONNECT_ENDPOINT_PROVIDER = {
+  id: "t3-connect",
+  label: "T3 Connect",
+  kind: "tunnel",
+  isAddon: true,
+} as const;
+
+function resolveManagedTunnelEndpoint(
+  endpoint: NonNullable<ReturnType<typeof usePrimaryCloudLinkState>["data"]>["managedEndpoint"],
+): AdvertisedEndpoint | null {
+  if (!endpoint) return null;
+  try {
+    return createAdvertisedEndpoint({
+      id: `t3-connect:${endpoint.httpBaseUrl}`,
+      label: "T3 Connect",
+      provider: T3_CONNECT_ENDPOINT_PROVIDER,
+      source: "server",
+      httpBaseUrl: endpoint.httpBaseUrl,
+      reachability: "public",
+      hostedHttpsCompatibility: "compatible",
+      status: "available",
+      isDefault: true,
+      description: "Reachable from anywhere through the managed T3 Connect tunnel.",
+    });
+  } catch {
+    return null;
+  }
 }
 
 function isTailscaleHttpsEndpoint(endpoint: AdvertisedEndpoint): boolean {
@@ -1692,25 +1723,23 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
 
   return (
     <>
-      {window.desktopBridge ? (
-        <SettingsRow
-          title={searchableSetting("t3-connect").title}
-          description={
-            managedTunnelActive
-              ? "This environment is available to your other devices through T3 Connect."
-              : "Make this environment available to your other devices through T3 Connect."
-          }
-          status={operationError ?? primaryCloudLinkState.error}
-          control={
-            <CloudLinkSwitch
-              checked={managedTunnelActive}
-              disabled={!canManageRelay || !isSignedIn || primaryCloudLinkState.isPending || isBusy}
-              disabledReason={disabledReason}
-              onCheckedChange={(enabled) => void updateManagedTunnel(enabled)}
-            />
-          }
-        />
-      ) : null}
+      <SettingsRow
+        title={searchableSetting("t3-connect").title}
+        description={
+          managedTunnelActive
+            ? "This environment is available to your other devices through T3 Connect."
+            : "Make this environment available to your other devices through T3 Connect."
+        }
+        status={operationError ?? primaryCloudLinkState.error}
+        control={
+          <CloudLinkSwitch
+            checked={managedTunnelActive}
+            disabled={!canManageRelay || !isSignedIn || primaryCloudLinkState.isPending || isBusy}
+            disabledReason={disabledReason}
+            onCheckedChange={(enabled) => void updateManagedTunnel(enabled)}
+          />
+        }
+      />
       <SettingsRow
         title={searchableSetting("publish-agent-activity").title}
         description="Send activity to mobile notifications and Live Activities without T3 Connect."
@@ -1773,6 +1802,7 @@ export function ConnectionsSettings() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
+  const primaryCloudLinkState = usePrimaryCloudLinkState();
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
     reportFailure: false,
@@ -2407,6 +2437,10 @@ export function ConnectionsSettings() {
   );
 
   const visibleDesktopPairingLinks = desktopPairingLinks;
+  const managedTunnelEndpoint = useMemo(
+    () => resolveManagedTunnelEndpoint(primaryCloudLinkState.data?.managedEndpoint),
+    [primaryCloudLinkState.data?.managedEndpoint],
+  );
   const tailscaleHttpsEndpoint = useMemo(
     () => desktopAdvertisedEndpoints.find(isTailscaleHttpsEndpoint) ?? null,
     [desktopAdvertisedEndpoints],
@@ -2419,27 +2453,25 @@ export function ConnectionsSettings() {
     [desktopAdvertisedEndpoints, isLocalBackendNetworkAccessible],
   );
   const visibleDesktopAdvertisedEndpoints = useMemo(
-    () =>
-      tailscaleHttpsEndpoint
-        ? [...visibleDesktopNetworkAdvertisedEndpoints, tailscaleHttpsEndpoint]
-        : visibleDesktopNetworkAdvertisedEndpoints,
-    [tailscaleHttpsEndpoint, visibleDesktopNetworkAdvertisedEndpoints],
+    () => [
+      ...(managedTunnelEndpoint ? [managedTunnelEndpoint] : []),
+      ...visibleDesktopNetworkAdvertisedEndpoints,
+      ...(tailscaleHttpsEndpoint ? [tailscaleHttpsEndpoint] : []),
+    ],
+    [managedTunnelEndpoint, tailscaleHttpsEndpoint, visibleDesktopNetworkAdvertisedEndpoints],
   );
   const isLocalBackendRemotelyReachable =
-    isLocalBackendNetworkAccessible || tailscaleHttpsEndpoint?.status === "available";
+    isLocalBackendNetworkAccessible ||
+    tailscaleHttpsEndpoint?.status === "available" ||
+    managedTunnelEndpoint?.status === "available";
   const defaultDesktopNetworkAdvertisedEndpoint = useMemo(
     () =>
       selectPairingEndpoint(visibleDesktopNetworkAdvertisedEndpoints, defaultAdvertisedEndpointKey),
     [defaultAdvertisedEndpointKey, visibleDesktopNetworkAdvertisedEndpoints],
   );
   const defaultDesktopAdvertisedEndpoint = useMemo(
-    () =>
-      defaultDesktopNetworkAdvertisedEndpoint ??
-      selectPairingEndpoint(
-        tailscaleHttpsEndpoint ? [tailscaleHttpsEndpoint] : [],
-        defaultAdvertisedEndpointKey,
-      ),
-    [defaultAdvertisedEndpointKey, defaultDesktopNetworkAdvertisedEndpoint, tailscaleHttpsEndpoint],
+    () => selectPairingEndpoint(visibleDesktopAdvertisedEndpoints, defaultAdvertisedEndpointKey),
+    [defaultAdvertisedEndpointKey, visibleDesktopAdvertisedEndpoints],
   );
   const defaultDesktopAdvertisedEndpointKey = defaultDesktopAdvertisedEndpoint
     ? endpointDefaultPreferenceKey(defaultDesktopAdvertisedEndpoint)

@@ -126,6 +126,8 @@ interface AntigravityProviderOptions {
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   /** Auth type and label published once a session authenticates. */
   readonly auth?: { readonly type: string; readonly label: string };
+  /** Recheck saved credentials before exposing an authentication failure. */
+  readonly recoverAuth?: Effect.Effect<boolean>;
 }
 
 /** Health uses initialize only. Session callbacks supply account-specific metadata. */
@@ -386,13 +388,19 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       : { ...snapshot, skills: resolvedSkills };
   });
 
+  const onAuthRequired = options.recoverAuth
+    ? options.recoverAuth.pipe(
+        Effect.flatMap((recovered) => (recovered ? Effect.void : clearAccountMetadata())),
+      )
+    : clearAccountMetadata();
+
   return {
     snapshot: { ...managed, getSnapshot },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,
     onSignedOut: clearAccountMetadata(),
-    onAuthRequired: clearAccountMetadata(),
+    onAuthRequired,
     snapshotForCwd,
   };
 });

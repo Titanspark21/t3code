@@ -178,6 +178,8 @@ export const RelayEnvironmentConfigRequest = Schema.Struct({
   cloudUserId: Schema.String,
   environmentCredential: Schema.String,
   cloudMintPublicKey: Schema.String,
+  /** Public endpoint returned by the relay, used to build QR share links. */
+  endpoint: Schema.optional(RelayManagedEndpoint),
   endpointRuntime: Schema.NullOr(RelayManagedEndpointRuntimeConfig),
 });
 export type RelayEnvironmentConfigRequest = typeof RelayEnvironmentConfigRequest.Type;

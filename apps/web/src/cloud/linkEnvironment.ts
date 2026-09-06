@@ -340,6 +340,7 @@ export function linkPrimaryEnvironmentToCloud(input: {
           cloudUserId: link.cloudUserId,
           environmentCredential: link.environmentCredential,
           cloudMintPublicKey: link.cloudMintPublicKey,
+          ...(managedTunnelsEnabled ? { endpoint: link.endpoint } : {}),
           endpointRuntime: link.endpointRuntime,
         },
       })

@@ -11,6 +11,7 @@ import {
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
+import { CLAUDE_PEAK_TIME_LABEL, isClaudePeakTime } from "@t3tools/shared/claudePeakTime";
 import { useId, useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
@@ -220,25 +221,37 @@ export function UsageLimitsSection({
             : "No provider on the selected environments reports subscription limits."}
         </Text>
       ) : null}
-      {pools.map((pool) => (
-        <View key={pool.driver} className="gap-3">
-          <View className="flex-row items-center gap-2 px-1">
-            <ProviderIcon provider={pool.driver} size={18} />
-            <Text className="text-base font-t3-medium text-foreground">
-              {DRIVER_LABEL[pool.driver] ?? pool.driver}
-            </Text>
+      {pools.map((pool) => {
+        const claudePeak = pool.driver === "claudeAgent" && isClaudePeakTime(now);
+        return (
+          <View key={pool.driver} className="gap-3">
+            <View className="flex-row items-center gap-2 px-1">
+              <ProviderIcon provider={pool.driver} size={18} />
+              <Text className="text-base font-t3-medium text-foreground">
+                {DRIVER_LABEL[pool.driver] ?? pool.driver}
+              </Text>
+              {pool.driver === "claudeAgent" ? (
+                <Text
+                  accessibilityLabel={claudePeak ? CLAUDE_PEAK_TIME_LABEL : "Claude regular time"}
+                >
+                  {claudePeak ? "🔥" : "🟢"}
+                </Text>
+              ) : null}
+            </View>
+            {pool.windows.map((window) => (
+              <PoolWindowCard
+                key={`${window.kind}:${window.id}`}
+                pool={window}
+                color={pool.driver === "claudeAgent" ? colors.claude : colors.codex}
+                now={now}
+                environmentIds={
+                  selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                }
+              />
+            ))}
           </View>
-          {pool.windows.map((window) => (
-            <PoolWindowCard
-              key={`${window.kind}:${window.id}`}
-              pool={window}
-              color={pool.driver === "claudeAgent" ? colors.claude : colors.codex}
-              now={now}
-              environmentIds={selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]}
-            />
-          ))}
-        </View>
-      ))}
+        );
+      })}
       {notices.map((notice) => (
         <Text key={notice} className="text-sm text-foreground-muted">
           {notice}

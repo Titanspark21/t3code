@@ -52,6 +52,7 @@ import {
   RelayEnvironmentLinkProof,
   RelayEnvironmentMintResponse,
   RelayLinkProofRequest,
+  RelayManagedEndpoint,
 } from "./relay.ts";
 
 const OptionalBearerHeaders = Schema.Struct({
@@ -384,6 +385,9 @@ export const EnvironmentCloudLinkStateResult = Schema.Struct({
   // clients can present the two capabilities as independent settings.
   // Optional so newer clients tolerate older environment servers.
   managedTunnelActive: Schema.optional(Schema.Boolean),
+  // The public managed endpoint lets clients build QR pairing links that work
+  // away from the local network.
+  managedEndpoint: Schema.optional(RelayManagedEndpoint),
   publishAgentActivity: Schema.Boolean,
 });
 export type EnvironmentCloudLinkStateResult = typeof EnvironmentCloudLinkStateResult.Type;

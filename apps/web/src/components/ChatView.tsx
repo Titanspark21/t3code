@@ -309,6 +309,7 @@ import {
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { projectEnvironment } from "../state/projects";
 import {
   useProject,
   useProjects,

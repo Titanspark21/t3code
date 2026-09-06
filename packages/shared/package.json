@@ -271,6 +271,10 @@
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
     },
+    "./claudePeakTime": {
+      "types": "./src/claudePeakTime.ts",
+      "import": "./src/claudePeakTime.ts"
+    },
     "./desktopAppControl": {
       "types": "./src/desktopAppControl.ts",
       "import": "./src/desktopAppControl.ts"
